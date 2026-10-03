@@ -1,0 +1,91 @@
+name: Publish KernelSU companion
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Read module version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version=//p' kernelsu-module/module.prop | head -n1)"
+          VERSION_CODE="$(sed -n 's/^versionCode=//p' kernelsu-module/module.prop | head -n1)"
+          test -n "$VERSION"
+          test -n "$VERSION_CODE"
+          TAG="ksu-v${VERSION}"
+          ZIP="NEXUS_INPUT-KernelSU-Companion-v${VERSION}.zip"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Build module ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          (
+            cd kernelsu-module
+            zip -qr "../dist/${{ steps.meta.outputs.zip }}" .
+          )
+          sha256sum "dist/${{ steps.meta.outputs.zip }}"
+
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          ZIP="dist/${{ steps.meta.outputs.zip }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            gh release create "$TAG" "$ZIP" \
+              --title "NEXUS INPUT KernelSU ${{ steps.meta.outputs.version }}" \
+              --notes-file CHANGELOG.md
+          fi
+
+      - name: Update update.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHA="$(sha256sum "dist/${{ steps.meta.outputs.zip }}" | awk '{print $1}')"
+          python3 - <<PY
+          import json
+          from pathlib import Path
+          data = {
+              "version": "${{ steps.meta.outputs.version }}",
+              "versionCode": int("${{ steps.meta.outputs.version_code }}"),
+              "zipUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.zip }}",
+              "sha256": "$SHA",
+              "changelog": "https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md",
+          }
+          Path("update.json").write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Commit update manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- update.json; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git commit -m "Publish KernelSU companion ${{ steps.meta.outputs.version }}"
+          git push origin HEAD:main
