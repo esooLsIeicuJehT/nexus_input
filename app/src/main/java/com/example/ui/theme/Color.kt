@@ -3,51 +3,51 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-// Foundation & Suggested Tones from Design Spec (#090B10 Foundation)
-val GraphiteFoundation = Color(0xFF090B10)
+// Nexus Input dark foundation.
+val GraphiteFoundation = Color(0xFF03070D)
 val DarkBackground = GraphiteFoundation
-val DarkSurface = Color(0xFF131722)
-val DarkSurfaceElevated = Color(0xFF1A1F2E)
-val DarkSurfaceBorder = Color(0xFF272F44)
+val DarkSurface = Color(0xFF071522)
+val DarkSurfaceElevated = Color(0xFF0B1B2B)
+val DarkSurfaceBorder = Color(0xFF1C4565)
 
-// Brand & Interaction Palette
-val ControlystViolet = Color(0xFF5043EB) // Controlyst, intelligence, AI, selected interaction
-val ControlystVioletLight = Color(0xFF8A98FF)
-val ControlystBlue = Color(0xFF7C8CFF)   // Mapping/input
-val ControlystCyan = Color(0xFF00CFEB)   // Measurable hardware performance and telemetry
-val ControlystGreen = Color(0xFF00E676)  // Healthy/connected/success
-val ControlystOrange = Color(0xFFFF9100) // Attention warranted (only when needed)
-val ControlystRed = Color(0xFFFF1744)    // Genuine danger, failure, or conflict only
+// Nexus Input interaction palette.
+val NexusViolet = Color(0xFF6D3CFF)
+val NexusVioletLight = Color(0xFFB06CFF)
+val NexusBlue = Color(0xFF2869FF)
+val NexusCyan = Color(0xFF16E6FF)
+val NexusGreen = Color(0xFF19F2A0)
+val NexusOrange = Color(0xFFFFA726)
+val NexusRed = Color(0xFFFF405D)
 
-// Aliases for compatibility
-val CyberCyan = ControlystCyan
+// Compatibility aliases. Existing screens can migrate incrementally without
+// breaking the runtime while the product name changes from Controlyst to Nexus Input.
+val ControlystViolet = NexusViolet
+val ControlystVioletLight = NexusVioletLight
+val ControlystBlue = NexusBlue
+val ControlystCyan = NexusCyan
+val ControlystGreen = NexusGreen
+val ControlystOrange = NexusOrange
+val ControlystRed = NexusRed
+
+val CyberCyan = NexusCyan
 val NeonCyanLight = Color(0xFF38BDF8)
-val ElectricViolet = ControlystViolet
-val DeepIndigo = Color(0xFF6366F1)
-val AccentGreen = ControlystGreen
-val AccentAmber = ControlystOrange
-val AccentRose = ControlystRed
+val ElectricViolet = NexusViolet
+val DeepIndigo = NexusBlue
+val AccentGreen = NexusGreen
+val AccentAmber = NexusOrange
+val AccentRose = NexusRed
 
-val TextPrimary = Color(0xFFF8FAFC)
-val TextSecondary = Color(0xFF94A3B8)
-val TextMuted = Color(0xFF64748B)
+val TextPrimary = Color(0xFFF5FAFF)
+val TextSecondary = Color(0xFF9CB4C8)
+val TextMuted = Color(0xFF667F95)
 
 val DarkTextPrimary = TextPrimary
 val DarkTextSecondary = TextSecondary
 
-// The Signature Gradient (#5043EB -> #7C8CFF -> #00CFEB)
 val SignatureGradient = Brush.horizontalGradient(
-    listOf(
-        ControlystViolet,
-        ControlystBlue,
-        ControlystCyan
-    )
+    listOf(NexusViolet, NexusBlue, NexusCyan)
 )
 
 val SignatureGradientVertical = Brush.verticalGradient(
-    listOf(
-        ControlystViolet,
-        ControlystBlue,
-        ControlystCyan
-    )
+    listOf(NexusViolet, NexusBlue, NexusCyan)
 )
