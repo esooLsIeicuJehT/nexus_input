@@ -27,8 +27,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             NexusInputTheme {
                 val onboardingStep by viewModel.onboardingStep.collectAsState()
+                val currentTab by viewModel.currentTab.collectAsState()
                 val snackMessage by viewModel.snackMessage.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
+
+                LaunchedEffect(Unit) {
+                    if (currentTab == "library") viewModel.selectTab("home")
+                }
 
                 LaunchedEffect(snackMessage) {
                     snackMessage?.let { message ->
