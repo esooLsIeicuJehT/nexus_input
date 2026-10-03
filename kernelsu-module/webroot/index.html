@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>NEXUS INPUT</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="brand">NEXUS <span>INPUT</span></div>
+      <div class="tagline">PLAY YOUR WAY</div>
+      <h1>KernelSU Control Plane</h1>
+      <p>Live root/input health. Nothing is marked ready unless the device actually reports it.</p>
+    </header>
+
+    <section class="card status-grid">
+      <div class="tile"><span>APK</span><strong id="apk">Checking…</strong></div>
+      <div class="tile"><span>/dev/uinput</span><strong id="uinput">Checking…</strong></div>
+      <div class="tile"><span>/dev/uhid</span><strong id="uhid">Checking…</strong></div>
+      <div class="tile"><span>SELinux</span><strong id="selinux">Checking…</strong></div>
+      <div class="tile wide"><span>NEXUS processes</span><strong id="processes">Checking…</strong></div>
+    </section>
+
+    <section class="actions">
+      <button id="refresh">Refresh diagnostics</button>
+      <button id="launch" class="secondary">Launch NEXUS INPUT</button>
+    </section>
+
+    <section class="card update-card">
+      <div class="section-title">GitHub Module Update</div>
+      <div class="update-row"><span>Installed</span><strong id="installedVersion">Checking…</strong></div>
+      <div class="update-row"><span>GitHub</span><strong id="remoteVersion">Not checked</strong></div>
+      <div class="actions update-actions">
+        <button id="checkUpdate" class="secondary">Check GitHub</button>
+        <button id="installUpdate" disabled>Install update</button>
+      </div>
+      <pre id="updateStatus">Updates are verified with SHA-256 before KernelSU stages them. A reboot is required after installation.</pre>
+    </section>
+
+    <section class="card">
+      <div class="section-title">APK Runtime</div>
+      <pre id="runtimeStatus">Waiting for NEXUS INPUT root runtime…</pre>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Devices & Controllers</div>
+      <pre id="devices">Checking…</pre>
+    </section>
+
+    <section class="card">
+      <div class="section-title">KernelSU Module Config</div>
+      <pre id="moduleConfig">Checking…</pre>
+    </section>
+
+    <section class="card">
+      <div class="section-title">Boot Probe</div>
+      <pre id="bootStatus">Checking…</pre>
+    </section>
+
+    <section class="card log-card">
+      <div class="section-title">Last Command</div>
+      <pre id="log">Ready.</pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
