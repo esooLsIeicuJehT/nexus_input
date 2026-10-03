@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- #090B10 Graphite Foundation -->
+    <path
+        android:pathData="M0,0h108v108h-108z"
+        android:fillColor="#090B10" />
+
+    <!-- Subtle circular concentric tech grid -->
+    <path
+        android:pathData="M54,54 m-42,0 a42,42 0 1,0 84,0 a42,42 0 1,0 -84,0"
+        android:strokeWidth="1.2"
+        android:strokeColor="#171C2B"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,54 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"
+        android:strokeWidth="1.0"
+        android:strokeColor="#20273D"
+        android:fillColor="#00000000" />
+</vector>
+

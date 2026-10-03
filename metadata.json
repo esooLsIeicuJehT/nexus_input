@@ -1,0 +1,6 @@
+{
+  "name": "Controlyst",
+  "description": "Universal Root & Non-Root Game Controller & Keymapper with Visual Screenshot Mapper, Calibration, and Floating Crosshair",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Controlyst</string>
+    <string name="accessibility_service_description">Enables non-root simulated touch injection and controller keymapping for games in Controlyst.</string>
+    <string name="mapping_service_notification_title">Controlyst Active</string>
+    <string name="mapping_service_notification_desc">Input mapping and floating HUD running</string>
+    <string name="daily_progress_title">Controlyst Daily Report</string>
+    <string name="daily_progress_desc">Keep your gameplay calibrated and check your referral hours!</string>
+</resources>
