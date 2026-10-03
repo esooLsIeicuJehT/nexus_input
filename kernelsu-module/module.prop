@@ -1,0 +1,7 @@
+id=gamepad.pro.root
+name=NEXUS INPUT Root Companion
+version=0.5.1-dev
+versionCode=501
+author=Gamepad Pro
+description=NEXUS INPUT KernelSU companion with live input diagnostics, APK runtime state, and secure GitHub self-update support.
+updateJson=https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/main/update.json
