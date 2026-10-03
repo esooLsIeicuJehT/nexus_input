@@ -1,12 +1,18 @@
 const log = document.getElementById('log');
 
+const APK_PACKAGE = 'com.aistudio.controlyst.nxzvrq';
+const APK_COMPONENT = `${APK_PACKAGE}/com.example.MainActivity`;
+const MODULE_ID = 'gamepad.pro.root';
+const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
+let githubUpdateAvailable = false;
+
 function execRoot(command) {
   return new Promise((resolve, reject) => {
     if (!window.ksu || typeof window.ksu.exec !== 'function') {
       reject(new Error('KernelSU WebUI API is unavailable'));
       return;
     }
-    const callback = `gp_exec_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const callback = `nx_exec_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     window[callback] = (errno, stdout, stderr) => {
       delete window[callback];
       resolve({ errno, stdout, stderr });
@@ -33,15 +39,25 @@ function section(lines, beginKey, endKey) {
   return lines.slice(start + 1, end).join('\n').trim() || 'none';
 }
 
+function setBusy(button, busy, busyLabel) {
+  if (!button) return;
+  if (!button.dataset.label) button.dataset.label = button.textContent;
+  button.disabled = busy;
+  button.textContent = busy ? busyLabel : button.dataset.label;
+}
+
 async function refresh() {
+  const refreshButton = document.getElementById('refresh');
+  setBusy(refreshButton, true, 'Refreshing…');
   log.textContent = 'Reading live root state…';
+
   const cmd = String.raw`
-PACKAGE=com.inputmapper.platform
+PACKAGE=${APK_PACKAGE}
 if pm path "$PACKAGE" >/dev/null 2>&1; then echo "APK=installed"; else echo "APK=missing"; fi
 if [ -e /dev/uinput ]; then echo "UINPUT=$(ls -lZ /dev/uinput 2>&1)"; else echo "UINPUT=missing"; fi
 if [ -e /dev/uhid ]; then echo "UHID=$(ls -lZ /dev/uhid 2>&1)"; else echo "UHID=missing"; fi
 echo "SELINUX=$(getenforce 2>/dev/null || echo unknown)"
-echo "PROCESSES=$(ps -AZ 2>/dev/null | grep -E 'com\.inputmapper\.platform|nexus\.input|gamepad\.pro' | tr '\n' ';' || true)"
+echo "PROCESSES=$(ps -AZ 2>/dev/null | grep -E 'com\.aistudio\.controlyst\.nxzvrq|nexus\.input|gamepad\.pro' | tr '\n' ';' || true)"
 echo 'RUNTIME_STATUS_BEGIN'
 if [ -r /data/adb/gamepad-pro/runtime-status.txt ]; then
   cat /data/adb/gamepad-pro/runtime-status.txt
@@ -73,46 +89,55 @@ else
 fi
 echo 'BOOT_STATUS_END'
 `;
+
   try {
     const result = await execRoot(cmd);
     log.textContent = `exit=${result.errno}\n${result.stderr || result.stdout}`;
-    if (result.errno !== 0) return;
+    if (result.errno !== 0) {
+      state('apk', 'diagnostic failed', 'bad');
+      return;
+    }
+
     const lines = result.stdout.split('\n');
     const value = key => (lines.find(l => l.startsWith(`${key}=`)) || '').slice(key.length + 1);
     const apk = value('APK');
     const uinput = value('UINPUT');
     const uhid = value('UHID');
     const processes = value('PROCESSES');
-    state('apk', apk || 'unknown', apk === 'installed' ? 'ok' : 'bad');
+
+    state('apk', apk === 'installed' ? 'Installed' : 'Missing', apk === 'installed' ? 'ok' : 'bad');
     state('uinput', uinput || 'unknown', uinput && uinput !== 'missing' ? 'ok' : 'bad');
     state('uhid', uhid || 'unknown', uhid && uhid !== 'missing' ? 'ok' : 'warn');
     state('selinux', value('SELINUX') || 'unknown', '');
     state('processes', processes || 'none', processes ? 'ok' : 'warn');
+
     document.getElementById('runtimeStatus').textContent = section(lines, 'RUNTIME_STATUS_BEGIN', 'RUNTIME_STATUS_END');
     document.getElementById('devices').textContent = section(lines, 'DEVICES_BEGIN', 'DEVICES_END');
     document.getElementById('moduleConfig').textContent = section(lines, 'MODULE_CONFIG_BEGIN', 'MODULE_CONFIG_END');
     document.getElementById('bootStatus').textContent = section(lines, 'BOOT_STATUS_BEGIN', 'BOOT_STATUS_END');
   } catch (error) {
     log.textContent = String(error);
+    state('apk', 'WebUI API error', 'bad');
+  } finally {
+    setBusy(refreshButton, false, 'Refreshing…');
   }
 }
 
 async function launch() {
+  const launchButton = document.getElementById('launch');
+  setBusy(launchButton, true, 'Launching…');
   try {
-    const r = await execRoot('am start -n com.inputmapper.platform/com.inputmapper.platform.ui.SplashActivity');
+    const r = await execRoot(`am start -n ${APK_COMPONENT}`);
     log.textContent = `exit=${r.errno}\n${r.stdout}\n${r.stderr}`;
+    if (r.errno !== 0) {
+      throw new Error(r.stderr || r.stdout || `Android activity launch failed with exit ${r.errno}`);
+    }
   } catch (error) {
     log.textContent = String(error);
+  } finally {
+    setBusy(launchButton, false, 'Launching…');
   }
 }
-
-document.getElementById('refresh').addEventListener('click', refresh);
-document.getElementById('launch').addEventListener('click', launch);
-refresh();
-
-const MODULE_ID = 'gamepad.pro.root';
-const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
-let githubUpdateAvailable = false;
 
 function parseKv(text) {
   const out = {};
@@ -134,10 +159,13 @@ async function readInstalledVersion() {
 
 async function checkGithubUpdate() {
   const status = document.getElementById('updateStatus');
+  const check = document.getElementById('checkUpdate');
   const install = document.getElementById('installUpdate');
   status.textContent = 'Checking GitHub…';
   install.disabled = true;
   githubUpdateAvailable = false;
+  setBusy(check, true, 'Checking…');
+
   try {
     const r = await execRoot(`${MODULE_DIR}/update.sh check`);
     const kv = parseKv(r.stdout);
@@ -153,6 +181,8 @@ async function checkGithubUpdate() {
     }
   } catch (error) {
     status.textContent = String(error);
+  } finally {
+    setBusy(check, false, 'Checking…');
   }
 }
 
@@ -162,8 +192,9 @@ async function installGithubUpdate() {
 
   const status = document.getElementById('updateStatus');
   const install = document.getElementById('installUpdate');
-  install.disabled = true;
+  setBusy(install, true, 'Installing…');
   status.textContent = 'Downloading, verifying and staging update…';
+
   try {
     const r = await execRoot(`${MODULE_DIR}/update.sh install`);
     const kv = parseKv(r.stdout);
@@ -171,16 +202,21 @@ async function installGithubUpdate() {
       githubUpdateAvailable = false;
       status.textContent = kv.MESSAGE || 'Update staged. Reboot to activate it.';
     } else {
-      install.disabled = false;
       status.textContent = kv.MESSAGE || r.stderr || r.stdout || `Update install failed (exit ${r.errno})`;
     }
     log.textContent = `exit=${r.errno}\n${r.stdout}\n${r.stderr}`;
   } catch (error) {
-    install.disabled = false;
     status.textContent = String(error);
+  } finally {
+    install.disabled = !githubUpdateAvailable;
+    install.textContent = install.dataset.label || 'Install update';
   }
 }
 
+document.getElementById('refresh').addEventListener('click', refresh);
+document.getElementById('launch').addEventListener('click', launch);
 document.getElementById('checkUpdate').addEventListener('click', checkGithubUpdate);
 document.getElementById('installUpdate').addEventListener('click', installGithubUpdate);
+
 readInstalledVersion();
+refresh();
