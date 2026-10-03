@@ -54,9 +54,6 @@ jobs:
           mkdir -p legacy/controlyst-root-module
           cp -a "$SRC/downloadable_module/." legacy/controlyst-root-module/
 
-          # Preserve the historical Android CI under a Nexus-specific name.
-          cp "$SRC/.github/workflows/android.yml" .github/workflows/android-app.yml
-
           mkdir -p docs
           SOURCE_SHA="$(git -C "$SRC" rev-parse HEAD)"
           cat > docs/SOURCE_LINEAGE.md <<EOF
