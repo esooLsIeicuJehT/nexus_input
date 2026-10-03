@@ -1,6 +1,8 @@
 package com.example
 
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.input.ControllerInputMonitor
 import com.example.service.MappingForegroundService
 import com.example.ui.MainAppViewModel
 import com.example.ui.nexus.NexusAppShell
@@ -23,6 +26,16 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainAppViewModel by viewModels()
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        ControllerInputMonitor.onMotionEvent(event)
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        ControllerInputMonitor.onKeyEvent(event)
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
