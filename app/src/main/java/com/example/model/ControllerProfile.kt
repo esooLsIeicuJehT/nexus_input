@@ -15,14 +15,18 @@ enum class ControllerType(val displayName: String, val vendorIdMatch: List<Int> 
 
 data class ControllerProfile(
     val id: String = "default_controller",
-    val type: ControllerType = ControllerType.XBOX,
+    val type: ControllerType = ControllerType.GENERIC_HID,
+    val connected: Boolean = false,
+    val deviceName: String? = null,
+    val vendorId: Int? = null,
+    val productId: Int? = null,
     val manualOverride: Boolean = false,
     val stickInnerDeadzone: Float = 0.12f,
     val stickOuterDeadzone: Float = 0.98f,
     val triggerDeadzone: Float = 0.05f,
     val triggerMaxPull: Float = 1.0f,
-    val pollingRateHz: Int = 250,       // 125Hz, 250Hz, 500Hz, 1000Hz
-    val swapAB: Boolean = false,        // Swap Nintendo vs Xbox layout
+    val pollingRateHz: Int = 250,
+    val swapAB: Boolean = false,
     val swapXY: Boolean = false,
     val gyroAimingEnabled: Boolean = false,
     val gyroSensitivity: Float = 1.0f

@@ -5,16 +5,16 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val ControlystColorScheme = darkColorScheme(
-    primary = ControlystCyan,
+private val NexusColorScheme = darkColorScheme(
+    primary = NexusCyan,
     onPrimary = Color(0xFF00363D),
-    primaryContainer = Color(0xFF1E2235),
-    onPrimaryContainer = ControlystCyan,
-    secondary = ControlystViolet,
+    primaryContainer = Color(0xFF0B2234),
+    onPrimaryContainer = NexusCyan,
+    secondary = NexusViolet,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFF282548),
-    onSecondaryContainer = ControlystBlue,
-    tertiary = ControlystBlue,
+    secondaryContainer = Color(0xFF241D4D),
+    onSecondaryContainer = NexusVioletLight,
+    tertiary = NexusBlue,
     background = GraphiteFoundation,
     onBackground = TextPrimary,
     surface = DarkSurface,
@@ -22,17 +22,22 @@ private val ControlystColorScheme = darkColorScheme(
     surfaceVariant = DarkSurfaceElevated,
     onSurfaceVariant = TextSecondary,
     outline = DarkSurfaceBorder,
-    error = ControlystRed,
+    error = NexusRed,
     onError = Color.White
 )
 
 @Composable
-fun ControlystTheme(
-    content: @Composable () -> Unit
-) {
+fun NexusInputTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = ControlystColorScheme,
+        colorScheme = NexusColorScheme,
         typography = Typography,
         content = content
     )
 }
+
+/**
+ * Compatibility wrapper while legacy screens and tests still reference the old
+ * theme function name. New code should use NexusInputTheme.
+ */
+@Composable
+fun ControlystTheme(content: @Composable () -> Unit) = NexusInputTheme(content)
