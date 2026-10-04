@@ -65,6 +65,14 @@ android {
     aidl = true
   }
 
+  sourceSets {
+    getByName("main") {
+      // The Termux build produces libuinput_jni.so before Gradle runs. Register the
+      // prebuilt directory explicitly so AGP treats it as an input to JNI packaging.
+      jniLibs.srcDirs("src/main/jniLibs")
+    }
+  }
+
   if (!termuxPrebuiltNative) {
     externalNativeBuild {
       cmake {
