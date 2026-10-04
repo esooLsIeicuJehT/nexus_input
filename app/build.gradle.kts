@@ -67,9 +67,9 @@ android {
 
   sourceSets {
     getByName("main") {
-      // Termux builds libuinput_jni.so before Gradle starts. Register the canonical
-      // prebuilt JNI directory explicitly with AGP's AndroidSourceDirectorySet API.
-      jniLibs.setSrcDirs(listOf("src/main/jniLibs"))
+      // AGP 9.1 exposes source directories through the mutable directories set.
+      // The Termux build writes the verified prebuilt .so here before Gradle runs.
+      jniLibs.directories.add("src/main/jniLibs")
     }
   }
 
@@ -87,7 +87,10 @@ android {
     jniLibs {
       useLegacyPackaging = true
       if (termuxPrebuiltNative) {
-        keepDebugSymbols += "**/libuinput_jni.so"
+        // Android's NDK package contains desktop-host llvm-strip binaries. They cannot
+        // execute inside ARM64 Termux. Preserve debug symbols for every JNI library in
+        // this debug-only Termux path so AGP never invokes the incompatible host stripper.
+        keepDebugSymbols += "**/*.so"
       }
     }
   }
