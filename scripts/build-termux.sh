@@ -132,14 +132,17 @@ fi
 
 python3 scripts/check_native_boundary.py
 
-# AGP 9.1 can otherwise reuse native packaging state across Termux runs. Remove only
-# native packaging intermediates, then rebuild the merge stages with configuration-cache
-# reuse disabled so the freshly-created jniLibs tree is discovered in this invocation.
+# Native libraries are created outside Gradle on Termux. Remove only native/package
+# intermediates so AGP cannot reuse a graph that predates the freshly-built .so.
 rm -rf \
   app/build/intermediates/merged_jni_libs \
   app/build/intermediates/merged_native_libs \
   app/build/intermediates/stripped_native_libs \
-  app/build/intermediates/packaged_native_libs
+  app/build/intermediates/packaged_native_libs \
+  app/build/intermediates/compressed_native_libs \
+  app/build/intermediates/incremental/packageDebug \
+  app/build/intermediates/apk/debug \
+  app/build/outputs/apk/debug
 
 "${GRADLE_CMD[@]}" \
   :app:mergeDebugJniLibFolders \
@@ -160,10 +163,12 @@ fi
 
 echo "Merged JNI verified: $MERGED_SO"
 
-rm -f app/build/outputs/apk/debug/*.apk
+# Force a fresh complete APK pipeline. In Termux mode build.gradle keeps debug symbols
+# for all JNI libraries so AGP must not invoke the NDK's desktop-host llvm-strip binary.
 "${GRADLE_CMD[@]}" \
   :app:assembleDebug \
   -PtermuxPrebuiltNative=true \
+  --rerun-tasks \
   --no-configuration-cache \
   --stacktrace
 
@@ -173,6 +178,8 @@ APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head
 if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libuinput_jni.so'; then
   echo "APK native entries:" >&2
   unzip -l "$APK" | grep 'lib/' >&2 || true
+  echo "Post-merge native entries:" >&2
+  find app/build/intermediates -type f -name '*.so' -print >&2 2>/dev/null || true
   fail "APK does not contain lib/arm64-v8a/libuinput_jni.so"
 fi
 
