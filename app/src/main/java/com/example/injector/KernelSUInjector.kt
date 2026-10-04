@@ -20,7 +20,7 @@ import com.inputmapper.platform.root.KernelSUInjector as RuntimeKernelSUInjector
  * and logs.
  */
 class KernelSUInjector(
-    context: Context
+    context: Context = NexusRuntimeContext.require()
 ) : InputInjector {
     override val method: PrivilegeMethod = PrivilegeMethod.KERNELSU
 
