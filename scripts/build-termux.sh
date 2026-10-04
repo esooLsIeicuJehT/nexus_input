@@ -17,11 +17,52 @@ need aapt2
 need aidl
 need java
 need python3
+need curl
 need unzip
 
-[ -f ./gradlew ] || fail "gradlew is missing from the repository checkout. Refusing to fall back to a global Gradle install."
-chmod +x ./gradlew
-GRADLE_CMD=(./gradlew)
+WRAPPER_PROPS="$ROOT/gradle/wrapper/gradle-wrapper.properties"
+[ -f "$WRAPPER_PROPS" ] || fail "Missing $WRAPPER_PROPS; cannot determine the pinned Gradle version."
+DIST_URL="$(sed -n 's/^distributionUrl=//p' "$WRAPPER_PROPS" | tail -n 1 | sed 's#\\:#:#g')"
+[ -n "$DIST_URL" ] || fail "distributionUrl is missing from $WRAPPER_PROPS"
+DIST_FILE="${DIST_URL##*/}"
+case "$DIST_FILE" in
+  gradle-*-bin.zip) ;;
+  *) fail "Unexpected Gradle distribution '$DIST_FILE'. Expected gradle-<version>-bin.zip." ;;
+esac
+PINNED_GRADLE_VERSION="${DIST_FILE#gradle-}"
+PINNED_GRADLE_VERSION="${PINNED_GRADLE_VERSION%-bin.zip}"
+
+if [ -f "$ROOT/gradlew" ] && [ -f "$ROOT/gradle/wrapper/gradle-wrapper.jar" ]; then
+  chmod +x "$ROOT/gradlew"
+  GRADLE_CMD=("$ROOT/gradlew")
+  GRADLE_SOURCE="repository wrapper"
+else
+  BOOTSTRAP_ROOT="$HOME/.gradle/nexus-input-bootstrap"
+  ZIP_PATH="$BOOTSTRAP_ROOT/$DIST_FILE"
+  DIST_DIR="$BOOTSTRAP_ROOT/gradle-$PINNED_GRADLE_VERSION"
+  GRADLE_BIN="$DIST_DIR/bin/gradle"
+  mkdir -p "$BOOTSTRAP_ROOT"
+
+  if [ ! -x "$GRADLE_BIN" ]; then
+    if [ ! -f "$ZIP_PATH" ]; then
+      echo "Gradle wrapper files are incomplete; downloading pinned Gradle $PINNED_GRADLE_VERSION"
+      echo "Source: $DIST_URL"
+      TMP_ZIP="$ZIP_PATH.part"
+      rm -f "$TMP_ZIP"
+      curl -fL --retry 3 --retry-delay 2 -o "$TMP_ZIP" "$DIST_URL" || fail "Unable to download pinned Gradle distribution."
+      mv "$TMP_ZIP" "$ZIP_PATH"
+    fi
+    rm -rf "$DIST_DIR"
+    unzip -q "$ZIP_PATH" -d "$BOOTSTRAP_ROOT" || fail "Unable to unpack $ZIP_PATH"
+  fi
+
+  [ -x "$GRADLE_BIN" ] || fail "Pinned Gradle binary was not created at $GRADLE_BIN"
+  GRADLE_CMD=("$GRADLE_BIN")
+  GRADLE_SOURCE="pinned distribution bootstrap"
+fi
+
+ACTUAL_GRADLE_VERSION="$("${GRADLE_CMD[@]}" --version | sed -n 's/^Gradle //p' | head -n 1)"
+[ "$ACTUAL_GRADLE_VERSION" = "$PINNED_GRADLE_VERSION" ] || fail "Gradle version mismatch: expected $PINNED_GRADLE_VERSION, got '${ACTUAL_GRADLE_VERSION:-unknown}'."
 
 [ -f local.properties ] || fail "local.properties is missing. It must contain sdk.dir=<your Android SDK>."
 SDK_DIR="$(sed -n 's/^sdk.dir=//p' local.properties | tail -n 1)"
@@ -51,7 +92,7 @@ fi
 [ -L "$BUILD_TOOLS_DIR/aidl" ] || fail "SDK build-tools AIDL override was not created."
 [ "$(readlink "$BUILD_TOOLS_DIR/aidl")" = "$PREFIX/bin/aidl" ] || fail "SDK build-tools AIDL does not point to Termux AIDL."
 
-echo "Using Gradle wrapper: $(pwd)/gradlew"
+echo "Using Gradle: $PINNED_GRADLE_VERSION ($GRADLE_SOURCE)"
 echo "Using SDK: $SDK_DIR"
 echo "Using build-tools: $BUILD_TOOLS_DIR"
 echo "Using Termux AIDL: $PREFIX/bin/aidl"
@@ -91,10 +132,8 @@ fi
 
 python3 scripts/check_native_boundary.py
 
-# libuinput_jni.so is produced outside Gradle's task graph on Termux. Force the JNI merge
-# tasks to re-scan the explicit src/main/jniLibs source set so stale UP-TO-DATE state cannot
-# produce an APK that omits the freshly built library.
-rm -f app/build/outputs/apk/debug/*.apk 2>/dev/null || true
+# The .so is built outside Gradle on Termux. Refresh only the JNI/native merge tasks so Gradle
+# cannot reuse stale packaging state from a previous assemble.
 "${GRADLE_CMD[@]}" \
   :app:mergeDebugJniLibFolders \
   :app:mergeDebugNativeLibs \
@@ -102,14 +141,15 @@ rm -f app/build/outputs/apk/debug/*.apk 2>/dev/null || true
   --rerun-tasks \
   --stacktrace
 
+rm -f app/build/outputs/apk/debug/*.apk
 "${GRADLE_CMD[@]}" :app:assembleDebug -PtermuxPrebuiltNative=true --stacktrace
 
 APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
 [ -n "$APK" ] || fail "Gradle reported success but no debug APK was found."
 
 if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libuinput_jni.so'; then
-  echo "Native library exists at: $SO" >&2
-  find app/build/intermediates -type f -name 'libuinput_jni.so' -print 2>/dev/null >&2 || true
+  echo "APK native entries:" >&2
+  unzip -l "$APK" | grep 'lib/' >&2 || true
   fail "APK does not contain lib/arm64-v8a/libuinput_jni.so"
 fi
 
