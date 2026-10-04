@@ -8,16 +8,14 @@ import com.example.service.ControlystAccessibilityService
 class AccessibilityInjector : InputInjector {
     override val method: PrivilegeMethod = PrivilegeMethod.ACCESSIBILITY
 
-    override fun isAvailable(): Boolean {
-        return ControlystAccessibilityService.isServiceRunning()
-    }
+    override fun isAvailable(): Boolean = ControlystAccessibilityService.isServiceRunning()
 
     override fun injectTap(x: Float, y: Float): Boolean {
         val service = ControlystAccessibilityService.getInstance()
         return if (service != null) {
             service.performTap(x, y)
         } else {
-            Log.w("AccessibilityInjector", "Service not active for tap ($x, $y)")
+            Log.w(TAG, "Accessibility service is not active for tap ($x, $y)")
             false
         }
     }
@@ -27,19 +25,24 @@ class AccessibilityInjector : InputInjector {
         return if (service != null) {
             service.performDrag(path, durationMs)
         } else {
-            Log.w("AccessibilityInjector", "Service not active for drag")
+            Log.w(TAG, "Accessibility service is not active for drag")
             false
         }
     }
 
     override fun injectKeyEvent(keyCode: Int, action: Int): Boolean {
-        // Stock accessibility service has limited synthetic key event injection without root/IME,
-        // so we log or map to common accessible actions (Back, Home, etc.)
-        Log.d("AccessibilityInjector", "injectKeyEvent keyCode=$keyCode action=$action")
-        return true
+        Log.e(
+            TAG,
+            "Arbitrary key injection is not supported by the Accessibility backend. keyCode=$keyCode action=$action"
+        )
+        return false
     }
 
     override fun cleanup() {
-        Log.d("AccessibilityInjector", "Accessibility injector cleaned up")
+        Log.d(TAG, "Accessibility injector cleanup: no persistent injection session")
+    }
+
+    private companion object {
+        const val TAG = "NexusAccessibility"
     }
 }
