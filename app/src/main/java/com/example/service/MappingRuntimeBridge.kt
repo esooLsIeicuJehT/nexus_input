@@ -45,8 +45,11 @@ object MappingRuntimeBridge {
     fun setForegroundPackage(packageName: String?) {
         val current = _state.value
         if (!current.armed) return
+        val isTarget = packageName != null && packageName == current.gamePackage
         _state.value = current.copy(
-            targetForeground = packageName != null && packageName == current.gamePackage
+            targetForeground = isTarget,
+            backendReady = if (isTarget) current.backendReady else false,
+            error = if (isTarget) current.error else null
         )
     }
 
