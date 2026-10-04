@@ -31,6 +31,8 @@ import kotlinx.coroutines.withContext
 class MappingForegroundService : Service() {
 
     companion object {
+        private const val TAG = "NexusMappingService"
+
         const val CHANNEL_ID = "nexus_mapping_service_channel"
         const val NOTIFICATION_ID = 202
 
@@ -152,7 +154,7 @@ class MappingForegroundService : Service() {
                 if (android.provider.Settings.canDrawOverlays(this@MappingForegroundService)) {
                     crosshairOverlayManager?.hideOverlay()
                     crosshairOverlayManager = CrosshairOverlayManager(this@MappingForegroundService).apply {
-                        showOverlay(config.crosshair)
+                        showOverlay(currentCrosshairConfig)
                     }
                 }
             }
@@ -274,9 +276,5 @@ class MappingForegroundService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
-    }
-
-    private companion object {
-        const val TAG = "NexusMappingService"
     }
 }
