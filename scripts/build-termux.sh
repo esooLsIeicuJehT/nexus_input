@@ -132,17 +132,40 @@ fi
 
 python3 scripts/check_native_boundary.py
 
-# The .so is built outside Gradle on Termux. Refresh only the JNI/native merge tasks so Gradle
-# cannot reuse stale packaging state from a previous assemble.
+# AGP 9.1 can otherwise reuse native packaging state across Termux runs. Remove only
+# native packaging intermediates, then rebuild the merge stages with configuration-cache
+# reuse disabled so the freshly-created jniLibs tree is discovered in this invocation.
+rm -rf \
+  app/build/intermediates/merged_jni_libs \
+  app/build/intermediates/merged_native_libs \
+  app/build/intermediates/stripped_native_libs \
+  app/build/intermediates/packaged_native_libs
+
 "${GRADLE_CMD[@]}" \
   :app:mergeDebugJniLibFolders \
   :app:mergeDebugNativeLibs \
   -PtermuxPrebuiltNative=true \
   --rerun-tasks \
+  --no-configuration-cache \
   --stacktrace
 
+MERGED_SO="$(find app/build/intermediates -type f -name 'libuinput_jni.so' -path '*merged_native_libs*' -print -quit 2>/dev/null || true)"
+if [ -z "$MERGED_SO" ]; then
+  echo "Source JNI library:" >&2
+  ls -lh "$SO" >&2 || true
+  echo "Native merge outputs:" >&2
+  find app/build/intermediates -type f -path '*native*' -name '*.so' -print >&2 2>/dev/null || true
+  fail "Gradle did not carry libuinput_jni.so into the merged native-libs stage."
+fi
+
+echo "Merged JNI verified: $MERGED_SO"
+
 rm -f app/build/outputs/apk/debug/*.apk
-"${GRADLE_CMD[@]}" :app:assembleDebug -PtermuxPrebuiltNative=true --stacktrace
+"${GRADLE_CMD[@]}" \
+  :app:assembleDebug \
+  -PtermuxPrebuiltNative=true \
+  --no-configuration-cache \
+  --stacktrace
 
 APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
 [ -n "$APK" ] || fail "Gradle reported success but no debug APK was found."
