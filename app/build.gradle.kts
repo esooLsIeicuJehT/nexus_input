@@ -67,9 +67,9 @@ android {
 
   sourceSets {
     getByName("main") {
-      // The Termux build produces libuinput_jni.so before Gradle runs. Register the
-      // prebuilt directory explicitly so AGP treats it as an input to JNI packaging.
-      jniLibs.srcDirs("src/main/jniLibs")
+      // Termux builds libuinput_jni.so before Gradle starts. Register the canonical
+      // prebuilt JNI directory explicitly with AGP's AndroidSourceDirectorySet API.
+      jniLibs.setSrcDirs(listOf("src/main/jniLibs"))
     }
   }
 
