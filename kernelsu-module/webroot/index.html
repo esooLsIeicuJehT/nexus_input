@@ -3,67 +3,150 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>NEXUS INPUT</title>
+  <meta name="theme-color" content="#03070d" />
+  <title>NEXUS INPUT · KernelSU</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main>
-    <header class="hero">
-      <div class="brand">NEXUS <span>INPUT</span></div>
-      <div class="tagline">PLAY YOUR WAY</div>
-      <h1>KernelSU Control Plane</h1>
-      <p>Live root/input health. Nothing is marked ready unless the device actually reports it.</p>
-    </header>
-
-    <section class="card status-grid">
-      <div class="tile"><span>APK</span><strong id="apk">Checking…</strong></div>
-      <div class="tile"><span>/dev/uinput</span><strong id="uinput">Checking…</strong></div>
-      <div class="tile"><span>/dev/uhid</span><strong id="uhid">Checking…</strong></div>
-      <div class="tile"><span>SELinux</span><strong id="selinux">Checking…</strong></div>
-      <div class="tile wide"><span>NEXUS processes</span><strong id="processes">Checking…</strong></div>
-    </section>
-
-    <section class="actions">
-      <button id="refresh">Refresh diagnostics</button>
-      <button id="launch" class="secondary">Launch NEXUS INPUT</button>
-    </section>
-
-    <section class="card update-card">
-      <div class="section-title">GitHub Module Update</div>
-      <div class="update-row"><span>Installed</span><strong id="installedVersion">Checking…</strong></div>
-      <div class="update-row"><span>GitHub</span><strong id="remoteVersion">Not checked</strong></div>
-      <div class="actions update-actions">
-        <button id="checkUpdate" class="secondary">Check GitHub</button>
-        <button id="installUpdate" disabled>Install update</button>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-lockup">
+        <div class="brand-mark">N</div>
+        <div>
+          <div class="brand-name">NEXUS</div>
+          <div class="brand-sub">INPUT</div>
+        </div>
       </div>
-      <pre id="updateStatus">Updates are verified with SHA-256 before KernelSU stages them. A reboot is required after installation.</pre>
-    </section>
 
-    <section class="card">
-      <div class="section-title">APK Runtime</div>
-      <pre id="runtimeStatus">Waiting for NEXUS INPUT root runtime…</pre>
-    </section>
+      <div class="module-badge"><i></i> KernelSU companion</div>
 
-    <section class="card">
-      <div class="section-title">Devices & Controllers</div>
-      <pre id="devices">Checking…</pre>
-    </section>
+      <nav class="side-nav" aria-label="KernelSU sections">
+        <a href="#overview" class="active"><span>◈</span> Overview</a>
+        <a href="#devices-panel"><span>⌁</span> Devices</a>
+        <a href="#runtime-panel"><span>▣</span> Runtime</a>
+        <a href="#update-panel"><span>↻</span> Updates</a>
+        <a href="#log-panel"><span>›_</span> Logs</a>
+      </nav>
 
-    <section class="card">
-      <div class="section-title">KernelSU Module Config</div>
-      <pre id="moduleConfig">Checking…</pre>
-    </section>
+      <div class="sidebar-foot">
+        <span>ROOT CONTROL PLANE</span>
+        <small>Live values only. Failed probes stay failed.</small>
+      </div>
+    </aside>
 
-    <section class="card">
-      <div class="section-title">Boot Probe</div>
-      <pre id="bootStatus">Checking…</pre>
-    </section>
+    <main class="workspace">
+      <header class="topbar" id="overview">
+        <div>
+          <div class="eyebrow">SYSTEM / ROOT COMPANION</div>
+          <h1>KernelSU Control Center</h1>
+          <p>Input backend health, Android runtime state, module updates, and connected Linux input nodes.</p>
+        </div>
+        <div class="top-actions">
+          <button id="refresh" class="button ghost">Refresh diagnostics</button>
+          <button id="launch" class="button primary">Launch NEXUS INPUT</button>
+        </div>
+      </header>
 
-    <section class="card log-card">
-      <div class="section-title">Last Command</div>
-      <pre id="log">Ready.</pre>
-    </section>
-  </main>
+      <section class="hero-panel">
+        <div class="hero-orb"><span>N</span></div>
+        <div class="hero-copy">
+          <div class="eyebrow"><i class="live-dot"></i> NEXUS ROOT ENGINE</div>
+          <h2>Kernel-level status, without pretend-green lights.</h2>
+          <p>The cards below are populated by live shell probes through KernelSU WebUI. Missing permissions, devices, or APK state remain visible as failures.</p>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-label="Live diagnostics">
+        <article class="metric-card">
+          <span>ANDROID APK</span>
+          <strong id="apk">Checking…</strong>
+          <small>Installed package state</small>
+        </article>
+        <article class="metric-card">
+          <span>/DEV/UINPUT</span>
+          <strong id="uinput">Checking…</strong>
+          <small>Virtual input capability</small>
+        </article>
+        <article class="metric-card">
+          <span>/DEV/UHID</span>
+          <strong id="uhid">Checking…</strong>
+          <small>HID capability</small>
+        </article>
+        <article class="metric-card">
+          <span>SELINUX</span>
+          <strong id="selinux">Checking…</strong>
+          <small>Current enforcement mode</small>
+        </article>
+        <article class="metric-card wide">
+          <span>NEXUS PROCESSES</span>
+          <strong id="processes">Checking…</strong>
+          <small>Matching live process contexts</small>
+        </article>
+      </section>
+
+      <section class="card update-card" id="update-panel">
+        <div class="card-heading">
+          <div>
+            <div class="eyebrow">GITHUB DELIVERY</div>
+            <h3>Module Update</h3>
+          </div>
+          <span class="secure-chip">SHA-256 VERIFIED</span>
+        </div>
+        <div class="update-grid">
+          <div class="version-box"><span>INSTALLED</span><strong id="installedVersion">Checking…</strong></div>
+          <div class="version-arrow">→</div>
+          <div class="version-box"><span>GITHUB</span><strong id="remoteVersion">Not checked</strong></div>
+        </div>
+        <div class="button-row">
+          <button id="checkUpdate" class="button ghost">Check GitHub</button>
+          <button id="installUpdate" class="button primary" disabled>Install update</button>
+        </div>
+        <pre id="updateStatus" class="status-console">Updates are verified with SHA-256 before KernelSU stages them. A reboot is required after installation.</pre>
+      </section>
+
+      <section class="detail-grid">
+        <article class="card" id="runtime-panel">
+          <div class="card-heading compact">
+            <div><div class="eyebrow">APK BRIDGE</div><h3>Runtime State</h3></div>
+            <span class="icon-chip">APK</span>
+          </div>
+          <pre id="runtimeStatus">Waiting for NEXUS INPUT root runtime…</pre>
+        </article>
+
+        <article class="card" id="devices-panel">
+          <div class="card-heading compact">
+            <div><div class="eyebrow">LINUX INPUT</div><h3>Devices & Controllers</h3></div>
+            <span class="icon-chip">HID</span>
+          </div>
+          <pre id="devices">Checking…</pre>
+        </article>
+
+        <article class="card">
+          <div class="card-heading compact">
+            <div><div class="eyebrow">KERNELSU</div><h3>Module Config</h3></div>
+            <span class="icon-chip">CFG</span>
+          </div>
+          <pre id="moduleConfig">Checking…</pre>
+        </article>
+
+        <article class="card">
+          <div class="card-heading compact">
+            <div><div class="eyebrow">BOOT</div><h3>Boot Probe</h3></div>
+            <span class="icon-chip">SYS</span>
+          </div>
+          <pre id="bootStatus">Checking…</pre>
+        </article>
+      </section>
+
+      <section class="card log-card" id="log-panel">
+        <div class="card-heading compact">
+          <div><div class="eyebrow">TERMINAL</div><h3>Last Command</h3></div>
+          <span class="terminal-dot"></span>
+        </div>
+        <pre id="log">Ready.</pre>
+      </section>
+    </main>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

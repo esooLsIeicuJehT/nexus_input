@@ -1,6 +1,8 @@
 package com.example
 
 import android.os.Bundle
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -9,16 +11,31 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.input.ControllerInputMonitor
 import com.example.service.MappingForegroundService
 import com.example.ui.MainAppViewModel
 import com.example.ui.nexus.NexusAppShell
+import com.example.ui.nexus.NexusSplashScreen
 import com.example.ui.onboarding.OnboardingScreen
 import com.example.ui.theme.NexusInputTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainAppViewModel by viewModels()
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        ControllerInputMonitor.onMotionEvent(event)
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        ControllerInputMonitor.onKeyEvent(event)
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,9 +47,15 @@ class MainActivity : ComponentActivity() {
                 val currentTab by viewModel.currentTab.collectAsState()
                 val snackMessage by viewModel.snackMessage.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
+                var showSplash by remember { mutableStateOf(true) }
 
                 LaunchedEffect(Unit) {
                     if (currentTab == "library") viewModel.selectTab("home")
+                    // This is a minimum visual handoff delay, not a claim that every
+                    // privilege/backend probe has completed. Those states remain live
+                    // and are surfaced explicitly by the dashboard after launch.
+                    delay(850)
+                    showSplash = false
                 }
 
                 LaunchedEffect(snackMessage) {
@@ -42,13 +65,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (onboardingStep >= 0) {
-                    OnboardingScreen(
+                when {
+                    showSplash -> NexusSplashScreen()
+                    onboardingStep >= 0 -> OnboardingScreen(
                         viewModel = viewModel,
                         onFinish = { viewModel.completeOnboarding() }
                     )
-                } else {
-                    NexusAppShell(
+                    else -> NexusAppShell(
                         viewModel = viewModel,
                         snackbarHostState = snackbarHostState,
                         onPanicKill = {

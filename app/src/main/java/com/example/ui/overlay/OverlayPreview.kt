@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,134 +48,220 @@ fun FloatingOverlayHUD(
     var offsetY by remember { mutableFloatStateOf(250f) }
     var isMenuOpen by remember { mutableStateOf(false) }
     val isOverlayVisible by MappingForegroundService.isOverlayVisible.collectAsState()
+    val controller by viewModel.controllerProfile.collectAsState()
+    val activeConfig by viewModel.activeConfig.collectAsState()
+    val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     if (!isOverlayVisible) return
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        // Floating Draggable Icon with Edge Snapping
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val heightPx = constraints.maxHeight.toFloat()
+        val bubblePx = with(density) { 50.dp.toPx() }
+        val marginPx = with(density) { 10.dp.toPx() }
+        val menuWidthPx = with(density) { 244.dp.toPx() }
+        val menuHeightEstimatePx = with(density) { 310.dp.toPx() }
+        val gapPx = with(density) { 8.dp.toPx() }
+
+        LaunchedEffect(widthPx, heightPx) {
+            offsetX = offsetX.coerceIn(marginPx, (widthPx - bubblePx - marginPx).coerceAtLeast(marginPx))
+            offsetY = offsetY.coerceIn(marginPx, (heightPx - bubblePx - marginPx).coerceAtLeast(marginPx))
+        }
+
+        val menuX = offsetX.coerceIn(
+            marginPx,
+            (widthPx - menuWidthPx - marginPx).coerceAtLeast(marginPx)
+        )
+        val roomBelow = heightPx - (offsetY + bubblePx + gapPx)
+        val menuY = if (roomBelow >= menuHeightEstimatePx) {
+            offsetY + bubblePx + gapPx
+        } else {
+            (offsetY - menuHeightEstimatePx - gapPx).coerceAtLeast(marginPx)
+        }
+
         Box(
             modifier = Modifier
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-                .size(54.dp)
-                .shadow(12.dp, CircleShape)
+                .size(50.dp)
+                .shadow(14.dp, CircleShape)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(CyberCyan, Color(0xFF005A66))
+                        colors = listOf(NexusCyan, NexusBlue, NexusViolet)
                     )
                 )
-                .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
-                .pointerInput(Unit) {
+                .border(1.5.dp, Color.White.copy(alpha = 0.75f), CircleShape)
+                .pointerInput(widthPx, heightPx) {
                     detectDragGestures(
                         onDragEnd = {
-                            // Edge snap simulation (snap to left or right screen border)
-                            val screenW = 1000f // approximate container density boundary
-                            offsetX = if (offsetX < screenW / 2f) 20f else (screenW - 120f).coerceAtLeast(20f)
+                            val centerX = offsetX + bubblePx / 2f
+                            offsetX = if (centerX < widthPx / 2f) {
+                                marginPx
+                            } else {
+                                (widthPx - bubblePx - marginPx).coerceAtLeast(marginPx)
+                            }
+                            offsetY = offsetY.coerceIn(
+                                marginPx,
+                                (heightPx - bubblePx - marginPx).coerceAtLeast(marginPx)
+                            )
                         }
                     ) { change, dragAmount ->
                         change.consume()
-                        offsetX = (offsetX + dragAmount.x).coerceAtLeast(10f)
-                        offsetY = (offsetY + dragAmount.y).coerceIn(100f, 1800f)
+                        offsetX = (offsetX + dragAmount.x).coerceIn(
+                            marginPx,
+                            (widthPx - bubblePx - marginPx).coerceAtLeast(marginPx)
+                        )
+                        offsetY = (offsetY + dragAmount.y).coerceIn(
+                            marginPx,
+                            (heightPx - bubblePx - marginPx).coerceAtLeast(marginPx)
+                        )
                     }
                 }
                 .clickable { isMenuOpen = !isMenuOpen },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Default.SportsEsports,
-                contentDescription = "Controlyst Quick HUD",
-                tint = Color(0xFF00363D),
-                modifier = Modifier.size(30.dp)
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF06121F)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("N", color = NexusCyan, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(if (controller.connected) AccentGreen else AccentAmber)
+                    .border(1.dp, Color(0xFF06121F), CircleShape)
             )
         }
 
-        // Radial / Quick Menu Dropdown
         AnimatedVisibility(
             visible = isMenuOpen,
-            enter = fadeIn() + slideInVertically { it / 2 },
-            exit = fadeOut() + slideOutVertically { it / 2 },
-            modifier = Modifier
-                .offset { IntOffset(offsetX.roundToInt(), (offsetY + 65f).roundToInt()) }
+            enter = fadeIn() + slideInVertically { it / 3 },
+            exit = fadeOut() + slideOutVertically { it / 3 },
+            modifier = Modifier.offset {
+                IntOffset(menuX.roundToInt(), menuY.roundToInt())
+            }
         ) {
             Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = DarkSurfaceElevated),
-                border = BorderStroke(1.5.dp, CyberCyan),
-                modifier = Modifier.width(220.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xF5081624)),
+                border = BorderStroke(1.dp, NexusCyan.copy(alpha = 0.75f)),
+                modifier = Modifier.width(244.dp)
             ) {
-                Column(modifier = Modifier.padding(10.dp)) {
+                Column(modifier = Modifier.padding(11.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Controlyst HUD", color = CyberCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("NEXUS INPUT", color = NexusCyan, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
+                            Text(
+                                activeConfig.profileName,
+                                color = TextSecondary,
+                                fontSize = 9.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         IconButton(
                             onClick = { isMenuOpen = false },
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Close quick menu", tint = TextMuted, modifier = Modifier.size(16.dp))
                         }
                     }
 
-                    HorizontalDivider(color = DarkSurfaceBorder, modifier = Modifier.padding(vertical = 6.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                        shape = RoundedCornerShape(9.dp),
+                        color = Color(0xFF0A1C2B),
+                        border = BorderStroke(1.dp, DarkSurfaceBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(7.dp).clip(CircleShape)
+                                    .background(if (controller.connected) AccentGreen else AccentAmber)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    controller.deviceName ?: "No controller detected",
+                                    color = TextPrimary,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(activePrivilege.badgeLabel, color = TextMuted, fontSize = 8.sp)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = DarkSurfaceBorder, modifier = Modifier.padding(vertical = 7.dp))
 
                     QuickMenuItem(
                         icon = Icons.Default.Tune,
                         title = "Live Visual Mapper",
-                        onClick = {
-                            isMenuOpen = false
-                            onOpenMapper()
-                        }
-                    )
+                        subtitle = "Edit the active profile"
+                    ) {
+                        isMenuOpen = false
+                        onOpenMapper()
+                    }
                     QuickMenuItem(
                         icon = Icons.Default.CenterFocusStrong,
                         title = "Crosshair Settings",
-                        onClick = {
-                            isMenuOpen = false
-                            onOpenCrosshair()
-                        }
-                    )
+                        subtitle = "Overlay position and style"
+                    ) {
+                        isMenuOpen = false
+                        onOpenCrosshair()
+                    }
                     QuickMenuItem(
                         icon = Icons.Default.Speed,
-                        title = "Calibration Lab",
-                        onClick = {
-                            isMenuOpen = false
-                            onOpenCalibration()
-                        }
-                    )
+                        title = "Controller Calibration",
+                        subtitle = "Deadzone and trigger tools"
+                    ) {
+                        isMenuOpen = false
+                        onOpenCalibration()
+                    }
 
                     onOpenRootWebUi?.let { openWebUi ->
                         QuickMenuItem(
                             icon = Icons.Default.Terminal,
-                            title = "Root WebUI Daemon",
-                            onClick = {
-                                isMenuOpen = false
-                                openWebUi()
-                            }
-                        )
+                            title = "KernelSU WebUI",
+                            subtitle = "Root companion controls"
+                        ) {
+                            isMenuOpen = false
+                            openWebUi()
+                        }
                     }
 
-                    HorizontalDivider(color = DarkSurfaceBorder, modifier = Modifier.padding(vertical = 6.dp))
+                    HorizontalDivider(color = DarkSurfaceBorder, modifier = Modifier.padding(vertical = 7.dp))
 
-                    // Panic Kill-Switch
                     Button(
                         onClick = {
                             isMenuOpen = false
                             MappingForegroundService.triggerPanicKill(context)
-                            viewModel.showSnack("Panic Kill Activated! Overlay & injection terminated.")
+                            viewModel.showSnack("Panic kill activated. Overlay and injection terminated.")
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AccentRose),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(9.dp),
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 6.dp)
+                        contentPadding = PaddingValues(vertical = 7.dp)
                     ) {
                         Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Panic Kill-Switch", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Panic Kill", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
                 }
             }
@@ -185,18 +273,32 @@ fun FloatingOverlayHUD(
 fun QuickMenuItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
+    subtitle: String? = null,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onClick() }
+            .clip(RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
             .padding(vertical = 8.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Surface(
+            modifier = Modifier.size(30.dp),
+            shape = RoundedCornerShape(8.dp),
+            color = NexusCyan.copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, NexusCyan.copy(alpha = 0.24f))
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = NexusCyan, modifier = Modifier.size(17.dp))
+            }
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            subtitle?.let { Text(it, color = TextMuted, fontSize = 8.sp) }
+        }
+        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
     }
 }
