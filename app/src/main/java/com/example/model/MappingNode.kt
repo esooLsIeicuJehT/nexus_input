@@ -28,7 +28,13 @@ data class MappingNode(
     val macroActions: List<MacroStep> = emptyList(),
     val buttonBehavior: ButtonBehavior = if (
         boundKey.uppercase() in setOf("LT", "RT", "L2", "R2")
-    ) ButtonBehavior.HOLD else ButtonBehavior.TAP
+    ) ButtonBehavior.HOLD else ButtonBehavior.TAP,
+    val inputKeyCode: Int? = null,
+    val inputScanCode: Int? = null,
+    val touchSlot: Int? = null,
+    val axisX: Int? = null,
+    val axisY: Int? = null,
+    val invertY: Boolean = false
 )
 
 data class MacroStep(
