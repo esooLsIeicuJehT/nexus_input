@@ -36,6 +36,10 @@ class KernelSUInjector(
         return probe?.isDetected == true
     }
 
+    override fun prepare(): Boolean = synchronized(lock) {
+        ensureRuntime() != null
+    }
+
     override fun injectTap(x: Float, y: Float): Boolean = synchronized(lock) {
         val injector = ensureRuntime() ?: return@synchronized false
         result("tap", injector.injectTap(x, y))
@@ -59,6 +63,21 @@ class KernelSUInjector(
     override fun injectKeyEvent(keyCode: Int, action: Int): Boolean = synchronized(lock) {
         val injector = ensureRuntime() ?: return@synchronized false
         result("key", injector.injectKeyEvent(keyCode, action))
+    }
+
+    override fun beginTouch(pointerId: Int, x: Float, y: Float): Boolean = synchronized(lock) {
+        val injector = ensureRuntime() ?: return@synchronized false
+        result("touch begin", injector.beginTouch(pointerId, x, y))
+    }
+
+    override fun moveTouch(pointerId: Int, x: Float, y: Float): Boolean = synchronized(lock) {
+        val injector = ensureRuntime() ?: return@synchronized false
+        result("touch move", injector.moveTouch(pointerId, x, y))
+    }
+
+    override fun endTouch(pointerId: Int): Boolean = synchronized(lock) {
+        val injector = runtime ?: return@synchronized false
+        result("touch end", injector.endTouch(pointerId))
     }
 
     override fun cleanup() = synchronized(lock) {
