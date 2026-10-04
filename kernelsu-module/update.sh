@@ -132,7 +132,10 @@ find_ksud() {
 verify_sha256() {
     expected=$1
     file=$2
-    [ -n "$expected" ] || return 0
+    if [ -z "$expected" ]; then
+        echo "ERROR=update manifest did not provide sha256"
+        return 2
+    fi
 
     BB=$(find_busybox 2>/dev/null || true)
     if [ -n "$BB" ] && "$BB" --list 2>/dev/null | grep -qx sha256sum; then
