@@ -17,6 +17,7 @@ need aapt2
 need aidl
 need java
 need python3
+need unzip
 
 [ -f ./gradlew ] || fail "gradlew is missing from the repository checkout. Refusing to fall back to a global Gradle install."
 chmod +x ./gradlew
@@ -89,12 +90,26 @@ if echo "$READELF" | grep -q 'libc++_shared.so'; then
 fi
 
 python3 scripts/check_native_boundary.py
+
+# libuinput_jni.so is produced outside Gradle's task graph on Termux. Force the JNI merge
+# tasks to re-scan the explicit src/main/jniLibs source set so stale UP-TO-DATE state cannot
+# produce an APK that omits the freshly built library.
+rm -f app/build/outputs/apk/debug/*.apk 2>/dev/null || true
+"${GRADLE_CMD[@]}" \
+  :app:mergeDebugJniLibFolders \
+  :app:mergeDebugNativeLibs \
+  -PtermuxPrebuiltNative=true \
+  --rerun-tasks \
+  --stacktrace
+
 "${GRADLE_CMD[@]}" :app:assembleDebug -PtermuxPrebuiltNative=true --stacktrace
 
 APK="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | head -n 1)"
 [ -n "$APK" ] || fail "Gradle reported success but no debug APK was found."
 
 if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libuinput_jni.so'; then
+  echo "Native library exists at: $SO" >&2
+  find app/build/intermediates -type f -name 'libuinput_jni.so' -print 2>/dev/null >&2 || true
   fail "APK does not contain lib/arm64-v8a/libuinput_jni.so"
 fi
 
