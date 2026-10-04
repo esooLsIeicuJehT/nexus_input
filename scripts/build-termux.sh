@@ -18,12 +18,9 @@ need aidl
 need java
 need python3
 
-if [ -x ./gradlew ]; then
-  GRADLE_CMD=(./gradlew)
-else
-  need gradle
-  GRADLE_CMD=(gradle)
-fi
+[ -f ./gradlew ] || fail "gradlew is missing from the repository checkout. Refusing to fall back to a global Gradle install."
+chmod +x ./gradlew
+GRADLE_CMD=(./gradlew)
 
 [ -f local.properties ] || fail "local.properties is missing. It must contain sdk.dir=<your Android SDK>."
 SDK_DIR="$(sed -n 's/^sdk.dir=//p' local.properties | tail -n 1)"
@@ -48,6 +45,16 @@ if [ ! -L "$BUILD_TOOLS_DIR/aidl" ] || [ "$(readlink "$BUILD_TOOLS_DIR/aidl" 2>/
   fi
   ln -s "$PREFIX/bin/aidl" "$BUILD_TOOLS_DIR/aidl"
 fi
+
+[ -x "$PREFIX/bin/aidl" ] || fail "Termux AIDL is not executable at $PREFIX/bin/aidl"
+[ -L "$BUILD_TOOLS_DIR/aidl" ] || fail "SDK build-tools AIDL override was not created."
+[ "$(readlink "$BUILD_TOOLS_DIR/aidl")" = "$PREFIX/bin/aidl" ] || fail "SDK build-tools AIDL does not point to Termux AIDL."
+
+echo "Using Gradle wrapper: $(pwd)/gradlew"
+echo "Using SDK: $SDK_DIR"
+echo "Using build-tools: $BUILD_TOOLS_DIR"
+echo "Using Termux AIDL: $PREFIX/bin/aidl"
+ls -l "$BUILD_TOOLS_DIR/aidl"
 
 OUT="$ROOT/app/src/main/jniLibs/arm64-v8a"
 rm -rf "$ROOT/.termux-native"
