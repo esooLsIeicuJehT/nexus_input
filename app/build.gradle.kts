@@ -17,11 +17,11 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.controlyst.nxzvrq"
+    applicationId = "com.inputmapper.platform"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 15
+    versionName = "0.7.0-dev"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
