@@ -88,3 +88,11 @@ object ControllerInputMonitor {
         return gamepad || joystick || dpad
     }
 }
+
+/** Independent of tester UI state so activity/service listener order cannot hide a disconnect. */
+internal class ControllerSessionDevices {
+    private val captured = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    fun record(deviceId: Int) { captured.add(deviceId) }
+    fun remove(deviceId: Int): Boolean = captured.remove(deviceId)
+    fun clear() = captured.clear()
+}

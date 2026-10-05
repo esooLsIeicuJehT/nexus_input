@@ -15,6 +15,8 @@ object PrivilegeBackendSelector {
         PrivilegeMethod.ACCESSIBILITY
     )
 
+    fun order(forced: PrivilegeMethod? = null): List<PrivilegeMethod> = forced?.let { listOf(it) } ?: priority
+
     fun choose(
         results: List<PrivilegeProbeResult>,
         forced: PrivilegeMethod? = null
@@ -26,7 +28,7 @@ object PrivilegeBackendSelector {
             }
         }
 
-        return priority.asSequence()
+        return order().asSequence()
             .mapNotNull { method -> results.firstOrNull { it.method == method } }
             .firstOrNull { it.state == PrivilegeAvailabilityState.AVAILABLE }
     }

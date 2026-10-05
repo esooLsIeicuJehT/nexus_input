@@ -94,7 +94,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }    override fun onDestroy() {
+    }
+
+    override fun onDestroy() {
         getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
         super.onDestroy()
     }

@@ -17,6 +17,11 @@ class BackendSelectionTest {
         assertNull(PrivilegeBackendSelector.choose(list));assertNull(PrivilegeBackendSelector.choose(list,PrivilegeMethod.APATCH))
         assertFalse(APatchInjector().isAvailable())
     }
+    @Test fun runtimeUsesTheSamePriorityAndForcedOrderAsSelection() {
+        assertEquals(listOf(PrivilegeMethod.KERNELSU,PrivilegeMethod.SHIZUKU,PrivilegeMethod.MAGISK,PrivilegeMethod.ACCESSIBILITY),PrivilegeBackendSelector.order())
+        assertEquals(listOf(PrivilegeMethod.SHIZUKU),PrivilegeBackendSelector.order(PrivilegeMethod.SHIZUKU))
+        assertEquals(listOf(PrivilegeMethod.APATCH),PrivilegeBackendSelector.order(PrivilegeMethod.APATCH))
+    }
     @Test fun forcedBackendNeverSwitchesToAnother() {
         val list=listOf(result(PrivilegeMethod.MAGISK,PrivilegeAvailabilityState.AVAILABLE),
             result(PrivilegeMethod.SHIZUKU,PrivilegeAvailabilityState.ERROR))

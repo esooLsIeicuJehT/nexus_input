@@ -18,6 +18,15 @@ import org.robolectric.annotation.Config
 /** Android InputDevice/MotionEvent fixtures only; no physical controller verification is implied. */
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class ControllerInputTest {
+    @Test fun testerResetCannotHideCapturedControllerRemoval() {
+        val devices=com.example.input.ControllerSessionDevices()
+        devices.record(41);devices.record(42)
+        com.example.input.ControllerInputMonitor.onDeviceRemoved(41)
+        assertTrue(devices.remove(41));assertFalse(devices.remove(41))
+        assertTrue(devices.remove(42));devices.record(43);devices.clear()
+        assertFalse(devices.remove(43))
+    }
+
     private fun device(): Application {
         val app=ApplicationProvider.getApplicationContext<Application>()
         val device=InputDeviceBuilder.newBuilder().setId(41).setName("Test fixture gamepad").setDescriptor("fixture")
