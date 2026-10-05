@@ -110,7 +110,7 @@
           <article><h3>Battery safeguards</h3><pre id="batteryCapabilities">Not read</pre></article>
           <article><h3>Performance presets</h3><pre id="presetCapabilities">Not read</pre></article>
         </div>
-        <pre id="controlStatus">Root shell requests are serialized to protect the KernelSU WebUI host. Device capability scanning starts only after the previous startup probes finish.</pre>
+        <pre id="controlStatus">Device capabilities are not scanned automatically. Use the button above when you want live hardware values.</pre>
         <button id="readControlLog" class="button ghost">Read root control log</button>
       </section>
 
@@ -177,7 +177,6 @@
       </section>
     </main>
   </div>
-  <script src="bridge-guard.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
