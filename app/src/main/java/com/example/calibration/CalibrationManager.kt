@@ -140,22 +140,22 @@ class CalibrationManager(private val context: Context) {
         ControllerInputMonitor.onMotionEvent(event)
     }
 
-    private fun normalizedAxis(state: ControllerLiveState, axis: Int): Float? {
-        val label = when (axis) {
-            MotionEvent.AXIS_X -> "LX"
-            MotionEvent.AXIS_Y -> "LY"
-            MotionEvent.AXIS_Z -> "RX"
-            MotionEvent.AXIS_RZ -> "RY"
-            MotionEvent.AXIS_LTRIGGER -> "LT"
-            MotionEvent.AXIS_RTRIGGER -> "RT"
-            MotionEvent.AXIS_BRAKE -> "BRAKE"
-            MotionEvent.AXIS_GAS -> "GAS"
-            MotionEvent.AXIS_HAT_X -> "HAT_X"
-            MotionEvent.AXIS_HAT_Y -> "HAT_Y"
-            else -> null
-        } ?: return null
-        return state.normalizedAxes[label]
+    private fun axisLabel(axis: Int): String? = when (axis) {
+        MotionEvent.AXIS_X -> "LX"
+        MotionEvent.AXIS_Y -> "LY"
+        MotionEvent.AXIS_Z -> "RX"
+        MotionEvent.AXIS_RZ -> "RY"
+        MotionEvent.AXIS_LTRIGGER -> "LT"
+        MotionEvent.AXIS_RTRIGGER -> "RT"
+        MotionEvent.AXIS_BRAKE -> "BRAKE"
+        MotionEvent.AXIS_GAS -> "GAS"
+        MotionEvent.AXIS_HAT_X -> "HAT_X"
+        MotionEvent.AXIS_HAT_Y -> "HAT_Y"
+        else -> null
     }
+
+    private fun normalizedAxis(state: ControllerLiveState, axis: Int): Float? =
+        axisLabel(axis)?.let(state.normalizedAxes::get)
 
     internal fun computeDeadzones(rest: List<Float>, extension: List<Float>): Pair<Float, Float> {
         require(rest.size >= 5 && extension.size >= 5) { "At least five real samples are required in each phase" }
@@ -178,20 +178,22 @@ class CalibrationManager(private val context: Context) {
             return@withContext false
         }
         try {
+            require(axisLabel(axisX) != null && axisLabel(axisY) != null) {
+                "Calibration does not support requested axes X=$axisX Y=$axisY"
+            }
             val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
                 it.getMotionRange(axisX, InputDevice.SOURCE_JOYSTICK) != null &&
                     it.getMotionRange(axisY, InputDevice.SOURCE_JOYSTICK) != null
             } ?: error("No connected controller exposes the requested stick axes")
-            require(normalizedAxis(ControllerLiveState(normalizedAxes = mapOf("LX" to 0f, "LY" to 0f)), axisX) != null || axisX in setOf(MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ)) {
-                "Calibration does not support requested X axis=$axisX"
-            }
+
             _stickState.value = StickCalibrationState(phase = "REST: center stick; move slightly and release")
             onUpdate(_stickState.value)
             val rest = mutableListOf<Float>()
             val extension = mutableListOf<Float>()
+
             suspend fun gather(target: MutableList<Float>, duration: Long, phase: String) {
                 val start = SystemClock.uptimeMillis()
-                var lastEvent = Long.MIN_VALUE
+                var lastEvent = ControllerInputMonitor.state.value.lastEventUptimeMs
                 withTimeoutOrNull(duration) {
                     ControllerInputMonitor.state.collect { sample ->
                         if (sample.deviceId != device.id || sample.lastEventUptimeMs == lastEvent) return@collect
@@ -211,6 +213,7 @@ class CalibrationManager(private val context: Context) {
                     }
                 }
             }
+
             gather(rest, 2500, "REST: center stick; move slightly and release")
             _stickState.value = _stickState.value.copy(phase = "EXTENSION: rotate stick to its full edge")
             onUpdate(_stickState.value)
@@ -255,9 +258,10 @@ class CalibrationManager(private val context: Context) {
             val axis = if (device.getMotionRange(preferred, InputDevice.SOURCE_JOYSTICK) != null) preferred else alternate
             val rest = mutableListOf<Float>()
             val pull = mutableListOf<Float>()
+
             suspend fun gather(target: MutableList<Float>, phase: String) {
                 _triggerState.value = TriggerCalibrationState(phase = phase)
-                var lastEvent = Long.MIN_VALUE
+                var lastEvent = ControllerInputMonitor.state.value.lastEventUptimeMs
                 withTimeoutOrNull(3000) {
                     ControllerInputMonitor.state.collect { sample ->
                         if (sample.deviceId != device.id || sample.lastEventUptimeMs == lastEvent) return@collect
@@ -271,6 +275,7 @@ class CalibrationManager(private val context: Context) {
                     }
                 }
             }
+
             gather(rest, "REST: release trigger, press slightly then release")
             gather(pull, "PULL: repeatedly pull trigger fully")
             val (press, release) = computeTriggerThresholds(rest, pull)
