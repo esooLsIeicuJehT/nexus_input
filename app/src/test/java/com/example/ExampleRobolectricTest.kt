@@ -75,7 +75,7 @@ class ExampleRobolectricTest {
 
         val webUiHtml = com.example.module.KernelSuModuleManager.getWebUiHtml()
         assertTrue(webUiHtml.contains("NEXUS INPUT"))
-        assertTrue(webUiHtml.contains("/dev/uinput"))
+        assertTrue(webUiHtml.contains("id=\"uinput\""))
         assertTrue(com.example.module.KernelSuModuleManager.getServiceSh().contains("/dev/uinput"))
     }
 }

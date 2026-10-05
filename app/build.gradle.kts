@@ -12,6 +12,24 @@ plugins {
 val termuxPrebuiltNative =
   providers.gradleProperty("termuxPrebuiltNative").orNull == "true"
 
+val nexusVersion = java.util.Properties().apply {
+  rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val signingEnvironment = listOf("KEYSTORE_PATH", "STORE_PASSWORD", "KEY_PASSWORD").associateWith { System.getenv(it)?.takeIf(String::isNotBlank) }
+val signingSupplied = signingEnvironment.values.all { it != null }
+val unsignedRelease = providers.gradleProperty("unsignedRelease").orNull == "true"
+require(signingEnvironment.values.none { it != null } || signingSupplied) {
+  "Release signing is incomplete: provide KEYSTORE_PATH, STORE_PASSWORD and KEY_PASSWORD together."
+}
+require(!(unsignedRelease && signingSupplied)) { "unsignedRelease cannot be combined with signing credentials" }
+gradle.taskGraph.whenReady {
+  val releaseRequested = allTasks.any { it.project == project && it.name.endsWith("Release", ignoreCase = true) }
+  if (releaseRequested && !signingSupplied && !unsignedRelease) {
+    error("Release signing credentials are missing. For an explicitly UNSIGNED CI validation build, use -PunsignedRelease=true.")
+  }
+  if (releaseRequested && unsignedRelease) logger.lifecycle("UNSIGNED release validation: this artifact cannot upgrade an installed signed app.")
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -20,8 +38,8 @@ android {
     applicationId = "com.inputmapper.platform"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "0.7.0-dev"
+    versionCode = nexusVersion.getProperty("versionCode").toInt()
+    versionName = nexusVersion.getProperty("versionName")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -36,11 +54,10 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
+      storeFile = signingEnvironment["KEYSTORE_PATH"]?.let { file(it) }
+      storePassword = signingEnvironment["STORE_PASSWORD"]
       keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      keyPassword = signingEnvironment["KEY_PASSWORD"]
     }
   }
 
@@ -49,7 +66,7 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      if (signingSupplied) signingConfig = signingConfigs.getByName("release")
     }
     debug { }
   }

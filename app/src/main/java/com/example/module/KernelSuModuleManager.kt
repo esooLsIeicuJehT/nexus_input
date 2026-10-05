@@ -28,7 +28,7 @@ object KernelSuModuleManager {
     private val _moduleStatus = MutableStateFlow(KernelModuleStatus())
     val moduleStatus = _moduleStatus.asStateFlow()
     private val files = listOf("module.prop", "service.sh", "customize.sh", "action.sh", "skip_mount",
-        "update.sh", "webroot/index.html", "webroot/app.js", "webroot/style.css")
+        "update.sh", "update-lib.sh", "webroot/index.html", "webroot/app.js", "webroot/style.css")
     private fun asset(path: String) = NexusRuntimeContext.require().assets.open(path).bufferedReader().use { it.readText() }
     fun getModuleProp() = asset("module.prop")
     fun getServiceSh() = asset("service.sh")
