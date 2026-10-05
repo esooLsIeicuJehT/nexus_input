@@ -5,8 +5,10 @@ const APK_COMPONENT = `${APK_PACKAGE}/com.example.MainActivity`;
 const MODULE_ID = 'gamepad.pro.root';
 const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
 let githubUpdateAvailable = false;
+let rootExecActive = false;
+const rootExecQueue = [];
 
-function execRoot(command) {
+function execRootNow(command) {
   return new Promise((resolve, reject) => {
     if (!window.ksu || typeof window.ksu.exec !== 'function') {
       reject(new Error('KernelSU WebUI API is unavailable'));
@@ -36,8 +38,35 @@ function execRoot(command) {
   });
 }
 
+function execRoot(command) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      rootExecActive = true;
+      execRootNow(command).then(
+        result => {
+          resolve(result);
+          finishRootCommand();
+        },
+        error => {
+          reject(error);
+          finishRootCommand();
+        }
+      );
+    };
+    if (rootExecActive) rootExecQueue.push(run);
+    else run();
+  });
+}
+
+function finishRootCommand() {
+  rootExecActive = false;
+  const next = rootExecQueue.shift();
+  if (next) next();
+}
+
 function state(id, text, kind) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = text;
   el.className = kind || '';
 }
@@ -182,6 +211,7 @@ async function checkGithubUpdate() {
   try {
     const r = await execRoot(`${MODULE_DIR}/update.sh check`);
     const kv = parseKv(r.stdout);
+    document.getElementById('installedVersion').textContent = kv.CURRENT_VERSION || 'unavailable';
     document.getElementById('remoteVersion').textContent = kv.REMOTE_VERSION || 'unavailable';
     if (r.errno === 10 && kv.STATE === 'AVAILABLE') {
       githubUpdateAvailable = true;
@@ -189,6 +219,8 @@ async function checkGithubUpdate() {
       status.textContent = `Update ${kv.REMOTE_VERSION} is available. The ZIP will be SHA-256 verified before KernelSU stages it.`;
     } else if (r.errno === 0 && kv.STATE === 'UP_TO_DATE') {
       status.textContent = 'NEXUS INPUT KernelSU Companion is up to date.';
+    } else if (r.errno === 0 && kv.STATE === 'LOCAL_NEWER') {
+      status.textContent = kv.MESSAGE || 'Installed module is newer than the published update channel. No downgrade will be offered.';
     } else {
       status.textContent = kv.MESSAGE || r.stderr || r.stdout || `Update check failed (exit ${r.errno})`;
     }
@@ -230,9 +262,6 @@ document.getElementById('refresh').addEventListener('click', refresh);
 document.getElementById('launch').addEventListener('click', launch);
 document.getElementById('checkUpdate').addEventListener('click', checkGithubUpdate);
 document.getElementById('installUpdate').addEventListener('click', installGithubUpdate);
-
-readInstalledVersion();
-refresh();
 
 let cpuPolicies = [];
 let devfreqDevices = [];
@@ -340,4 +369,4 @@ document.getElementById('applyCpuFrequencies').addEventListener('click',() => ap
 document.getElementById('applyDevfreqGovernor').addEventListener('click',() => applyRootControl('devfreq-governor',['devfreqDevice','devfreqGovernor'].map(id => document.getElementById(id).value)));
 document.getElementById('applySwappiness').addEventListener('click',() => applyRootControl('swappiness',[document.getElementById('swappiness').value]));
 document.getElementById('readControlLog').addEventListener('click',readControlLog);
-refreshCapabilities();
+state('controlStatus','No root commands run automatically. Use Refresh diagnostics, Read device capabilities, or Check GitHub when needed.','');

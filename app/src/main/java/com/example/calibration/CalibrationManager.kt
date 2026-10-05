@@ -4,16 +4,16 @@ import android.content.Context
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlin.math.hypot
 import com.example.injector.InputInjector
+import com.example.input.ControllerInputMonitor
+import com.example.input.ControllerLiveState
 import com.example.model.ControllerProfile
 import com.example.model.ControllerType
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -128,21 +128,34 @@ class CalibrationManager(private val context: Context) {
         )
     }
 
-    private data class Sample(val deviceId: Int, val axes: Map<Int, Float>)
-    private val samples = MutableSharedFlow<Sample>(extraBufferCapacity = 256)
     private val calibrationLock = Mutex()
 
+    /**
+     * Activity and AccessibilityService both publish real controller MotionEvents to
+     * ControllerInputMonitor. Android 14+ consumes motion sources requested by an
+     * AccessibilityService instead of forwarding them to the foreground Activity, so
+     * calibration must read the shared observed stream rather than an Activity-only flow.
+     */
     fun onMotionEvent(event: MotionEvent) {
-        val device = event.device ?: return
-        if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return
-        val axes = device.motionRanges.filter { it.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK }
-            .associate { range ->
-                val raw = event.getAxisValue(range.axis)
-                val span = range.max - range.min
-                range.axis to if (span > 0f && raw.isFinite()) ((raw - range.min) / span * 2f - 1f).coerceIn(-1f, 1f) else Float.NaN
-            }
-        samples.tryEmit(Sample(device.id, axes))
+        ControllerInputMonitor.onMotionEvent(event)
     }
+
+    private fun axisLabel(axis: Int): String? = when (axis) {
+        MotionEvent.AXIS_X -> "LX"
+        MotionEvent.AXIS_Y -> "LY"
+        MotionEvent.AXIS_Z -> "RX"
+        MotionEvent.AXIS_RZ -> "RY"
+        MotionEvent.AXIS_LTRIGGER -> "LT"
+        MotionEvent.AXIS_RTRIGGER -> "RT"
+        MotionEvent.AXIS_BRAKE -> "BRAKE"
+        MotionEvent.AXIS_GAS -> "GAS"
+        MotionEvent.AXIS_HAT_X -> "HAT_X"
+        MotionEvent.AXIS_HAT_Y -> "HAT_Y"
+        else -> null
+    }
+
+    private fun normalizedAxis(state: ControllerLiveState, axis: Int): Float? =
+        axisLabel(axis)?.let(state.normalizedAxes::get)
 
     internal fun computeDeadzones(rest: List<Float>, extension: List<Float>): Pair<Float, Float> {
         require(rest.size >= 5 && extension.size >= 5) { "At least five real samples are required in each phase" }
@@ -165,39 +178,58 @@ class CalibrationManager(private val context: Context) {
             return@withContext false
         }
         try {
+            require(axisLabel(axisX) != null && axisLabel(axisY) != null) {
+                "Calibration does not support requested axes X=$axisX Y=$axisY"
+            }
             val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
                 it.getMotionRange(axisX, InputDevice.SOURCE_JOYSTICK) != null &&
                     it.getMotionRange(axisY, InputDevice.SOURCE_JOYSTICK) != null
             } ?: error("No connected controller exposes the requested stick axes")
+
             _stickState.value = StickCalibrationState(phase = "REST: center stick; move slightly and release")
             onUpdate(_stickState.value)
             val rest = mutableListOf<Float>()
             val extension = mutableListOf<Float>()
+
             suspend fun gather(target: MutableList<Float>, duration: Long, phase: String) {
                 val start = SystemClock.uptimeMillis()
+                var lastSequence = ControllerInputMonitor.state.value.observedEventSequence
                 withTimeoutOrNull(duration) {
-                    samples.collect { sample ->
-                        if (sample.deviceId != device.id) return@collect
-                        val x = sample.axes[axisX] ?: return@collect
-                        val y = sample.axes[axisY] ?: return@collect
+                    ControllerInputMonitor.state.collect { sample ->
+                        if (sample.deviceId != device.id || sample.observedEventSequence == lastSequence) return@collect
+                        val x = normalizedAxis(sample, axisX) ?: return@collect
+                        val y = normalizedAxis(sample, axisY) ?: return@collect
+                        lastSequence = sample.observedEventSequence
                         val radius = hypot(x, y)
                         if (!radius.isFinite()) return@collect
                         target += radius
-                        _stickState.value = _stickState.value.copy(phase = phase, currentX = x, currentY = y,
-                            progressPercent = ((SystemClock.uptimeMillis() - start).toFloat() / duration).coerceIn(0f, 1f))
+                        _stickState.value = _stickState.value.copy(
+                            phase = phase,
+                            currentX = x,
+                            currentY = y,
+                            progressPercent = ((SystemClock.uptimeMillis() - start).toFloat() / duration).coerceIn(0f, 1f)
+                        )
                         onUpdate(_stickState.value)
                     }
                 }
             }
+
             gather(rest, 2500, "REST: center stick; move slightly and release")
             _stickState.value = _stickState.value.copy(phase = "EXTENSION: rotate stick to its full edge")
             onUpdate(_stickState.value)
             gather(extension, 4000, "EXTENSION: rotate stick to its full edge")
             val (inner, outer) = computeDeadzones(rest, extension)
             require(InputDevice.getDevice(device.id)?.descriptor == device.descriptor) { "Controller disconnected or changed" }
-            _stickState.value = _stickState.value.copy(phase = "CALIBRATION COMPLETE", restSamples = rest,
-                maxSamples = extension, computedInnerDeadzone = inner, computedOuterDeadzone = outer,
-                progressPercent = 1f, isMeasured = true, error = null)
+            _stickState.value = _stickState.value.copy(
+                phase = "CALIBRATION COMPLETE",
+                restSamples = rest,
+                maxSamples = extension,
+                computedInnerDeadzone = inner,
+                computedOuterDeadzone = outer,
+                progressPercent = 1f,
+                isMeasured = true,
+                error = null
+            )
             onUpdate(_stickState.value)
             true
         } catch (error: Exception) {
@@ -206,7 +238,9 @@ class CalibrationManager(private val context: Context) {
             android.util.Log.e("NexusCalibration", "Calibration failed", error)
             onUpdate(_stickState.value)
             false
-        } finally { calibrationLock.unlock() }
+        } finally {
+            calibrationLock.unlock()
+        }
     }
 
     suspend fun runTriggerCalibration(left: Boolean): Boolean = withContext(Dispatchers.Default) {
@@ -218,39 +252,64 @@ class CalibrationManager(private val context: Context) {
             val preferred = if (left) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_RTRIGGER
             val alternate = if (left) MotionEvent.AXIS_BRAKE else MotionEvent.AXIS_GAS
             val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
-                it.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null || it.getMotionRange(alternate,InputDevice.SOURCE_JOYSTICK) != null
+                it.getMotionRange(preferred, InputDevice.SOURCE_JOYSTICK) != null ||
+                    it.getMotionRange(alternate, InputDevice.SOURCE_JOYSTICK) != null
             } ?: error("No controller exposes this analog trigger")
-            val axis = if (device.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null) preferred else alternate
-            val rest = mutableListOf<Float>(); val pull = mutableListOf<Float>()
+            val axis = if (device.getMotionRange(preferred, InputDevice.SOURCE_JOYSTICK) != null) preferred else alternate
+            val rest = mutableListOf<Float>()
+            val pull = mutableListOf<Float>()
+
             suspend fun gather(target: MutableList<Float>, phase: String) {
                 _triggerState.value = TriggerCalibrationState(phase = phase)
-                withTimeoutOrNull(3000) { samples.collect { sample ->
-                    if (sample.deviceId != device.id) return@collect
-                    val value = sample.axes[axis]?.let { (it + 1f) / 2f } ?: return@collect
-                    if (value.isFinite()) { target += value; _triggerState.value = _triggerState.value.copy(currentPull = value) }
-                } }
+                var lastSequence = ControllerInputMonitor.state.value.observedEventSequence
+                withTimeoutOrNull(3000) {
+                    ControllerInputMonitor.state.collect { sample ->
+                        if (sample.deviceId != device.id || sample.observedEventSequence == lastSequence) return@collect
+                        val normalized = normalizedAxis(sample, axis) ?: return@collect
+                        lastSequence = sample.observedEventSequence
+                        val value = (normalized + 1f) / 2f
+                        if (value.isFinite()) {
+                            target += value
+                            _triggerState.value = _triggerState.value.copy(currentPull = value)
+                        }
+                    }
+                }
             }
+
             gather(rest, "REST: release trigger, press slightly then release")
             gather(pull, "PULL: repeatedly pull trigger fully")
-            val (press,release) = computeTriggerThresholds(rest,pull)
+            val (press, release) = computeTriggerThresholds(rest, pull)
             require(InputDevice.getDevice(device.id)?.descriptor == device.descriptor) { "Controller disconnected or changed" }
-            _triggerState.value = TriggerCalibrationState("CALIBRATION COMPLETE",rest.max(),pull.max(),pull.last(),1f,true,null,press,release)
+            _triggerState.value = TriggerCalibrationState(
+                "CALIBRATION COMPLETE",
+                rest.max(),
+                pull.max(),
+                pull.last(),
+                1f,
+                true,
+                null,
+                press,
+                release
+            )
             true
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
-            _triggerState.value = TriggerCalibrationState(phase = "CALIBRATION FAILED",error=error.message)
+            _triggerState.value = TriggerCalibrationState(phase = "CALIBRATION FAILED", error = error.message)
             android.util.Log.e("NexusCalibration", "Trigger calibration failed", error)
             false
-        } finally { calibrationLock.unlock() }
+        } finally {
+            calibrationLock.unlock()
+        }
     }
 
-    internal fun computeTriggerThresholds(rest: List<Float>, pull: List<Float>): Pair<Float,Float> {
-        require(rest.size>=3 && pull.size>=3) { "Insufficient real trigger events" }
-        require((rest+pull).all { it.isFinite() && it in 0f..1f }) { "Invalid Android trigger sample" }
-        val minimum=rest.max();val maximum=pull.max()
-        require(minimum<.4f && maximum-minimum>.5f) { "Release the trigger during rest and fully pull it during sampling" }
-        val travel=maximum-minimum
-        return minimum+travel*.55f to minimum+travel*.35f
+    internal fun computeTriggerThresholds(rest: List<Float>, pull: List<Float>): Pair<Float, Float> {
+        require(rest.size >= 3 && pull.size >= 3) { "Insufficient real trigger events" }
+        require((rest + pull).all { it.isFinite() && it in 0f..1f }) { "Invalid Android trigger sample" }
+        val minimum = rest.max()
+        val maximum = pull.max()
+        require(minimum < .4f && maximum - minimum > .5f) { "Release the trigger during rest and fully pull it during sampling" }
+        val travel = maximum - minimum
+        return minimum + travel * .55f to minimum + travel * .35f
     }
 
     // Measures the synchronous backend API call only; never device-to-photon latency.
@@ -264,14 +323,18 @@ class CalibrationManager(private val context: Context) {
             ownsBackend = true
             check(injector.prepare()) { "Backend not ready" }
             check(injector.injectTap(5f, 5f)) { "Backend rejected injection" }
-            result = TouchLatencyResult((SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,
-                "BACKEND CALL DURATION; NOT TOUCH LATENCY")
+            result = TouchLatencyResult(
+                (SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,
+                "BACKEND CALL DURATION; NOT TOUCH LATENCY"
+            )
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             android.util.Log.e("NexusCalibration", "Injection timing failed", error)
             result = TouchLatencyResult(grade = "FAILED: ${error.message}")
         } finally {
-            if (ownsBackend) try { injector.cleanup() } catch(error: Exception) {
+            if (ownsBackend) try {
+                injector.cleanup()
+            } catch (error: Exception) {
                 android.util.Log.e("NexusCalibration", "Timing backend cleanup failed", error)
                 result = TouchLatencyResult(grade = "FAILED: backend cleanup: ${error.message}")
             }

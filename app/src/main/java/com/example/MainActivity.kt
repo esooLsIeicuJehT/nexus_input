@@ -15,32 +15,47 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.input.ControllerInputMonitor
-import com.example.service.MappingForegroundService
 import com.example.ui.MainAppViewModel
 import com.example.ui.nexus.NexusAppShell
 import com.example.ui.nexus.NexusSplashScreen
 import com.example.ui.onboarding.OnboardingScreen
 import com.example.ui.theme.NexusInputTheme
 import kotlinx.coroutines.delay
+import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MainAppViewModel by viewModels()
 
-    private val inputListener=object : android.hardware.input.InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(deviceId:Int) { viewModel.detectController() }
-        override fun onInputDeviceChanged(deviceId:Int) { viewModel.detectController() }
-        override fun onInputDeviceRemoved(deviceId:Int) { ControllerInputMonitor.onDeviceRemoved(deviceId);viewModel.detectController() }
+    private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) { viewModel.detectController() }
+        override fun onInputDeviceChanged(deviceId: Int) { viewModel.detectController() }
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            ControllerInputMonitor.onDeviceRemoved(deviceId)
+            viewModel.detectController()
+        }
     }
-    private fun testingInput(source:Int)=viewModel.currentTab.value in setOf("devices","calibration") &&
+
+    private val shizukuBinderReceivedListener = Shizuku.OnBinderReceivedListener {
+        viewModel.refreshPrivileges()
+    }
+
+    private val shizukuBinderDeadListener = Shizuku.OnBinderDeadListener {
+        viewModel.refreshPrivileges()
+    }
+
+    private val shizukuPermissionResultListener = Shizuku.OnRequestPermissionResultListener { _, _ ->
+        viewModel.refreshPrivileges()
+    }
+
+    private fun testingInput(source: Int) = viewModel.currentTab.value in setOf("devices", "calibration") &&
         (source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
             source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK ||
             source and android.view.InputDevice.SOURCE_DPAD == android.view.InputDevice.SOURCE_DPAD)
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         ControllerInputMonitor.onMotionEvent(event)
-        viewModel.calibrationManager.onMotionEvent(event)
-        return if(testingInput(event.source)) true else super.dispatchGenericMotionEvent(event)
+        return if (testingInput(event.source)) true else super.dispatchGenericMotionEvent(event)
     }
 
     // Android Activity's public input callback must forward unconsumed events to ComponentActivity.
@@ -48,12 +63,18 @@ class MainActivity : ComponentActivity() {
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         ControllerInputMonitor.onKeyEvent(event)
-        return if(testingInput(event.source)) true else super.dispatchKeyEvent(event)
+        return if (testingInput(event.source)) true else super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        getSystemService(android.hardware.input.InputManager::class.java).registerInputDeviceListener(inputListener,android.os.Handler(android.os.Looper.getMainLooper()))
+
+        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceivedListener)
+        Shizuku.addBinderDeadListener(shizukuBinderDeadListener)
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener)
+
+        getSystemService(android.hardware.input.InputManager::class.java)
+            .registerInputDeviceListener(inputListener, android.os.Handler(android.os.Looper.getMainLooper()))
         enableEdgeToEdge()
 
         setContent {
@@ -100,8 +121,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener)
+        Shizuku.removeBinderDeadListener(shizukuBinderDeadListener)
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener)
         getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
         super.onDestroy()
     }
-
 }
