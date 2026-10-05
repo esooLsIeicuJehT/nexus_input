@@ -90,9 +90,16 @@ class BackendPreferenceTest {
     private fun rejectShizukuWrites(db: ControlystDatabase) {
         db.openHelper.writableDatabase.execSQL("""
             CREATE TRIGGER reject_shizuku_test_fixture BEFORE INSERT ON config_profiles
-            WHEN NEW.jsonBlob LIKE '%"preferredBackend":"SHIZUKU"%'
+            WHEN instr(NEW.jsonBlob, '"SHIZUKU"') > 0
             BEGIN SELECT RAISE(ABORT, 'Test fixture rejects the backend write'); END
         """.trimIndent())
+        // Profile JSON is indented. Prove the rejection fixture actually fires before testing
+        // ViewModel rollback, rather than accidentally exercising a successful write.
+        val rejection = assertThrows(Exception::class.java) {
+            runBlocking { ProfilePersistence(db).save(original.copy(preferredBackend = PrivilegeMethod.SHIZUKU)) }
+        }
+        assertTrue(rejection.message.orEmpty().contains("Test fixture rejects the backend write"))
+        assertEquals(original, saved(db))
     }
 
     @Test fun loadedForcedPreferenceIsIndependentOfTheGloballyAvailableBackend() = withViewModel { vm, db, _ ->
