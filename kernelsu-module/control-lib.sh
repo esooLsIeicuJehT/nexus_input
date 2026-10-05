@@ -70,7 +70,7 @@ nexus_cpu_frequencies() {
 
 nexus_gpu_governor() {
     # devfreq IDs are real sysfs basenames, never caller-supplied absolute paths.
-    case "$1" in ''|*[!a-zA-Z0-9_.:-]*) echo 'ERROR invalid devfreq ID'; return 1;; esac
+    case "$1" in ''|.|..|*[!a-zA-Z0-9_.:-]*) echo 'ERROR invalid devfreq ID'; return 1;; esac
     nexus_governor "$2" || { echo 'ERROR invalid devfreq governor'; return 1; }
     nexus_dir="/sys/class/devfreq/$1"
     nexus_available=$(nexus_read "$nexus_dir/available_governors") || { echo "$nexus_available"; return 1; }

@@ -61,3 +61,16 @@ test('root controls are populated only from observed policy governors and freque
   assert.equal(elements.get('applyCpuGovernor').disabled,false);assert.equal(elements.get('applyDevfreqGovernor').disabled,true);
   assert.equal(elements.get('swappiness').value,'60');
 });
+
+test('empty boolean and null bridge exit values cannot become success',async()=>{
+  for(const status of ['',null,false]) {
+    const calls=[];const {context}=sandbox({exec(...args){calls.push(args)}});
+    const request=context.execRoot('id');context.window[calls.at(-1)[2]](status,'','');
+    await assert.rejects(request,/invalid exit status/);
+  }
+});
+test('failed capability fields never manufacture selectable governor names',()=>{
+  const {context}=sandbox({exec(){}});
+  assert.deepEqual([...context.exposedWords('UNAVAILABLE: file is not readable',/^[a-zA-Z0-9_-]+$/)],[]);
+  assert.deepEqual([...context.exposedWords('schedutil powersave',/^[a-zA-Z0-9_-]+$/)],['schedutil','powersave']);
+});

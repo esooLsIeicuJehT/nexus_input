@@ -34,4 +34,5 @@ class ControlTest(unittest.TestCase):
         self.assertEqual(0,run('nexus_member','schedutil','performance schedutil powersave').returncode)
         self.assertNotEqual(0,run('nexus_member','invented','performance schedutil').returncode)
         self.assertNotEqual(0,run('nexus_swappiness','101').returncode)
-        self.assertNotEqual(0,run('nexus_gpu_governor','../../proc/sys','performance').returncode)
+        for value in ['../../proc/sys','.','..']:
+            self.assertNotEqual(0,run('nexus_gpu_governor',value,'performance').returncode)

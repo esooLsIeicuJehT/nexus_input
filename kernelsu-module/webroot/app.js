@@ -20,8 +20,9 @@ function execRoot(command) {
     window[callback] = (errno, stdout, stderr) => {
       clearTimeout(timer);
       delete window[callback];
-      const code = Number(errno);
-      if (!Number.isInteger(code)) { reject(new Error('KernelSU returned an invalid exit status')); return; }
+      const validType = typeof errno === 'number' || typeof errno === 'string' && /^-?[0-9]+$/.test(errno);
+      const code = validType ? Number(errno) : NaN;
+      if (!Number.isSafeInteger(code)) { reject(new Error('KernelSU returned an invalid exit status')); return; }
       resolve({ errno: code, stdout: String(stdout || ''), stderr: String(stderr || '') });
     };
     try {
@@ -260,7 +261,7 @@ function setOptions(id, values, selected) {
   element.disabled = values.length === 0;
   if (values.includes(selected)) element.value = selected;
 }
-function exposedWords(text, pattern) { return String(text || '').trim().split(/\s+/).filter(word => pattern.test(word)); }
+function exposedWords(text, pattern) { const value=String(text || '').trim(); if(!value)return []; const words=value.split(/\s+/); return words.every(word => pattern.test(word)) ? words : []; }
 function selectCpuPolicy() {
   const policy = cpuPolicies.find(value => value.id === document.getElementById('cpuPolicy').value);
   const governors = exposedWords(policy?.scaling_available_governors, /^[a-zA-Z0-9_-]+$/);
@@ -295,7 +296,7 @@ async function refreshCapabilities() {
     state('batteryCapabilities',section(lines,'BATTERY_BEGIN','BATTERY_END'));
     state('presetCapabilities',section(lines,'PRESETS_BEGIN','PRESETS_END'));
     cpuPolicies = parseCapabilityGroups(cpu,'POLICY').filter(value => /^[0-9]+$/.test(value.id));
-    devfreqDevices = parseCapabilityGroups(devfreq,'DEVFREQ').filter(value => /^[a-zA-Z0-9_.:-]+$/.test(value.id));
+    devfreqDevices = parseCapabilityGroups(devfreq,'DEVFREQ').filter(value => /^[a-zA-Z0-9_.:-]+$/.test(value.id) && !['.','..'].includes(value.id));
     capabilitiesReady = true;
     setOptions('cpuPolicy',cpuPolicies.map(value => value.id));selectCpuPolicy();
     setOptions('devfreqDevice',devfreqDevices.map(value => value.id));selectDevfreqDevice();
