@@ -138,7 +138,8 @@ class ControlystRepository(
                 nodeObj.put("triggerReleaseThreshold", node.triggerReleaseThreshold)
                 nodeObj.put("macroActions", JSONArray().apply { node.macroActions.forEach { step ->
                     put(JSONObject().apply { put("delayMs", step.delayMs); put("durationMs", step.durationMs)
-                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm) })
+                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm)
+                        put("endXNorm",step.endXNorm ?: JSONObject.NULL);put("endYNorm",step.endYNorm ?: JSONObject.NULL) })
                 } })
                 buttonsArray.put(nodeObj)
             }
@@ -212,7 +213,9 @@ class ControlystRepository(
                             macroActions = nodeObj.optJSONArray("macroActions")?.let { array ->
                                 (0 until array.length()).map { index -> array.getJSONObject(index).let { step ->
                                     MacroStep(step.getLong("delayMs"), step.getString("actionType"),
-                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"))
+                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"),
+                                        if(step.isNull("endXNorm")) null else step.getDouble("endXNorm").toFloat(),
+                                        if(step.isNull("endYNorm")) null else step.getDouble("endYNorm").toFloat())
                                 } }
                             } ?: emptyList()
                         )
@@ -250,7 +253,7 @@ class ControlystRepository(
                 preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
                 controllerProfileId = if (json.has("controllerProfileId") && !json.isNull("controllerProfileId")) json.getString("controllerProfileId") else null,
                 joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
-                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", true), joystick.optDouble("curveExponent", 1.0).toFloat()),
+                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", false), joystick.optDouble("curveExponent", 1.0).toFloat()),
                 camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),
                     camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
                 antiRecoilEnabled = json.optBoolean("antiRecoilEnabled", false), antiRecoilVerticalPull = json.optDouble("antiRecoilVerticalPull", 0.0).toFloat(),
@@ -264,7 +267,7 @@ class ControlystRepository(
                 targetAspectRatio = targetAspect,
                 buttons = buttons,
                 crosshair = crosshair,
-                author = json.optString("author", "Community"),
+                author = json.optString("author", "Local user"),
                 isOfficialVerified = json.optBoolean("isOfficialVerified", false),
                 rating = json.optDouble("rating", 0.0).toFloat(),
                 downloadCount = json.optInt("downloadCount", 0),

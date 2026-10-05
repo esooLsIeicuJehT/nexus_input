@@ -2,11 +2,15 @@
 from pathlib import Path
 import subprocess
 import zipfile
+import argparse
+parser=argparse.ArgumentParser()
+parser.add_argument("--signed",action="store_true")
+args=parser.parse_args()
 from package_release import properties, ROOT
 
 version=properties(ROOT/'version.properties')
 expected={'arm64-v8a','armeabi-v7a','x86','x86_64'}
-for path in [ROOT/'app/build/outputs/apk/debug/app-debug.apk',ROOT/'app/build/outputs/apk/release/app-release-unsigned.apk']:
+for path in [ROOT/'app/build/outputs/apk/debug/app-debug.apk',ROOT/('app/build/outputs/apk/release/app-release.apk' if args.signed else 'app/build/outputs/apk/release/app-release-unsigned.apk')]:
     with zipfile.ZipFile(path) as archive:
         abis={name.split('/')[1] for name in archive.namelist() if name.startswith('lib/') and name.endswith('/libuinput_jni.so')}
         assert abis==expected, f'{path.name}: missing raw uinput ABI libraries: {expected-abis}'
@@ -20,4 +24,4 @@ for path in [ROOT/'app/build/outputs/apk/debug/app-debug.apk',ROOT/'app/build/ou
 with zipfile.ZipFile(ROOT/'app/build/outputs/bundle/release/app-release.aab') as archive:
     abis={name.split('/')[2] for name in archive.namelist() if name.startswith('base/lib/') and name.endswith('/libuinput_jni.so')}
     assert abis==expected, 'AAB is missing native ABIs'
-print('Unsigned AAB native packaging verified; no signing or hardware verification is implied.')
+print('AAB native packaging verified. Hardware verification is not implied; signatures are checked separately.')

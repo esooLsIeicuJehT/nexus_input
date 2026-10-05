@@ -3,5 +3,5 @@ name=NEXUS INPUT Root Companion
 version=1.0.0
 versionCode=1000
 author=NEXUS INPUT
-description=NEXUS INPUT KernelSU companion with live input diagnostics, APK runtime state, and secure GitHub self-update support.
+description=NEXUS INPUT root control plane with observed device capabilities, guarded controls and read-back verification, input diagnostics, and verified GitHub updates.
 updateJson=https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/main/update.json

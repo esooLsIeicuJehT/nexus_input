@@ -20,6 +20,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
+import kotlin.math.pow
 
 /**
  * Serial controller-to-touch mapping engine used by the AccessibilityService.
@@ -38,6 +39,8 @@ class GamepadMappingRuntime(
     private val turboTasks = mutableMapOf<String, ScheduledFuture<*>>()
     private val digitalAxisState = mutableMapOf<String, Boolean>()
     private val inputOwners = mutableMapOf<String, MutableSet<String>>()
+    private val activeMacros = mutableSetOf<String>()
+    private val smoothedCamera = mutableMapOf<Int,Pair<Float,Float>>()
     private var motionTask: ScheduledFuture<*>? = null
     private var latestMotion: Triple<MotionSnapshot, MappingConfig, InputInjector>? = null
     @Volatile private var generation = 0L
@@ -106,7 +109,8 @@ class GamepadMappingRuntime(
             latestMotion = Triple(snapshot, config, injector)
             if (config.buttons.any { it.type in setOf(NodeType.JOYSTICK_ZONE, NodeType.CAMERA_DRAG) } && motionTask == null) {
                 val token = generation
-                motionTask = executor.scheduleAtFixedRate({
+                // Resume at the configured delay; never replay missed ticks in a burst.
+                motionTask = executor.scheduleWithFixedDelay({
                     if (token == generation) latestMotion?.let { (sample, profile, backend) ->
                         try { handleSticks(sample, profile, backend) }
                         catch (error: Exception) { onError("Stick mapping failed: ${error.message}") }
@@ -120,7 +124,7 @@ class GamepadMappingRuntime(
         when (node.type) {
             NodeType.JOYSTICK_ZONE, NodeType.CAMERA_DRAG -> true
             NodeType.BUTTON -> node.buttonBehavior == ButtonBehavior.HOLD
-            NodeType.MACRO -> node.macroActions.any { !it.actionType.equals("TAP", ignoreCase = true) }
+            NodeType.MACRO -> node.macroActions.any { it.actionType.uppercase() in setOf("HOLD","RELEASE") }
             NodeType.TURBO -> false
         }
     }
@@ -147,7 +151,7 @@ class GamepadMappingRuntime(
                     if (released) activeSlots.remove(slot)
                     else { success = false; onError("Panic release failed for slot $slot") }
                 }
-                cameraPositions.clear(); digitalAxisState.clear(); inputOwners.clear()
+                cameraPositions.clear(); smoothedCamera.clear();activeMacros.clear(); digitalAxisState.clear(); inputOwners.clear()
             } finally { latch.countDown() }
         }
         val completed = runCatching { latch.await(timeoutMillis, TimeUnit.MILLISECONDS) }.getOrDefault(false)
@@ -210,7 +214,7 @@ class GamepadMappingRuntime(
         val slot = slotForNode(config, node) ?: return
         val point = screenPoint(node) ?: return
         if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
-            if (activeSlots.add(slot)) {
+            if (activateSlot(slot)) {
                 if (!injector.beginTouch(slot, point.x, point.y)) {
                     activeSlots.remove(slot)
                     onError("Touch down failed for ${node.label.ifBlank { node.boundKey }}")
@@ -233,7 +237,7 @@ class GamepadMappingRuntime(
             return
         }
         val slot = slotForNode(config, node) ?: return
-        if (!activeSlots.add(slot)) return
+        if (!activateSlot(slot)) return
         if (!injector.beginTouch(slot, point.x, point.y)) {
             activeSlots.remove(slot)
             onError("Tap down failed for ${node.label.ifBlank { node.boundKey }}")
@@ -251,7 +255,7 @@ class GamepadMappingRuntime(
         if (turboTasks.containsKey(node.id)) return
         val hz = node.turboHz.coerceIn(2, 30)
         val period = (1_000L / hz).coerceAtLeast(33L)
-        val future = executor.scheduleAtFixedRate(
+        val future = executor.scheduleWithFixedDelay(
             { try { pulse(node, config, injector, min(30L, period - 1L)) } catch(error:Exception) { onError("Turbo touch failed: ${error.message}") } },
             0L,
             period,
@@ -274,15 +278,21 @@ class GamepadMappingRuntime(
             return
         }
         val slot = slotForNode(config, node) ?: return
+        if(!activeMacros.add(node.id)) { onError("Macro '${node.label.ifBlank { node.boundKey }}' is already running");return }
         var at = 0L
         node.macroActions.forEach { step ->
             at += step.delayMs.coerceAtLeast(0L)
             val scheduledAt = at
             schedule(scheduledAt) { executeMacroStep(node, slot, step, injector) }
-            if (step.actionType.equals("TAP", ignoreCase = true)) {
+            if (step.actionType.uppercase() in setOf("TAP","SWIPE")) {
                 at += step.durationMs.coerceAtLeast(1L)
             }
         }
+        fun finish() {
+            if(slot !in activeSlots) activeMacros.remove(node.id)
+            else schedule(16L) { finish() }
+        }
+        schedule(at + 1L) { finish() }
     }
 
     private fun executeMacroStep(node: MappingNode, slot: Int, step: MacroStep, injector: InputInjector) {
@@ -300,7 +310,7 @@ class GamepadMappingRuntime(
             "TAP" -> {
                 if (injector.method == PrivilegeMethod.ACCESSIBILITY) {
                     if (!injector.injectTap(x, y)) onError("Macro tap failed for ${node.label}")
-                } else if (activeSlots.add(slot)) {
+                } else if (activateSlot(slot)) {
                     if (!injector.beginTouch(slot, x, y)) {
                         activeSlots.remove(slot)
                         onError("Macro tap down failed for ${node.label}")
@@ -314,10 +324,33 @@ class GamepadMappingRuntime(
                     }
                 }
             }
+            "SWIPE" -> {
+                val destinationX=step.endXNorm ?: error("Swipe destination X is missing")
+                val destinationY=step.endYNorm ?: error("Swipe destination Y is missing")
+                require(destinationX.isFinite() && destinationX in 0f..1f && destinationY.isFinite() && destinationY in 0f..1f) { "Invalid swipe destination" }
+                val endX=destinationX*(size.first-1);val endY=destinationY*(size.second-1)
+                if(injector.method==PrivilegeMethod.ACCESSIBILITY) {
+                    if(!injector.injectDrag(listOf(PointF(x,y),PointF(endX,endY)),step.durationMs)) onError("Accessibility swipe request failed")
+                } else if(activateSlot(slot)) {
+                    if(!injector.beginTouch(slot,x,y)) { activeSlots.remove(slot);onError("Swipe down failed") }
+                    else {
+                        val segments=((step.durationMs+15)/16).toInt().coerceAtLeast(1)
+                        for(index in 1..segments) schedule(step.durationMs*index/segments) {
+                            if(slot in activeSlots) {
+                                val fraction=index.toFloat()/segments
+                                if(!injector.moveTouch(slot,x+(endX-x)*fraction,y+(endY-y)*fraction)) onError("Swipe move failed")
+                                if(index==segments) {
+                                    if(injector.endTouch(slot)) activeSlots.remove(slot) else onError("Swipe up failed")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             "HOLD" -> {
                 if (injector.method == PrivilegeMethod.ACCESSIBILITY) {
                     onError("Macro HOLD requires persistent touch; Accessibility is insufficient")
-                } else if (activeSlots.add(slot) && !injector.beginTouch(slot, x, y)) {
+                } else if (activateSlot(slot) && !injector.beginTouch(slot, x, y)) {
                     activeSlots.remove(slot)
                     onError("Macro hold down failed for ${node.label}")
                 }
@@ -375,11 +408,11 @@ class GamepadMappingRuntime(
     }
 
     private fun handleSticks(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
-        val size = screenSizeProvider() ?: return
+        val size = screenSizeProvider() ?: run { onError("Stick geometry is unavailable");return }
         val width = size.first.toFloat()
         val height = size.second.toFloat()
         val minDimension = min(width, height)
-        if (width <= 0f || height <= 0f) return
+        if (width <= 0f || height <= 0f) { onError("Invalid stick screen geometry");return }
 
         config.buttons.forEach { node ->
             if (node.type != NodeType.JOYSTICK_ZONE && node.type != NodeType.CAMERA_DRAG) return@forEach
@@ -414,12 +447,16 @@ class GamepadMappingRuntime(
                     if (injector.endTouch(slot)) activeSlots.remove(slot) else onError("Touch release failed for slot $slot")
                 }
                 cameraPositions.remove(slot)
+                smoothedCamera.remove(slot)
                 return@forEach
             }
 
+            val exponent=if(node.type==NodeType.JOYSTICK_ZONE) config.joystick.curveExponent else config.camera.accelerationCurve
+            fun response(value:Float)=sign(value)*abs(value).pow(exponent)
+            x=response(x);y=response(y)
             when (node.type) {
                 NodeType.JOYSTICK_ZONE -> {
-                    if (activeSlots.add(slot) && !injector.beginTouch(slot, anchor.x, anchor.y)) {
+                    if (activateSlot(slot) && !injector.beginTouch(slot, anchor.x, anchor.y)) {
                         activeSlots.remove(slot)
                         onError("Left-stick touch down failed")
                         return@forEach
@@ -429,7 +466,7 @@ class GamepadMappingRuntime(
                     if (!injector.moveTouch(slot, tx, ty)) onError("Left-stick touch move failed")
                 }
                 NodeType.CAMERA_DRAG -> {
-                    if (activeSlots.add(slot)) {
+                    if (activateSlot(slot)) {
                         if (!injector.beginTouch(slot, anchor.x, anchor.y)) {
                             activeSlots.remove(slot)
                             onError("Camera touch down failed")
@@ -439,8 +476,15 @@ class GamepadMappingRuntime(
                     }
                     val current = cameraPositions[slot] ?: (anchor.x to anchor.y)
                     val step = 22f * node.sensitivity
-                    var nextX = current.first + x * step
-                    var nextY = current.second + y * step
+                    val previous=smoothedCamera[slot] ?: (0f to 0f)
+                    val alpha=1f/config.camera.smoothingFrames
+                    val sx=previous.first+(x-previous.first)*alpha
+                    val sy=previous.second+(y-previous.second)*alpha
+                    smoothedCamera[slot]=sx to sy
+                    val deltaX=sx*step*config.camera.horizontalSensitivity
+                    val deltaY=sy*step*config.camera.verticalSensitivity
+                    var nextX = current.first + deltaX
+                    var nextY = current.second + deltaY
                     val outside = abs(nextX - anchor.x) > radius || abs(nextY - anchor.y) > radius
                     if (outside) {
                         if (!injector.endTouch(slot)) { onError("Camera release failed for slot $slot"); return@forEach }
@@ -450,8 +494,8 @@ class GamepadMappingRuntime(
                             onError("Camera touch reset failed")
                             return@forEach
                         }
-                        nextX = anchor.x + x * step
-                        nextY = anchor.y + y * step
+                        nextX = anchor.x + deltaX
+                        nextY = anchor.y + deltaY
                     }
                     nextX = nextX.coerceIn(0f, width - 1f)
                     nextY = nextY.coerceIn(0f, height - 1f)
@@ -475,6 +519,12 @@ class GamepadMappingRuntime(
         if (magnitude <= inner) return 0f
         val scaled = ((magnitude - inner) / (outer - inner)).coerceIn(0f, 1f)
         return sign(raw) * scaled
+    }
+
+    private fun activateSlot(slot:Int): Boolean {
+        if(slot in activeSlots) return false
+        if(activeSlots.size>=16) { onError("Android supports at most 16 simultaneous touch contacts");return false }
+        return activeSlots.add(slot)
     }
 
     private fun slotForNode(config: MappingConfig, node: MappingNode): Int? = try {

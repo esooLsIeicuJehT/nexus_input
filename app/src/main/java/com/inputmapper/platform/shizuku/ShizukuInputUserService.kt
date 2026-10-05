@@ -24,6 +24,9 @@ class ShizukuInputUserService() : IShizukuInputService.Stub() {
     @Suppress("UNUSED_PARAMETER")
     constructor(context: Context) : this()
 
+    override fun readSurfaceLayers(): String = com.inputmapper.platform.core.SurfaceFrameProbe.layers()
+    override fun readSurfaceLatency(layer: String): String = com.inputmapper.platform.core.SurfaceFrameProbe.latency(layer)
+
     override fun selfTest(): String = "OK uid=${Process.myUid()} pid=${Process.myPid()}"
 
     override fun injectTouch(

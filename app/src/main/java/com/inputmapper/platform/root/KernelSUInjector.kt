@@ -14,6 +14,8 @@ class KernelSUInjector(
     private val delegate = RootUinputInjector(context, width, height, maxSlots, "KernelSU/uinput")
     override val backendName: String get() = delegate.backendName
     fun connect(): InjectionResult = delegate.connect()
+    fun readSurfaceLayers() = delegate.readSurfaceLayers()
+    fun readSurfaceLatency(layer: String) = delegate.readSurfaceLatency(layer)
     fun health(): String = delegate.health()
     override fun injectTap(x: Float, y: Float) = delegate.injectTap(x, y)
     override fun injectDrag(path: List<TimedTouchPoint>, durationMillis: Long) = delegate.injectDrag(path, durationMillis)

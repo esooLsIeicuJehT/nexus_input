@@ -77,7 +77,7 @@ fun CrosshairStudioScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text("Crosshair HUD Reticle", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 16.sp)
-                            Text("Always-on-top tactical reticle", color = TextSecondary, fontSize = 12.sp)
+                            Text("Reticle while the mapped game has focus", color = TextSecondary, fontSize = 12.sp)
                         }
                     }
 
@@ -130,7 +130,7 @@ fun CrosshairStudioScreen(
                 .border(1.5.dp, DarkSurfaceBorder, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            // Simulated game target backdrop lines
+            // Reference grid for editing the actual configured reticle.
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val cx = size.width / 2f
                 val cy = size.height / 2f
@@ -313,13 +313,15 @@ fun ShapeCard(
 }
 
 fun DrawScope.drawCustomCrosshair(cfg: CrosshairConfig, centerX: Float, centerY: Float) {
-    val cx = centerX + cfg.offsetX
-    val cy = centerY + cfg.offsetY
+    val cx = centerX + cfg.offsetX * density
+    val cy = centerY + cfg.offsetY * density
     val reticleColor = parseHexColor(cfg.colorHex).copy(alpha = cfg.opacity)
-    val halfSize = cfg.sizeDp * density
+    val spread=if(cfg.dynamicSpread) cfg.currentSpreadMultiplier else 1f
+    val halfSize = cfg.sizeDp * density * spread
     val strokeWidth = cfg.thicknessDp * density
-    val gap = cfg.gapDp * density
+    val gap = cfg.gapDp * density * spread
 
+    fun drawShape(reticleColor: Color, strokeWidth: Float) {
     when (cfg.shape) {
         CrosshairShape.DOT -> {
             drawCircle(reticleColor, radius = strokeWidth * 2f, center = Offset(cx, cy))
@@ -335,7 +337,7 @@ fun DrawScope.drawCustomCrosshair(cfg: CrosshairConfig, centerX: Float, centerY:
             drawLine(reticleColor, Offset(cx + gap, cy), Offset(cx + gap + halfSize, cy), strokeWidth)
         }
         CrosshairShape.CIRCLE_DOT -> {
-            drawCircle(reticleColor, radius = 3f, center = Offset(cx, cy))
+            drawCircle(reticleColor, radius = 3f * density, center = Offset(cx, cy))
             drawCircle(reticleColor, radius = halfSize, center = Offset(cx, cy), style = Stroke(strokeWidth))
         }
         CrosshairShape.T_SHAPE -> {
@@ -354,18 +356,14 @@ fun DrawScope.drawCustomCrosshair(cfg: CrosshairConfig, centerX: Float, centerY:
             drawLine(reticleColor, Offset(cx, cy + gap), Offset(cx, cy + gap + halfSize), strokeWidth)
         }
     }
+    }
+    if(cfg.outlineEnabled && cfg.outlineThicknessDp>0f) drawShape(parseHexColor(cfg.outlineColorHex).copy(alpha=cfg.opacity),strokeWidth+2f*cfg.outlineThicknessDp*density)
+    drawShape(reticleColor,strokeWidth)
 }
 
 fun parseHexColor(hex: String): Color {
-    return try {
-        val clean = hex.replace("#", "")
-        val longVal = clean.toLong(16)
-        if (clean.length == 6) {
-            Color((0xFF000000 or longVal).toInt())
-        } else {
-            Color(longVal.toInt())
-        }
-    } catch (e: Exception) {
-        CyberCyan
-    }
+    require(hex.matches(Regex("#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?"))) { "Invalid reticle hex color: $hex" }
+    val clean=hex.substring(1)
+    val value=clean.toLong(16)
+    return Color((if(clean.length==6) 0xFF000000L or value else value).toInt())
 }

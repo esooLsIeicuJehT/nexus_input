@@ -20,6 +20,13 @@ object TouchSlotAllocator {
 }
 
 object ProfileValidator {
+    fun runtimeErrors(config: MappingConfig, expectedPackage: String? = null, expectedId: String? = null): List<String> =
+        errors(config,expectedPackage,expectedId) + buildList {
+            if(config.joystick.sprintLockEnabled) add("Stored sprint lock is unsupported in v1; disable it before mapping")
+            if(config.antiRecoilEnabled) add("Stored anti-recoil is unsupported in v1; disable it before mapping")
+            if(config.camera.mouseDpiScale != 1f) add("Mouse mapping is unsupported in this gamepad v1; set mouse DPI scale to 1")
+        }
+
     fun errors(config: MappingConfig, expectedPackage: String? = null, expectedId: String? = null,
                requireBindings: Boolean = true): List<String> = buildList {
         if (config.schemaVersion !in 1..3) add("Unsupported profile schema ${config.schemaVersion}")
@@ -34,6 +41,33 @@ object ProfileValidator {
         runCatching { TouchSlotAllocator.assign(config) }.exceptionOrNull()?.let { add(it.message ?: "Invalid touch slots") }
         val inputs = mutableSetOf<String>()
         val axes = mutableSetOf<Int>()
+        fun finiteRange(value: Float, range: ClosedFloatingPointRange<Float>, label: String) {
+            if(!value.isFinite() || value !in range) add("Invalid $label")
+        }
+        finiteRange(config.joystick.innerDeadzone,0f..0.9f,"joystick inner deadzone")
+        finiteRange(config.joystick.outerDeadzone,.01f..1f,"joystick outer deadzone")
+        if(config.joystick.innerDeadzone >= config.joystick.outerDeadzone) add("Invalid joystick deadzone interval")
+        finiteRange(config.joystick.runThresholdNorm,0f..1f,"joystick run threshold")
+        finiteRange(config.joystick.curveExponent,.1f..4f,"joystick response curve")
+        finiteRange(config.camera.horizontalSensitivity,.01f..10f,"camera horizontal sensitivity")
+        finiteRange(config.camera.verticalSensitivity,.01f..10f,"camera vertical sensitivity")
+        finiteRange(config.camera.accelerationCurve,.1f..4f,"camera response curve")
+        finiteRange(config.camera.mouseDpiScale,.01f..10f,"mouse DPI scale")
+        if(config.camera.smoothingFrames !in 1..30) add("Camera smoothing must be 1..30 frames")
+        finiteRange(config.antiRecoilVerticalPull,0f..1f,"anti-recoil pull")
+        finiteRange(config.rating,0f..5f,"rating")
+        if(config.downloadCount < 0) add("Download count cannot be negative")
+        val crosshair=config.crosshair
+        finiteRange(crosshair.sizeDp,1f..100f,"reticle size")
+        finiteRange(crosshair.thicknessDp,.1f..20f,"reticle thickness")
+        finiteRange(crosshair.gapDp,0f..100f,"reticle gap")
+        finiteRange(crosshair.opacity,0f..1f,"reticle opacity")
+        finiteRange(crosshair.outlineThicknessDp,0f..20f,"reticle outline thickness")
+        finiteRange(crosshair.offsetX,-1000f..1000f,"reticle X offset")
+        finiteRange(crosshair.offsetY,-1000f..1000f,"reticle Y offset")
+        finiteRange(crosshair.currentSpreadMultiplier,1f..2f,"reticle spread")
+        if(!crosshair.colorHex.matches(Regex("#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?")) ||
+            !crosshair.outlineColorHex.matches(Regex("#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?"))) add("Invalid reticle hex color")
         config.buttons.forEach { node ->
             val label = node.label.ifBlank { node.id }
             if (node.id.isBlank()) add("Node ID is required")
@@ -55,7 +89,11 @@ object ProfileValidator {
             } else if (node.inputScanCode != null) "SCAN_${node.inputScanCode}" else canonical
             if (node.type == NodeType.JOYSTICK_ZONE && canonical != "LS" && node.axisX == null) add("$label: joystick must bind LS or explicit axes")
             if (node.type == NodeType.CAMERA_DRAG && canonical != "RS" && node.axisX == null) add("$label: camera must bind RS or explicit axes")
-            val stickAxes = if (node.axisX != null && node.axisY != null) listOf(node.axisX, node.axisY)
+            val isStick=node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)
+            if(!isStick && node.inputKeyCode==null && node.inputScanCode==null && canonical in setOf("LS","RS")) add("$label: LS/RS require stick mapping; use L3/R3 for stick clicks")
+            if(!isStick && node.axisX!=null) add("$label: button bindings cannot use stick axes")
+            if(isStick && (node.inputKeyCode!=null || node.inputScanCode!=null)) add("$label: stick bindings cannot use key/scan codes")
+            val stickAxes = if (isStick && node.axisX != null && node.axisY != null) listOf(node.axisX, node.axisY)
                 else when (node.type) { NodeType.JOYSTICK_ZONE -> listOf(0, 1); NodeType.CAMERA_DRAG -> listOf(11, 14); else -> emptyList() }
             if (stickAxes.any { !axes.add(it) }) add("$label: duplicate physical stick axis")
             val identity = if (stickAxes.isNotEmpty()) "AXES_${stickAxes.sorted().joinToString("_")}" else input
@@ -72,8 +110,13 @@ object ProfileValidator {
                 node.macroActions.forEach { step ->
                     if (!step.xNorm.isFinite() || step.xNorm !in 0f..1f || !step.yNorm.isFinite() || step.yNorm !in 0f..1f) add("$label: invalid macro coordinates")
                     if (step.delayMs !in 0..10000 || step.durationMs !in 1..10000) add("$label: invalid macro duration")
-                    duration += step.delayMs.coerceIn(0, 10001) + step.durationMs.coerceIn(0, 10001)
+                    duration += step.delayMs.coerceIn(0, 10001) + if(step.actionType.uppercase() in setOf("TAP","SWIPE")) step.durationMs.coerceIn(0, 10001) else 0
                     when (step.actionType.uppercase()) {
+                        "SWIPE" -> {
+                            if(held) add("$label: SWIPE while macro touch held")
+                            if(step.endXNorm==null || !step.endXNorm.isFinite() || step.endXNorm !in 0f..1f ||
+                                step.endYNorm==null || !step.endYNorm.isFinite() || step.endYNorm !in 0f..1f) add("$label: invalid swipe destination")
+                        }
                         "TAP" -> if (held) add("$label: TAP while macro touch held")
                         "HOLD" -> { if (held) add("$label: repeated macro HOLD"); held = true }
                         "RELEASE" -> { if (!held) add("$label: RELEASE without HOLD"); held = false }

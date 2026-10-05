@@ -3,6 +3,4 @@
     <string name="accessibility_service_description">Enables Android accessibility gesture injection and controller keymapping for games in NEXUS INPUT.</string>
     <string name="mapping_service_notification_title">NEXUS INPUT Active</string>
     <string name="mapping_service_notification_desc">Input mapping and floating HUD running</string>
-    <string name="daily_progress_title">NEXUS INPUT Daily Report</string>
-    <string name="daily_progress_desc">Keep your gameplay calibrated and review your input setup.</string>
 </resources>

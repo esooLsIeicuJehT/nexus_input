@@ -69,6 +69,7 @@ class MappingForegroundService : Service() {
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
     private var loadJob: Job? = null
     private var inGameOverlay: InGameMapperOverlay? = null
+    private var frameOverlay: FrameTimeOverlay? = null
     private var crosshairOverlayManager: CrosshairOverlayManager? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -109,6 +110,7 @@ class MappingForegroundService : Service() {
     private fun startMapping(gamePkg: String, configId: String) {
         stopMapping(clearNotification = false)
 
+        frameOverlay=FrameTimeOverlay(this).apply { start() }
         _isServiceActive.value = true
         _activeGamePackage.value = gamePkg
         _isOverlayVisible.value = true
@@ -136,14 +138,14 @@ class MappingForegroundService : Service() {
                     return@launch
                 }
 
-            val errors = com.example.input.ProfileValidator.errors(config, gamePkg, configId)
+            val errors = com.example.input.ProfileValidator.runtimeErrors(config, gamePkg, configId)
             if (errors.isNotEmpty()) {
                 failLoadedProfile("Profile validation failed: " + errors.joinToString("; "))
                 return@launch
             }
 
             currentCrosshairConfig.value = config.crosshair
-            MappingRuntimeBridge.arm(gamePkg, config)
+            if (!MappingRuntimeBridge.arm(gamePkg, config)) { failLoadedProfile(MappingRuntimeBridge.state.value.error ?: "Mapping rejected");return@launch }
 
             withContext(Dispatchers.Main) {
                 val manager = getSystemService(NotificationManager::class.java)
@@ -198,6 +200,7 @@ class MappingForegroundService : Service() {
         _activeGamePackage.value = null
         loadJob?.cancel()
         loadJob = null
+        frameOverlay?.hide();frameOverlay=null
         inGameOverlay?.hide()
         inGameOverlay = null
         MappingRuntimeBridge.disarm(MappingRuntimeBridge.state.value.error)

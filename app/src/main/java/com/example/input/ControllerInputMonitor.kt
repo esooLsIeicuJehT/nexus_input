@@ -18,6 +18,7 @@ data class ControllerLiveState(
     val connectedEventSource: String? = null,
     val deviceId: Int? = null,
     val axes: Map<String, Float> = emptyMap(),
+    val normalizedAxes: Map<String, Float> = emptyMap(),
     val pressedButtons: Set<String> = emptySet(),
     val lastEventUptimeMs: Long = 0L
 )
@@ -32,11 +33,19 @@ object ControllerInputMonitor {
         val device = event.device
         val ranges = device?.motionRanges.orEmpty()
         val axes = linkedMapOf<String, Float>()
+        val normalized = linkedMapOf<String, Float>()
 
         fun capture(axis: Int, label: String) {
-            if (ranges.any { it.axis == axis }) {
-                axes[label] = event.getAxisValue(axis).coerceIn(-1f, 1f)
+            val range=ranges.firstOrNull { it.axis==axis && it.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK } ?: return
+            val raw=event.getAxisValue(axis)
+            if(!raw.isFinite() || !range.min.isFinite() || !range.max.isFinite() || range.min>=range.max) {
+                android.util.Log.e("NexusInput","Invalid observed controller axis $axis on device ${event.deviceId}")
+                return
             }
+            axes[label] = raw
+            val center=if(range.min<0f && range.max>0f) 0f else (range.min+range.max)/2f
+            val span=maxOf(kotlin.math.abs(range.max-center),kotlin.math.abs(range.min-center))
+            normalized[label]=((raw-center)/span).coerceIn(-1f,1f)
         }
 
         capture(MotionEvent.AXIS_X, "LX")
@@ -54,6 +63,7 @@ object ControllerInputMonitor {
             connectedEventSource = device?.name,
             deviceId = device?.id,
             axes = axes,
+            normalizedAxes = normalized,
             lastEventUptimeMs = event.eventTime
         )
     }

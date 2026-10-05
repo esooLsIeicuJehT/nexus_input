@@ -22,7 +22,7 @@ class MagiskInjector(
 
     private val appContext = context.applicationContext
     private val lock = Any()
-    private var runtime: RuntimeMagiskInjector? = null
+    @Volatile private var runtime: RuntimeMagiskInjector? = null
     private var runtimeWidth = 0
     private var runtimeHeight = 0
 
@@ -73,8 +73,11 @@ class MagiskInjector(
         result("touch end", injector.endTouch(pointerId))
     }
 
+    override fun readSurfaceLayers(): Result<String> = runtime?.readSurfaceLayers() ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+    override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer) ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+
     override fun cleanup() = synchronized(lock) {
-        runtime?.cleanup()?.let { result("cleanup", it) }
+        runtime?.cleanup()?.let { check(result("cleanup", it)) { "MagiskInjector cleanup was rejected; inspect backend logs" } }
         runtime = null
         runtimeWidth = 0
         runtimeHeight = 0
@@ -97,14 +100,14 @@ class MagiskInjector(
             return existing
         }
 
-        existing?.cleanup()?.let { result("geometry cleanup", it) }
+        existing?.cleanup()?.let { check(result("geometry cleanup", it)) { "MagiskInjector geometry cleanup was rejected" } }
         runtime = null
 
         val created = RuntimeMagiskInjector(
             context = appContext,
             width = geometry.first,
             height = geometry.second,
-            maxSlots = 10
+            maxSlots = com.example.input.TouchSlotAllocator.MAX_SLOTS
         )
         return when (val connected = created.connect()) {
             InjectionResult.Success -> {

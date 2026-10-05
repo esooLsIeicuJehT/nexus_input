@@ -16,6 +16,42 @@ import org.robolectric.annotation.Config
 /** Recording transport is a unit-test fixture. It does not verify Android injection. */
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class RuntimeTest {
+    @Test fun stalledStickAndTurboExecutionDoesNotReplayMissedTicksInABurst() {
+        for(sticks in listOf(true,false)) {
+            val entered=java.util.concurrent.CountDownLatch(1)
+            val resume=java.util.concurrent.CountDownLatch(1)
+            val ticks=CopyOnWriteArrayList<Long>()
+            val firstFinished=java.util.concurrent.atomic.AtomicLong()
+            val transport=Recording()
+            fun tick(): Boolean {
+                ticks.add(System.nanoTime())
+                if(ticks.size==1) {
+                    entered.countDown()
+                    check(resume.await(2,java.util.concurrent.TimeUnit.SECONDS))
+                    firstFinished.set(System.nanoTime())
+                }
+                return true
+            }
+            val backend=object:InputInjector by transport {
+                override val method=if(sticks) PrivilegeMethod.KERNELSU else PrivilegeMethod.ACCESSIBILITY
+                override fun moveTouch(pointerId:Int,x:Float,y:Float)=tick()
+                override fun injectTap(x:Float,y:Float)=tick()
+            }
+            val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)})
+            try {
+                if(sticks) runtime.handleMotionSnapshot(sample(lx=1f),config(MappingNode("ls",.2f,.7f,.12f,NodeType.JOYSTICK_ZONE,"LS")),backend)
+                else runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(MappingNode("turbo",.2f,.3f,type=NodeType.TURBO,boundKey="A",turboHz=30)),backend)
+                assertTrue(entered.await(1,java.util.concurrent.TimeUnit.SECONDS))
+                Thread.sleep(120)
+                resume.countDown()
+                val deadline=System.nanoTime()+1_000_000_000
+                while(ticks.size<2 && System.nanoTime()<deadline) Thread.sleep(2)
+                assertTrue("Expected the next real tick",ticks.size>=2)
+                val minimumGap=if(sticks) 12_000_000L else 28_000_000L
+                assertTrue("Missed ticks must not catch up immediately",ticks[1]-firstFinished.get()>=minimumGap)
+            } finally { resume.countDown();runtime.shutdown(backend) }
+        }
+    }
     private class Recording : InputInjector {
         override val method=PrivilegeMethod.KERNELSU
         val calls=CopyOnWriteArrayList<Triple<String,Int,Pair<Float,Float>>>()
@@ -158,6 +194,77 @@ class RuntimeTest {
         runtime.handleMotionSnapshot(sample(rt=.7f),c,backend);runtime.awaitIdle();assertEquals(0,backend.calls.count { it.first=="up" })
         runtime.handleMotionSnapshot(sample(rt=.5f),c,backend);runtime.awaitIdle();assertEquals(1,backend.calls.count { it.first=="up" })
         runtime.shutdown(null)
+    }
+
+    @Test fun joystickCurveAndCameraSensitivitySmoothingChangeInjectedCoordinates() {
+        fun firstMove(profile: MappingConfig,snapshot: GamepadMappingRuntime.MotionSnapshot): Pair<Float,Float> {
+            val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)});val backend=Recording()
+            try {
+                runtime.handleMotionSnapshot(snapshot,profile,backend)
+                val deadline=System.nanoTime()+1_000_000_000
+                while(backend.calls.none { it.first=="move" } && System.nanoTime()<deadline) Thread.sleep(5)
+                return backend.calls.first { it.first=="move" }.third
+            } finally { runtime.shutdown(backend) }
+        }
+        val ls=config(MappingNode("ls",.2f,.7f,.2f,NodeType.JOYSTICK_ZONE,"LS",deadzoneInner=0f,deadzoneOuter=1f))
+            .copy(joystick=JoystickSettings(curveExponent=2f))
+        assertEquals(224.8f,firstMove(ls,sample(lx=.5f)).first,.01f)
+        val rs=config(MappingNode("rs",.5f,.5f,.2f,NodeType.CAMERA_DRAG,"RS",deadzoneInner=0f,deadzoneOuter=1f))
+            .copy(camera=CameraSettings(2f,.5f,2f,2))
+        val position=firstMove(rs,sample(rx=.5f,ry=.5f))
+        assertEquals(505f,position.first,.01f);assertEquals(250.875f,position.second,.01f)
+    }
+    @Test fun aMacroCannotRetriggerWhileItsPreviousStepsArePending() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val profile=config(MappingNode("macro",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(500,"TAP"))))
+        try {
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.awaitIdle()
+            assertTrue(errors.any { it.contains("already running") });assertTrue(backend.calls.isEmpty())
+            assertTrue(runtime.releaseAll(backend))
+        } finally { runtime.shutdown(null) }
+    }
+
+    @Test fun pointerIdsUpTo31AreAllowedButContactCountNeverExceedsAndroidLimit() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val nodes=(0 until 17).map { id -> MappingNode("h$id",.2f,.3f,boundKey="A",inputKeyCode=KeyEvent.KEYCODE_BUTTON_A+id,buttonBehavior=ButtonBehavior.HOLD,touchSlot=if(id==0)31 else id-1) }
+        val profile=config(*nodes.toTypedArray())
+        try {
+            nodes.forEach { runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,it.inputKeyCode!!),profile,backend) }
+            runtime.awaitIdle();assertEquals(16,backend.calls.count { it.first=="down" })
+            assertTrue(backend.calls.any { it.first=="down" && it.second==31 })
+            assertTrue(errors.any { it.contains("16 simultaneous") });assertTrue(runtime.releaseAll(backend))
+            assertEquals(16,backend.calls.count { it.first=="up" })
+        } finally { runtime.shutdown(null) }
+    }
+
+    @Test fun swipeUsesRealContactMovesAndPanicCancelsTheRemainingTrajectory() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val swipe=config(MappingNode("swipe",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(0,"SWIPE",.2f,.3f,100,.8f,.6f))))
+        try {
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),swipe,backend)
+            var deadline=System.nanoTime()+1_000_000_000
+            while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline) Thread.sleep(5)
+            assertEquals(1,backend.calls.count { it.first=="down" });assertTrue(backend.calls.count { it.first=="move" }>=2)
+            val last=backend.calls.last { it.first=="move" }.third
+            assertEquals(799.2f,last.first,.01f);assertEquals(299.4f,last.second,.01f)
+            // The last transport UP can precede the queued macro-completion marker.
+            // Start the panic scenario only after acknowledged release clears that earlier session.
+            assertTrue(runtime.releaseAll(backend))
+            backend.calls.clear()
+            val longSwipe=swipe.copy(buttons=listOf(swipe.buttons.single().copy(macroActions=listOf(swipe.buttons.single().macroActions.single().copy(durationMs=5000)))))
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
+            deadline=System.nanoTime()+1_000_000_000
+            while(backend.calls.none { it.first=="move" } && System.nanoTime()<deadline) Thread.sleep(5)
+            assertEquals(1,backend.calls.count { it.first=="down" })
+            assertTrue("The second swipe must actually be in flight before panic",backend.calls.any { it.first=="move" })
+            assertFalse(backend.calls.any { it.first=="up" })
+            assertTrue(runtime.releaseAll(backend));val stopped=backend.calls.size;Thread.sleep(80)
+            assertEquals(stopped,backend.calls.size);assertTrue(errors.joinToString("; "),errors.isEmpty())
+        } finally { runtime.shutdown(null) }
     }
 
 }

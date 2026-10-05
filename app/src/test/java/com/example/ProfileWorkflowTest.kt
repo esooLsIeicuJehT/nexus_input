@@ -22,6 +22,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 class ProfileWorkflowTest {
+    @Test fun missingRealStickSamplesEndCalibrationAndReportFailure() = withViewModel { vm,_ ->
+        val completions=java.util.concurrent.atomic.AtomicInteger()
+        vm.startStickCalibration { completions.incrementAndGet() }
+        await { completions.get()>0 }
+        assertEquals(1,completions.get())
+        assertFalse(vm.stickCalibrationState.value.isMeasured)
+        assertNotNull(vm.stickCalibrationState.value.error)
+        assertTrue(vm.snackMessage.value!!.contains("Stick calibration failed"))
+    }
     private fun await(predicate: () -> Boolean) {
         val deadline=System.nanoTime()+5_000_000_000
         while(!predicate() && System.nanoTime()<deadline) Thread.sleep(10)
@@ -76,6 +85,13 @@ class ProfileWorkflowTest {
         await { vm.snackMessage.value?.contains("Screenshot import failed")==true }
         assertNull(vm.screenshot.value);assertTrue(vm.aiHudCandidates.value.isEmpty())
         file.delete();bitmap.recycle()
+    }
+
+    @Test fun productionNavigationRejectsCommunityAndVipWhileKeepingLocalProfileFiles() = withViewModel { vm,_ ->
+        vm.selectTab("home")
+        vm.selectTab("community");assertEquals("home",vm.currentTab.value);assertTrue(vm.snackMessage.value!!.contains("unavailable"))
+        vm.selectTab("vip");assertEquals("home",vm.currentTab.value)
+        vm.selectTab("profile_files");assertEquals("profile_files",vm.currentTab.value)
     }
 
 }

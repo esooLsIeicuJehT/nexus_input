@@ -9,6 +9,7 @@ class PairingOutcomeTest {
         assertFalse(ShizukuPairingManager.evaluateAdbPair(1, "Successfully paired to localhost:1234").success)
         assertFalse(ShizukuPairingManager.evaluateAdbPair(0, "error: connection refused").success)
         assertFalse(ShizukuPairingManager.evaluateAdbPair(0, "").success)
+        assertFalse(ShizukuPairingManager.evaluateAdbPair(0, "Successfully paired to localhost:1234",true).success)
     }
     @Test fun confirmedPairingIsNotAppAuthorization() {
         val outcome = ShizukuPairingManager.evaluateAdbPair(0, "Successfully paired to localhost:1234 [guid=abc]")

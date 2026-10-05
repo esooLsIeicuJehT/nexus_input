@@ -6,9 +6,18 @@ import tempfile
 import unittest
 import zipfile
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from package_release import package, FILES, ROOT, properties
+from package_release import package, FILES, ROOT, properties, verify_identity
 
 class PackagingTest(unittest.TestCase):
+    def test_incoherent_metadata_or_unimplemented_server_capability_rejects_packaging(self):
+        version=properties(ROOT/'version.properties')
+        module=properties(ROOT/'kernelsu-module/module.prop')
+        metadata=json.loads((ROOT/'metadata.json').read_text())
+        verify_identity(version,module,metadata)
+        for invalid in [dict(metadata,versionCode=metadata['versionCode']+1),
+                        dict(metadata,name='Controlyst'),
+                        dict(metadata,majorCapabilities=['MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API'])]:
+            with self.assertRaises(AssertionError): verify_identity(version,module,invalid)
     def test_reproducible_zip_exact_identity_and_required_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)

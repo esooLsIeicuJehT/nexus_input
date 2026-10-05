@@ -37,6 +37,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var showBinding by remember { mutableStateOf(false) }
     var binding by remember { mutableStateOf("A") }
     var behavior by remember { mutableStateOf(ButtonBehavior.TAP) }
+    var turbo by remember { mutableStateOf(false) }
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
     val currentConfig by rememberUpdatedState(config)
@@ -48,7 +49,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             TextButton(onClick={ picker.launch(arrayOf("image/*")) }) { Text("Import screenshot") }
             TextButton(onClick=viewModel::captureScreenshot) { Text("Capture screen") }
             TextButton(onClick=viewModel::runAiHudScan,enabled=screenshot!=null) { Text("Find regions") }
-            TextButton(onClick={ binding="A";behavior=ButtonBehavior.TAP;selected=null;showBinding=true },enabled=config.gamePackage.isNotBlank()) { Text("Add input") }
+            TextButton(onClick={ binding="A";behavior=ButtonBehavior.TAP;turbo=false;selected=null;showBinding=true },enabled=config.gamePackage.isNotBlank()) { Text("Add input") }
             TextButton(onClick={ snap=!snap }) { Text(if(snap) "Grid on" else "Grid off") }
             TextButton(onClick={ viewModel.selectTab("macro") },enabled=config.gamePackage.isNotBlank()) { Text("Macro") }
         }
@@ -104,7 +105,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
         if(node!=null) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("${node.boundKey} · ${node.type} · ${node.buttonBehavior}",color=TextPrimary)
-                TextButton(onClick={binding=node.boundKey;behavior=node.buttonBehavior;showBinding=true}) { Text("Rebind") }
+                TextButton(onClick={binding=node.boundKey;behavior=node.buttonBehavior;turbo=node.type==NodeType.TURBO;showBinding=true}) { Text("Rebind") }
                 TextButton(onClick={viewModel.removeNode(node.id);selected=null}) { Text("Delete") }
                 Text("Radius",color=TextSecondary)
                 Slider(value=node.radiusNorm,onValueChange={viewModel.updateNode(node.copy(radiusNorm=it))},valueRange=.02f.. .3f,modifier=Modifier.width(140.dp))
@@ -117,10 +118,11 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             ControllerBindingAliases.supported.sorted().chunked(4).forEach { keys -> Row { keys.forEach { key ->
                 FilterChip(selected=binding==key,onClick={binding=key;behavior=if(key in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP},label={Text(key)})
             } } }
+            if(binding !in setOf("LS","RS") && node?.type!=NodeType.MACRO) Row { Text("Turbo repeat (${node?.turboHz ?: 10} Hz)");Switch(turbo,{turbo=it}) }
             Row { ButtonBehavior.entries.forEach { value -> FilterChip(selected=behavior==value,onClick={behavior=value},label={Text(value.name)}) } }
         }
     },confirmButton={TextButton(onClick={
-        val type=when(binding) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> NodeType.BUTTON }
+        val type=when(binding) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> if(node?.type==NodeType.MACRO) NodeType.MACRO else if(turbo) NodeType.TURBO else NodeType.BUTTON }
         val updated=node?.copy(boundKey=binding,type=type,buttonBehavior=behavior,inputKeyCode=null,inputScanCode=null,axisX=null,axisY=null)
             ?: MappingNode(java.util.UUID.randomUUID().toString(),.5f,.5f,radiusNorm=if(type==NodeType.BUTTON) .05f else .12f,type=type,boundKey=binding,buttonBehavior=behavior)
         if(node==null) viewModel.addNode(updated) else viewModel.updateNode(updated)

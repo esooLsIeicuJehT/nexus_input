@@ -48,4 +48,34 @@ class ProfileIntegrityTest {
         assertTrue(runCatching { ControlystRepository.deserializeJsonToConfig(text.replace("BUTTON","UNSUPPORTED")) }.isFailure)
         assertTrue(runCatching { ControlystRepository.deserializeJsonToConfig("{}") }.isFailure)
     }
+    @Test fun invalidGlobalSettingsAndAmbiguousAxisBindingsAreRejected() {
+        val base=config(MappingNode("a",.3f,.4f))
+        assertTrue(ProfileValidator.errors(base.copy(camera=CameraSettings(horizontalSensitivity=Float.NaN))).isNotEmpty())
+        assertTrue(ProfileValidator.errors(base.copy(crosshair=CrosshairConfig(colorHex="invalid"))).isNotEmpty())
+        assertTrue(ProfileValidator.errors(base.copy(buttons=listOf(base.buttons.first().copy(axisX=0,axisY=1)))).any { it.contains("cannot use stick axes") })
+        val stick=MappingNode("ls",.3f,.4f,type=NodeType.JOYSTICK_ZONE,boundKey="LS",inputKeyCode=96)
+        assertTrue(ProfileValidator.errors(config(stick)).any { it.contains("cannot use key/scan") })
+    }
+    @Test fun unsupportedLegacyOptionsArePreservedButCannotArmSilently() {
+        val base=config(MappingNode("a",.3f,.4f))
+        val legacy=base.copy(joystick=base.joystick.copy(sprintLockEnabled=true),antiRecoilEnabled=true,camera=base.camera.copy(mouseDpiScale=2f))
+        assertEquals(legacy,ControlystRepository.deserializeJsonToConfig(ControlystRepository.serializeConfigToJson(legacy)))
+        assertTrue(ProfileValidator.errors(legacy).isEmpty())
+        assertEquals(3,ProfileValidator.runtimeErrors(legacy).size)
+        assertFalse(com.example.service.MappingRuntimeBridge.arm(base.gamePackage,legacy))
+        assertFalse(com.example.service.MappingRuntimeBridge.state.value.armed)
+        assertTrue(com.example.service.MappingRuntimeBridge.state.value.error!!.contains("unsupported"))
+        assertTrue(com.example.service.MappingRuntimeBridge.arm(base.gamePackage,base))
+        com.example.service.MappingRuntimeBridge.disarm()
+    }
+
+    @Test fun swipeDestinationsAreValidatedAndPreservedInTheExactProfile() {
+        val swipe=MappingNode("swipe",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(0,"SWIPE",.2f,.3f,120,.8f,.6f)))
+        val profile=config(swipe)
+        assertTrue(ProfileValidator.errors(profile).isEmpty())
+        assertEquals(profile,ControlystRepository.deserializeJsonToConfig(ControlystRepository.serializeConfigToJson(profile)))
+        assertTrue(ProfileValidator.errors(config(swipe.copy(macroActions=listOf(swipe.macroActions.single().copy(endXNorm=null))))).any { it.contains("swipe destination") })
+        assertTrue(ProfileValidator.errors(config(swipe.copy(type=NodeType.BUTTON,boundKey="LS"))).any { it.contains("LS/RS") })
+    }
+
 }

@@ -22,9 +22,12 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.model.CrosshairConfig
+import com.example.model.CrosshairGeometry
+import com.example.input.ControllerInputMonitor
 import com.example.ui.crosshair.drawCustomCrosshair
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 
 /** Supplies both owners Compose requires for a window hosted outside an Activity. */
 internal class OverlayOwner : SavedStateRegistryOwner {
@@ -56,7 +59,9 @@ class CrosshairOverlayManager(private val context: Context) {
             setViewTreeSavedStateRegistryOwner(lifecycleOwner)
             setContent {
                 val config by configFlow.collectAsState()
-                Canvas(Modifier.size((config.sizeDp * 3).dp)) { drawCustomCrosshair(config,size.width/2,size.height/2) }
+                val input by ControllerInputMonitor.state.collectAsState()
+                val rendered=config.copy(currentSpreadMultiplier=CrosshairGeometry.observedSpread(config,input.normalizedAxes))
+                Canvas(Modifier.size(CrosshairGeometry.extentDp(config).dp)) { drawCustomCrosshair(rendered,size.width/2,size.height/2) }
             }
         }
         val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -67,7 +72,9 @@ class CrosshairOverlayManager(private val context: Context) {
         try {
             windowManager.addView(view,params);overlayView=view;owner=lifecycleOwner
             scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate).also { current -> current.launch {
-                configFlow.collect { config -> view.visibility=if(config.isEnabled) View.VISIBLE else View.GONE }
+                combine(configFlow,MappingRuntimeBridge.state) { config,runtime ->
+                    config.isEnabled && runtime.armed && runtime.targetForeground && runtime.backendReady
+                }.collect { visible -> view.visibility=if(visible) View.VISIBLE else View.GONE }
             } }
         } catch(error:Exception) { view.disposeComposition();lifecycleOwner.destroy();fail("Crosshair window failed: ${error.message}",error) }
     }

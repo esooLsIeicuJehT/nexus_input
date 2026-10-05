@@ -27,13 +27,19 @@ fun MacroTimelineEditor(viewModel: MainAppViewModel, onBack: () -> Unit) {
         steps.forEachIndexed { index,step ->
             Card { Column(Modifier.padding(8.dp)) {
                 Text("Step ${index+1}")
-                Row { listOf("TAP","HOLD","RELEASE").forEach { action -> FilterChip(step.actionType==action,{steps=steps.toMutableList().apply { this[index]=step.copy(actionType=action) }},label={Text(action)}) } }
+                Row { listOf("TAP","HOLD","RELEASE","SWIPE").forEach { action -> FilterChip(step.actionType==action,{steps=steps.toMutableList().apply { this[index]=step.copy(actionType=action,endXNorm=if(action=="SWIPE") step.endXNorm ?: .7f else step.endXNorm,endYNorm=if(action=="SWIPE") step.endYNorm ?: .5f else step.endYNorm) }},label={Text(action)}) } }
                 OutlinedTextField(step.delayMs.toString(),{ value -> value.toLongOrNull()?.let { steps=steps.toMutableList().apply { this[index]=step.copy(delayMs=it) } } },label={Text("Delay before step (ms)")})
-                OutlinedTextField(step.durationMs.toString(),{ value -> value.toLongOrNull()?.let { steps=steps.toMutableList().apply { this[index]=step.copy(durationMs=it) } } },label={Text("TAP duration (ms)")})
+                if(step.actionType in setOf("TAP","SWIPE")) OutlinedTextField(step.durationMs.toString(),{ value -> value.toLongOrNull()?.let { steps=steps.toMutableList().apply { this[index]=step.copy(durationMs=it) } } },label={Text("Contact duration (ms)")})
                 Text("X ${(step.xNorm*100).toInt()}%")
                 Slider(step.xNorm,{steps=steps.toMutableList().apply { this[index]=step.copy(xNorm=it) }})
                 Text("Y ${(step.yNorm*100).toInt()}%")
                 Slider(step.yNorm,{steps=steps.toMutableList().apply { this[index]=step.copy(yNorm=it) }})
+                if(step.actionType=="SWIPE") {
+                    Text("End X ${((step.endXNorm ?: .7f)*100).toInt()}%")
+                    Slider(step.endXNorm ?: .7f,{steps=steps.toMutableList().apply { this[index]=step.copy(endXNorm=it) }})
+                    Text("End Y ${((step.endYNorm ?: .5f)*100).toInt()}%")
+                    Slider(step.endYNorm ?: .5f,{steps=steps.toMutableList().apply { this[index]=step.copy(endYNorm=it) }})
+                }
                 TextButton(onClick={steps=steps.filterIndexed { i,_ -> i!=index }}) { Text("Remove step") }
             } }
         }

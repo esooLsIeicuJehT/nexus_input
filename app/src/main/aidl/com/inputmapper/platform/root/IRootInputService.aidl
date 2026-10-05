@@ -9,4 +9,6 @@ interface IRootInputService {
     String status();
     String publishState(String state);
     String destroyDevices();
+    String readSurfaceLayers();
+    String readSurfaceLatency(String layer);
 }

@@ -25,3 +25,17 @@ data class CrosshairConfig(
     val dynamicSpread: Boolean = true,      // Expands on analog stick deflection
     val currentSpreadMultiplier: Float = 1.0f
 )
+
+/** Uses observed range-normalized Android stick samples; missing axes produce static rendering. */
+object CrosshairGeometry {
+    fun observedSpread(config: CrosshairConfig, axes: Map<String,Float>): Float {
+        if(!config.dynamicSpread) return 1f
+        val magnitude=listOf("LX" to "LY","RX" to "RY").mapNotNull { (x,y) ->
+            val vx=axes[x];val vy=axes[y]
+            if(vx==null || vy==null || !vx.isFinite() || !vy.isFinite()) null else kotlin.math.hypot(vx,vy).coerceIn(0f,1f)
+        }.maxOrNull() ?: 0f
+        return 1f+magnitude
+    }
+    fun extentDp(config: CrosshairConfig): Float = 2f*(config.sizeDp*2f+config.gapDp*2f+
+        config.thicknessDp+config.outlineThicknessDp+maxOf(kotlin.math.abs(config.offsetX),kotlin.math.abs(config.offsetY))+2f)
+}

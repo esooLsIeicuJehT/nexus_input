@@ -17,6 +17,9 @@ class RootInputService : RootService() {
     private var devicesCreated = false
 
     private val binder = object : IRootInputService.Stub() {
+        override fun readSurfaceLayers(): String = com.inputmapper.platform.core.SurfaceFrameProbe.layers()
+        override fun readSurfaceLatency(layer: String): String = com.inputmapper.platform.core.SurfaceFrameProbe.latency(layer)
+
         override fun create(width: Int, height: Int, maxSlots: Int): String = synchronized(this@RootInputService) {
             rootGuard()?.let { return@synchronized it }
             nativeLoadError?.let { return@synchronized "ERROR NATIVE_LOAD $it" }

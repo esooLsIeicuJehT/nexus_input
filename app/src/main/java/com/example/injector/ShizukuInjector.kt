@@ -19,7 +19,7 @@ class ShizukuInjector(
 
     private val appContext = context.applicationContext
     private val lock = Any()
-    private var runtime: RuntimeShizukuInjector? = null
+    @Volatile private var runtime: RuntimeShizukuInjector? = null
 
     override fun isAvailable(): Boolean {
         val access = ShizukuAccess.snapshot(appContext)
@@ -67,8 +67,11 @@ class ShizukuInjector(
         result("touch end", injector.endTouch(pointerId))
     }
 
+    override fun readSurfaceLayers(): Result<String> = runtime?.readSurfaceLayers() ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+    override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer) ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+
     override fun cleanup() = synchronized(lock) {
-        runtime?.cleanup()?.let { result("cleanup", it) }
+        runtime?.cleanup()?.let { check(result("cleanup", it)) { "Shizuku cleanup was rejected; inspect backend logs" } }
         runtime = null
         Unit
     }

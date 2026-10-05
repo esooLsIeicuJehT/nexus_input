@@ -11,7 +11,7 @@ import org.robolectric.annotation.Config
 
 /** Launches the application's registered activity in both debug and release variants. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [24,34])
 class NexusLaunchTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 

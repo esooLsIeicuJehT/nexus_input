@@ -28,7 +28,7 @@ class MapperEditSession(val original: MappingConfig) {
         val canonical = ControllerBindingAliases.canonical(binding)
         require(canonical in ControllerBindingAliases.supported) { "Unsupported physical input" }
         draft = draft.copy(buttons = draft.buttons.map { if(it.id != id) it else it.copy(boundKey=canonical,
-            type = when(canonical) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> NodeType.BUTTON },
+            type = when(canonical) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> if(it.type in setOf(NodeType.MACRO,NodeType.TURBO)) it.type else NodeType.BUTTON },
             buttonBehavior=behavior,inputKeyCode=null,inputScanCode=null,axisX=null,axisY=null) })
     }
     fun remove(id: String) { draft = draft.copy(buttons = draft.buttons.filterNot { it.id == id }) }

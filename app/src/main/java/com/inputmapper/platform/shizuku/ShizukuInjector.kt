@@ -49,7 +49,7 @@ class ShizukuInjector(
         )
             .processNameSuffix("mapper_input")
             .tag("input-injector-v2")
-            .version(2)
+            .version(3)
             .daemon(false)
 
         val localConnection = object : ServiceConnection {
@@ -127,6 +127,9 @@ class ShizukuInjector(
         validateTap(x, y)?.let { return@synchronized it }
         if (pointerId !in 0..31) {
             return@synchronized InjectionResult.Failure(InjectionErrorCode.INVALID_ARGUMENT, "pointerId=$pointerId outside 0..31")
+        }
+        if(activeTouches.containsKey(pointerId) || activeTouches.size>=16) {
+            return@synchronized InjectionResult.Failure(InjectionErrorCode.INVALID_ARGUMENT,"Duplicate pointer ID or Android 16-contact limit reached")
         }
         val service = remote ?: return@synchronized notReady()
         if (activeTouches.isEmpty()) touchDownTime = SystemClock.uptimeMillis()
@@ -217,24 +220,27 @@ class ShizukuInjector(
 
     private fun notReady() = InjectionResult.Failure(InjectionErrorCode.NOT_READY, "Shizuku injector is not connected")
 
+    fun readSurfaceLayers(): Result<String> = runCatching { (remote ?: error("Shizuku frame service is not connected")).readSurfaceLayers() }
+    fun readSurfaceLatency(layer:String): Result<String> = runCatching { (remote ?: error("Shizuku frame service is not connected")).readSurfaceLatency(layer) }
+
     override fun cleanup(): InjectionResult {
+        val failures=mutableListOf<String>()
         synchronized(touchLock) {
-            val ids = activeTouches.keys.toList().asReversed()
-            ids.forEach { runCatching { endTouch(it) } }
-            activeTouches.clear()
-            touchDownTime = 0L
+            activeTouches.keys.toList().asReversed().forEach { id ->
+                when(val release=endTouch(id)) {
+                    InjectionResult.Success -> Unit
+                    is InjectionResult.Failure -> failures += "Pointer $id release: ${release.message}"
+                }
+            }
         }
-        val localArgs = args
-        val localConnection = connection
-        remote = null
-        args = null
-        connection = null
-        if (localArgs == null || localConnection == null) return InjectionResult.Success
-        return try {
-            runtime.unbindUserService(localArgs, localConnection, true)
-            InjectionResult.Success
-        } catch (t: Throwable) {
-            InjectionResult.Failure(InjectionErrorCode.CLEANUP_FAILURE, "Failed to unbind Shizuku UserService: ${t.message}", t)
+        val localArgs=args;val localConnection=connection
+        if(localArgs!=null && localConnection!=null) {
+            try { runtime.unbindUserService(localArgs,localConnection,true) }
+            catch(error:Throwable) { failures += "Unbind: ${error.javaClass.simpleName}: ${error.message}" }
         }
+        if(failures.isNotEmpty()) return InjectionResult.Failure(InjectionErrorCode.CLEANUP_FAILURE,failures.joinToString("; "))
+        synchronized(touchLock) { activeTouches.clear();touchDownTime=0L }
+        remote=null;args=null;connection=null
+        return InjectionResult.Success
     }
 }

@@ -42,4 +42,14 @@ class MapperEditSessionTest {
         assertEquals(0 to 0,com.example.service.OverlayBounds.position(100,100,300,300,200,200))
     }
 
+    @Test fun rebindPreservesMacroAndTurboBehavior() {
+        val macro=config().copy(buttons=listOf(MappingNode("m",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep()))))
+        val edit=MapperEditSession(macro);edit.bind("m","B",ButtonBehavior.TAP)
+        assertEquals(NodeType.MACRO,edit.validated().buttons.single().type)
+        assertEquals(macro.buttons.single().macroActions,edit.validated().buttons.single().macroActions)
+        val turbo=MapperEditSession(config().copy(buttons=listOf(MappingNode("t",.2f,.3f,type=NodeType.TURBO,boundKey="A",turboHz=15))))
+        turbo.bind("t","B",ButtonBehavior.TAP);assertEquals(15,turbo.validated().buttons.single().turboHz)
+        assertEquals(NodeType.TURBO,turbo.validated().buttons.single().type)
+    }
+
 }

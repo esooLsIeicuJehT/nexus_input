@@ -22,5 +22,8 @@ interface IShizukuInputService {
 
     String selfTest() = 3;
 
+    String readSurfaceLayers() = 4;
+    String readSurfaceLatency(String layer) = 5;
+
     void destroy() = 16777114;
 }

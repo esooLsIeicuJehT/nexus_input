@@ -6,18 +6,24 @@ import json
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','skip_mount',
+FILES = ('module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','control.sh','control-lib.sh','skip_mount',
          'webroot/index.html','webroot/app.js','webroot/style.css')
 
 def properties(path):
     return dict(line.split('=',1) for line in path.read_text().splitlines() if '=' in line and not line.startswith('#'))
 
+def verify_identity(version, module, metadata):
+    assert module['id'] == 'gamepad.pro.root', 'Existing module identity must be preserved'
+    assert module['version'] == version['versionName'] and module['versionCode'] == version['versionCode'], 'Android and module versions differ'
+    assert metadata['name'] == 'NEXUS INPUT', 'Inherited project branding remains'
+    assert metadata['versionName'] == version['versionName'] and metadata['versionCode'] == int(version['versionCode']), 'Project metadata and release versions differ'
+    assert not metadata['majorCapabilities'], 'No server capability is implemented in this mapping-only product'
+    assert int(version['versionCode']) > 600, 'Upgrade versionCode must exceed preserved 0.6.2 lineage'
+
 def package(output):
     version = properties(ROOT/'version.properties')
     module = properties(ROOT/'kernelsu-module/module.prop')
-    assert module['id'] == 'gamepad.pro.root', 'Existing module identity must be preserved'
-    assert module['version'] == version['versionName'] and module['versionCode'] == version['versionCode'], 'Android and module versions differ'
-    assert int(version['versionCode']) > 600, 'Upgrade versionCode must exceed preserved 0.6.2 lineage'
+    verify_identity(version,module,json.loads((ROOT/'metadata.json').read_text()))
     output.mkdir(parents=True,exist_ok=True)
     archive = output/f"NEXUS_INPUT-KernelSU-Companion-v{version['versionName']}.zip"
     with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as zipout:

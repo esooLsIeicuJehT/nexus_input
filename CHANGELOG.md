@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.0 candidate — not yet production-published
+
+- Keep Android mapping and module root tuning as separate products; remove APK performance controls, Community/VIP navigation and unused cloud authentication.
+- Replace simulated pairing, HUD controls and controller calibration with real process results, Bitmap input and InputDevice/MotionEvent samples.
+- Add exact profile validation, duplicate physical-input checks, transactional legacy migration and explicit Room 1→2→3 migrations without destructive fallback.
+- Complete real screenshot import/capture, profile persistence, in-game editing, controller testing, crosshair and timestamp-based presented-frame overlays.
+- Harden backend selection, actual Shizuku UserService/AIDL, touch slots, HAT/D-pad, triggers, independent sticks, swipe macros, turbo and observable panic cleanup. APatch remains unverified/fail-closed.
+- Add guarded module CPU/devfreq/swappiness controls with actual capability observations and read-back; unsupported device-specific thermal/ZRAM/preset operations remain explicit.
+- Share app/module version 1.0.0/code 1000. Add debug/release tests, lint, native/architecture guards, APK/AAB identity checks, deterministic module packaging and fail-closed signing/draft-release workflows.
+- Add release gates and the rooted/non-root device checklist. CI is not hardware verification; exact Figma comparison and signed upgrade testing remain pending.
+
+Earlier entries below describe historical revisions and must not be read as hardware acceptance of the v1 candidate.
+
 ## 0.6.0-dev
 
 - Introduce the NEXUS INPUT five-tab application shell: Home, Profiles, Mapper, Devices, and System.

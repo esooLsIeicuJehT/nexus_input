@@ -43,11 +43,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
+      - name: Native and module regression tests
+        run: |
+          python3 scripts/check_native_boundary.py
+          python3 scripts/check_architecture_boundary.py
+          python3 -m unittest discover -s scripts/tests -v
+          node --test scripts/tests/webui.test.js
+          sh -n kernelsu-module/control.sh kernelsu-module/control-lib.sh kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh
       - name: Test and build signed APK and AAB
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle --no-daemon --stacktrace :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease :app:bundleRelease
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:testReleaseUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:bundleRelease
+      - run: python3 scripts/verify_android_artifacts.py --signed
       - name: Verify signature and checksums
         shell: bash
         run: |
@@ -66,6 +74,8 @@ jobs:
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
             app/build/test-results/
+            app/build/reports/
+            app/schemas/
             dist/
           if-no-files-found: error
       - name: Remove temporary signing material

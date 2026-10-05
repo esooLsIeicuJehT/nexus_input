@@ -33,6 +33,10 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 class ControlystAccessibilityService : AccessibilityService() {
+    private val gestures = com.example.input.GestureLedger()
+    fun awaitGestureIdle(): Boolean = gestures.awaitIdle(200)
+    val pendingGestureCount: Int get() = gestures.count
+
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val backendExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -47,6 +51,8 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     @Volatile
     private var activeInjector: InputInjector? = null
+
+    private val failedCleanup = java.util.concurrent.ConcurrentHashMap.newKeySet<InputInjector>()
 
     @Volatile
     private var runtimePreparing = false
@@ -167,6 +173,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
+        MappingRuntimeBridge.disarm("Accessibility capture disconnected; mapper disarmed")
         val current = activeInjector
         activeInjector = null
         if (current != null) {
@@ -181,6 +188,10 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     private fun prepareRuntimeAsync() {
         if (activeInjector != null || runtimePreparing || backendExecutor.isShutdown) return
+        if(failedCleanup.isNotEmpty()) {
+            MappingRuntimeBridge.disarm("Previous backend release is unconfirmed. Use panic to retry cleanup before restarting mapping.")
+            return
+        }
         runtimePreparing = true
         backendExecutor.execute {
             try {
@@ -258,21 +269,23 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     private fun cleanupCandidate(injector: InputInjector): Boolean = try {
         injector.cleanup()
+        failedCleanup.remove(injector)
         true
     } catch(error: Exception) {
+        failedCleanup.add(injector)
         Log.e(TAG,"Backend cleanup failed",error)
         MappingRuntimeBridge.disarm("Backend cleanup failed: ${error.message}")
         false
     }
 
-    private fun cleanupRuntime(injector: InputInjector) {
+    private fun cleanupRuntime(injector: InputInjector): Boolean {
         capturedDevices.clear()
         val released=mappingRuntime.releaseAll(injector)
-        if(!released) MappingRuntimeBridge.reportError("Backend contact release could not be confirmed")
-        runCatching { injector.cleanup() }.onFailure {
-            Log.e(TAG,"Backend cleanup failed",it)
-            MappingRuntimeBridge.reportError("Backend cleanup failed: ${it.message}")
-        }
+        val cleaned=cleanupCandidate(injector)
+        if(released && cleaned) { failedCleanup.remove(injector);return true }
+        failedCleanup.add(injector)
+        MappingRuntimeBridge.disarm("Backend contact release or cleanup could not be confirmed. Panic can retry the retained backend.")
+        return false
     }
 
     private fun teardownInjectorAsync() {
@@ -302,21 +315,24 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun currentFrameSource(): InputInjector? = activeInjector
+
     fun emergencyRelease(onComplete: (Boolean) -> Unit) {
         val injector = activeInjector
         activeInjector = null
         MappingRuntimeBridge.disarm("Emergency stop requested")
-        if (backendExecutor.isShutdown) { onComplete(injector == null); return }
+        if (backendExecutor.isShutdown) {
+            MappingRuntimeBridge.disarm("Emergency contact release cannot be confirmed: backend executor is closed")
+            onComplete(false)
+            return
+        }
         backendExecutor.execute {
-            var released = true
-            if (injector != null) {
-                released = mappingRuntime.releaseAll(injector)
-                runCatching { injector.cleanup() }.onFailure {
-                    Log.e(TAG, "Backend cleanup failed during panic", it)
-                    released = false
-                }
-            }
-            onComplete(released)
+            // Teardowns queued before panic complete first; retained failures must also be retried.
+            val targets=failedCleanup.toMutableSet().apply { if(injector!=null) add(injector) }
+            var released=true
+            targets.forEach { if(!cleanupRuntime(it)) released=false }
+            if(!gestures.awaitIdle(200)) released=false
+            onComplete(released && failedCleanup.isEmpty())
         }
     }
 
@@ -352,7 +368,7 @@ class ControlystAccessibilityService : AccessibilityService() {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(1L))
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, mainHandler)
+        return dispatchObservedGesture(gesture)
     }
 
     fun performDrag(points: List<PointF>, durationMs: Long): Boolean {
@@ -363,7 +379,29 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, mainHandler)
+        return dispatchObservedGesture(gesture)
+    }
+
+    private fun dispatchObservedGesture(gesture: GestureDescription): Boolean {
+        val token=gestures.begin()
+        val session=MappingRuntimeBridge.state.value.sessionId
+        val callback=object : GestureResultCallback() {
+            override fun onCompleted(description: GestureDescription?) { gestures.complete(token) }
+            override fun onCancelled(description: GestureDescription?) {
+                gestures.complete(token)
+                Log.e(TAG,"Android cancelled an Accessibility gesture")
+                val state=MappingRuntimeBridge.state.value
+                if(state.sessionId==session) {
+                    if(state.armed) { MappingRuntimeBridge.disarm("Android cancelled the Accessibility gesture; mapping stopped");teardownInjectorAsync() }
+                    else MappingRuntimeBridge.reportError("Android cancelled the Accessibility gesture")
+                }
+            }
+        }
+        return try {
+            dispatchGesture(gesture,callback,mainHandler).also { accepted -> if(!accepted) gestures.complete(token) }
+        } catch(error:Exception) {
+            gestures.complete(token);Log.e(TAG,"Accessibility gesture dispatch failed",error);false
+        }
     }
 
     @Suppress("DEPRECATION")

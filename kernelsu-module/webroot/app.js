@@ -20,8 +20,9 @@ function execRoot(command) {
     window[callback] = (errno, stdout, stderr) => {
       clearTimeout(timer);
       delete window[callback];
-      const code = Number(errno);
-      if (!Number.isInteger(code)) { reject(new Error('KernelSU returned an invalid exit status')); return; }
+      const validType = typeof errno === 'number' || typeof errno === 'string' && /^-?[0-9]+$/.test(errno);
+      const code = validType ? Number(errno) : NaN;
+      if (!Number.isSafeInteger(code)) { reject(new Error('KernelSU returned an invalid exit status')); return; }
       resolve({ errno: code, stdout: String(stdout || ''), stderr: String(stderr || '') });
     };
     try {
@@ -232,3 +233,111 @@ document.getElementById('installUpdate').addEventListener('click', installGithub
 
 readInstalledVersion();
 refresh();
+
+let cpuPolicies = [];
+let devfreqDevices = [];
+let capabilitiesReady = false;
+const controlButtons = ['applyCpuGovernor','applyCpuFrequencies','applyDevfreqGovernor','applySwappiness'];
+function shellQuote(value) { return "'" + String(value).replace(/'/g, "'\\''") + "'"; }
+function parseCapabilityGroups(text, key) {
+  const groups = [];
+  let current;
+  String(text).split(/\r?\n/).forEach(line => {
+    const split = line.indexOf('=');
+    if (split < 1) return;
+    const name = line.slice(0, split), value = line.slice(split + 1);
+    if (name === key) { current = { id: value }; groups.push(current); }
+    else if (current) current[name] = value;
+  });
+  return groups;
+}
+function setOptions(id, values, selected) {
+  const element = document.getElementById(id);
+  element.replaceChildren();
+  values.forEach(value => {
+    const option = document.createElement('option');
+    option.value = value; option.textContent = value; element.appendChild(option);
+  });
+  element.disabled = values.length === 0;
+  if (values.includes(selected)) element.value = selected;
+}
+function exposedWords(text, pattern) { const value=String(text || '').trim(); if(!value)return []; const words=value.split(/\s+/); return words.every(word => pattern.test(word)) ? words : []; }
+function selectCpuPolicy() {
+  const policy = cpuPolicies.find(value => value.id === document.getElementById('cpuPolicy').value);
+  const governors = exposedWords(policy?.scaling_available_governors, /^[a-zA-Z0-9_-]+$/);
+  const frequencies = exposedWords(policy?.scaling_available_frequencies, /^[0-9]+$/);
+  setOptions('cpuGovernor', governors, policy?.scaling_governor);
+  setOptions('cpuMinimum', frequencies, policy?.scaling_min_freq);
+  setOptions('cpuMaximum', frequencies, policy?.scaling_max_freq);
+  document.getElementById('applyCpuGovernor').disabled = !capabilitiesReady || governors.length === 0;
+  document.getElementById('applyCpuFrequencies').disabled = !capabilitiesReady || frequencies.length === 0;
+}
+function selectDevfreqDevice() {
+  const device = devfreqDevices.find(value => value.id === document.getElementById('devfreqDevice').value);
+  const governors = exposedWords(device?.available_governors, /^[a-zA-Z0-9_-]+$/);
+  setOptions('devfreqGovernor', governors, device?.governor);
+  document.getElementById('applyDevfreqGovernor').disabled = !capabilitiesReady || governors.length === 0;
+}
+async function refreshCapabilities() {
+  const button = document.getElementById('refreshCapabilities');
+  capabilitiesReady = false; controlButtons.forEach(id => document.getElementById(id).disabled = true);
+  setBusy(button, true, 'Reading…');
+  try {
+    const result = await execRoot(`${MODULE_DIR}/control.sh capabilities`);
+    if (result.errno !== 0) throw new Error(result.stderr || result.stdout || `Capability query failed: exit ${result.errno}`);
+    const lines = result.stdout.split('\n');
+    ['CPU','DEVFREQ','THERMAL','MEMORY','BATTERY','PRESETS'].forEach(name => {
+      if (!lines.includes(`${name}_BEGIN`) || !lines.includes(`${name}_END`)) throw new Error(`Missing capability section ${name}`);
+    });
+    const cpu = section(lines,'CPU_BEGIN','CPU_END'), devfreq = section(lines,'DEVFREQ_BEGIN','DEVFREQ_END');
+    state('cpuCapabilities',cpu); state('devfreqCapabilities',devfreq);
+    state('thermalCapabilities',section(lines,'THERMAL_BEGIN','THERMAL_END'));
+    const memory = section(lines,'MEMORY_BEGIN','MEMORY_END'); state('memoryCapabilities',memory);
+    state('batteryCapabilities',section(lines,'BATTERY_BEGIN','BATTERY_END'));
+    state('presetCapabilities',section(lines,'PRESETS_BEGIN','PRESETS_END'));
+    cpuPolicies = parseCapabilityGroups(cpu,'POLICY').filter(value => /^[0-9]+$/.test(value.id));
+    devfreqDevices = parseCapabilityGroups(devfreq,'DEVFREQ').filter(value => /^[a-zA-Z0-9_.:-]+$/.test(value.id) && !['.','..'].includes(value.id));
+    capabilitiesReady = true;
+    setOptions('cpuPolicy',cpuPolicies.map(value => value.id));selectCpuPolicy();
+    setOptions('devfreqDevice',devfreqDevices.map(value => value.id));selectDevfreqDevice();
+    const swappiness = parseKv(memory).swappiness;
+    document.getElementById('swappiness').value = /^[0-9]+$/.test(swappiness || '') ? swappiness : '';
+    document.getElementById('swappiness').disabled = !/^[0-9]+$/.test(swappiness || '');
+    document.getElementById('applySwappiness').disabled = document.getElementById('swappiness').disabled;
+  } catch (error) {
+    cpuPolicies = [];devfreqDevices = [];
+    ['cpuPolicy','cpuGovernor','cpuMinimum','cpuMaximum','devfreqDevice','devfreqGovernor'].forEach(id => setOptions(id,[]));
+    document.getElementById('swappiness').disabled = true;
+    ['cpuCapabilities','devfreqCapabilities','thermalCapabilities','memoryCapabilities','batteryCapabilities','presetCapabilities'].forEach(id => state(id,`Unavailable: ${error.message}`,'bad'));
+    state('controlStatus',`Capability query failed: ${error.message}`,'bad');
+  } finally { setBusy(button,false,'Reading…'); }
+}
+async function applyRootControl(operation, argumentsList) {
+  if (!capabilitiesReady) { state('controlStatus','Read actual device capabilities before requesting a change.','bad');return; }
+  if (argumentsList.some(value => !String(value).trim())) { state('controlStatus','Select exposed device values first.','bad');return; }
+  if (!window.confirm(`Apply ${operation}: ${argumentsList.join(' / ')}? The module checks battery safeguards and verifies actual read-back.`)) return;
+  controlButtons.forEach(id => document.getElementById(id).disabled = true);
+  try {
+    const result = await execRoot(`${MODULE_DIR}/control.sh ${shellQuote(operation)} ${argumentsList.map(shellQuote).join(' ')}`);
+    state('controlStatus',`exit=${result.errno}\n${result.stdout}\n${result.stderr}`,result.errno === 0 ? 'ok' : 'bad');
+    if (result.errno === 0 && (!result.stdout.includes('READ_BACK=') || !result.stdout.includes('CONTROL_EXIT=0'))) {
+      state('controlStatus','Change did not provide verified read-back. Read current device values and root logs.','bad');
+    }
+  } catch (error) { state('controlStatus',`Root change failed: ${error.message}`,'bad'); }
+  finally { await refreshCapabilities(); }
+}
+async function readControlLog() {
+  try {
+    const result = await execRoot(`${MODULE_DIR}/control.sh logs`);
+    state('controlStatus',`exit=${result.errno}\n${result.stdout}\n${result.stderr}`,result.errno === 0 ? '' : 'bad');
+  } catch(error) { state('controlStatus',`Root log unavailable: ${error.message}`,'bad'); }
+}
+document.getElementById('refreshCapabilities').addEventListener('click',refreshCapabilities);
+document.getElementById('cpuPolicy').addEventListener('change',selectCpuPolicy);
+document.getElementById('devfreqDevice').addEventListener('change',selectDevfreqDevice);
+document.getElementById('applyCpuGovernor').addEventListener('click',() => applyRootControl('cpu-governor',['cpuPolicy','cpuGovernor'].map(id => document.getElementById(id).value)));
+document.getElementById('applyCpuFrequencies').addEventListener('click',() => applyRootControl('cpu-frequencies',['cpuPolicy','cpuMinimum','cpuMaximum'].map(id => document.getElementById(id).value)));
+document.getElementById('applyDevfreqGovernor').addEventListener('click',() => applyRootControl('devfreq-governor',['devfreqDevice','devfreqGovernor'].map(id => document.getElementById(id).value)));
+document.getElementById('applySwappiness').addEventListener('click',() => applyRootControl('swappiness',[document.getElementById('swappiness').value]));
+document.getElementById('readControlLog').addEventListener('click',readControlLog);
+refreshCapabilities();

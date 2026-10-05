@@ -61,16 +61,6 @@
                 android:value="Game controller input mapping and on-screen floating calibration HUD" />
         </service>
 
-        <!-- Persistent Crosshair Overlay Service -->
-        <service
-            android:name=".service.CrosshairOverlayService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Persistent floating crosshair rendering overlay during gameplay" />
-        </service>
-
         <!-- Accessibility Service for Non-Root Touch Injection Fallback -->
         <service
             android:name=".service.ControlystAccessibilityService"
@@ -94,7 +84,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- FileProvider for Exporting Flashable KernelSU / APatch / Magisk Module ZIPs -->
+        <!-- Local profile and diagnostic file sharing; module packaging is outside the APK. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

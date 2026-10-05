@@ -44,5 +44,7 @@ data class MacroStep(
     val actionType: String = "TAP",
     val xNorm: Float = 0.5f,
     val yNorm: Float = 0.5f,
-    val durationMs: Long = 80
+    val durationMs: Long = 80,
+    val endXNorm: Float? = null,
+    val endYNorm: Float? = null
 )

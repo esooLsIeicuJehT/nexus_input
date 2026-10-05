@@ -478,6 +478,15 @@ fun NexusProfileDetailScreen(
             }
         }
 
+        if(config.joystick.sprintLockEnabled || config.antiRecoilEnabled || config.camera.mouseDpiScale != 1f) {
+            NexusPanel(Modifier.fillMaxWidth()) {
+                Text("Unsupported stored options",color=NexusCyan,fontWeight=FontWeight.Bold)
+                Text("Sprint lock, anti-recoil and mouse mapping are unavailable in this gamepad release. Disable these options to launch this profile.",color=TextSecondary)
+                OutlinedButton(onClick={viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(sprintLockEnabled=false),antiRecoilEnabled=false,camera=config.camera.copy(mouseDpiScale=1f)))}) {
+                    Text("Disable unsupported options")
+                }
+            }
+        }
         NexusPanel(Modifier.fillMaxWidth()) {
             Text("SAVED PROFILES",color=NexusCyan,fontWeight=FontWeight.Bold)
             allProfiles.filter { it.gamePackage==game?.packageName }.forEach { profile ->
@@ -680,8 +689,9 @@ fun NexusSystemScreen(
 
         SectionTitle("Tools", "System controls")
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
+        SystemAction("Frame overlay", "Presented FPS and measured frame intervals", Icons.Default.Speed) { onNavigate("fps") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
-        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("community") }
+        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("profile_files") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }
         SystemAction("Onboarding", "Run setup and permission checks again", Icons.Default.HelpOutline) { viewModel.restartOnboarding() }
     }

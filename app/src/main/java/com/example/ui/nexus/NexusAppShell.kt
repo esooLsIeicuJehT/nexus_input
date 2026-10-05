@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.MainAppViewModel
 import com.example.ui.calibration.CalibrationScreen
-import com.example.ui.community.CommunityShareScreen
+import com.example.ui.profiles.LocalProfileFilesScreen
 import com.example.ui.crosshair.CrosshairStudioScreen
 import com.example.ui.macro.MacroTimelineEditor
 import com.example.ui.root.KernelSuWebUiScreen
@@ -170,9 +170,10 @@ fun NexusAppShell(
                 "mapper" -> NexusMapperRoute(viewModel)
                 "devices" -> NexusDevicesRoute(viewModel, viewModel::selectTab)
                 "system" -> NexusSystemScreen(viewModel, viewModel::selectTab)
+                "fps" -> com.example.ui.frames.FrameOverlayScreen(viewModel)
                 "crosshair" -> CrosshairStudioScreen(viewModel)
                 "calibration" -> CalibrationScreen(viewModel)
-                "community" -> CommunityShareScreen(viewModel)
+                "profile_files" -> LocalProfileFilesScreen(viewModel)
                 "root_webui" -> KernelSuWebUiScreen(
                     viewModel = viewModel,
                     onBack = { viewModel.selectTab("system") }
@@ -195,6 +196,6 @@ private fun routeBelongsToTab(route: String, tab: String): Boolean = when (tab) 
     "profiles" -> route == "profiles" || route == "library" || route == "profile_detail"
     "mapper" -> route == "mapper" || route == "macro"
     "devices" -> route == "devices" || route == "calibration"
-    "system" -> route in setOf("system", "root_webui", "crosshair", "community", "vip", "safety")
+    "system" -> route in setOf("system", "root_webui", "fps", "crosshair", "profile_files", "safety")
     else -> false
 }

@@ -39,6 +39,7 @@ object ReleaseDiagnostics {
             .put("kernel",System.getProperty("os.version") ?: JSONObject.NULL)
             .put("hardwareVerification","Not established by this self-check; perform the device checklist")
             .put("capture",JSONObject().put("connected",ControlystAccessibilityService.isServiceRunning())
+                .put("pendingAccessibilityGestures",ControlystAccessibilityService.getInstance()?.pendingGestureCount ?: JSONObject.NULL)
                 .put("globalMotionApiAvailable",Build.VERSION.SDK_INT >= 34).put("screenshotApiAvailable",Build.VERSION.SDK_INT >= 30)
                 .put("overlayPermission",Settings.canDrawOverlays(context)))
             .put("runtime",JSONObject().put("armed",runtime.armed).put("gamePackage",runtime.gamePackage ?: JSONObject.NULL)
@@ -53,6 +54,11 @@ object ReleaseDiagnostics {
             .put("backends",JSONArray().apply { probes.forEach { probe ->
                 put(JSONObject().put("method",probe.method.name).put("state",probe.state.name).put("detail",probe.statusDetail))
             } }).put("inputDevices",devices)
+            .put("frameOverlay",JSONObject().put("enabled",com.example.frames.FrameMonitor.settings.value.enabled)
+                .put("layer",com.example.frames.FrameMonitor.state.value.layer ?: JSONObject.NULL)
+                .put("status",com.example.frames.FrameMonitor.state.value.status)
+                .put("error",com.example.frames.FrameMonitor.state.value.error ?: JSONObject.NULL)
+                .put("presentedFps",com.example.frames.FrameMonitor.state.value.stats?.fps ?: JSONObject.NULL))
             .put("lastControllerEventUptimeMs",ControllerInputMonitor.state.value.lastEventUptimeMs).toString(2)
     }
 }

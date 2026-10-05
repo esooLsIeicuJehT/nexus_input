@@ -11,13 +11,11 @@ class ShizukuPairingReceiver : BroadcastReceiver() {
             ShizukuPairingManager.ACTION_SUBMIT_PAIRING_CODE -> {
                 val remoteInput = RemoteInput.getResultsFromIntent(intent)
                 val code = remoteInput?.getCharSequence(ShizukuPairingManager.KEY_PAIRING_CODE)?.toString()
-                val port = intent.getIntExtra("port", 5555)
+                val port = intent.getIntExtra("port", 0)
 
-                if (!code.isNullOrBlank()) {
-                    val pending = goAsync()
-                    ShizukuPairingManager.handlePairingCodeReceived(context.applicationContext, code, port)
-                        .invokeOnCompletion { pending.finish() }
-                }
+                val pending = goAsync()
+                ShizukuPairingManager.handlePairingCodeReceived(context.applicationContext, code.orEmpty(), port)
+                    .invokeOnCompletion { pending.finish() }
             }
             ShizukuPairingManager.ACTION_STOP_PAIRING_HELPER -> {
                 ShizukuPairingManager.dismissHelper(context)

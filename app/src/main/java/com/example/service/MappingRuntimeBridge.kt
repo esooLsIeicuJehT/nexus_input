@@ -34,7 +34,9 @@ object MappingRuntimeBridge {
     private val _config = MutableStateFlow<MappingConfig?>(null)
     val config: StateFlow<MappingConfig?> = _config.asStateFlow()
 
-    fun arm(gamePackage: String, config: MappingConfig) {
+    fun arm(gamePackage: String, config: MappingConfig): Boolean {
+        val errors=com.example.input.ProfileValidator.runtimeErrors(config,gamePackage,config.id)
+        if(errors.isNotEmpty()) { disarm("Mapping rejected: ${errors.joinToString("; ")}");return false }
         _config.value = config
         _state.value = MappingRuntimeState(
             armed = true,
@@ -44,6 +46,7 @@ object MappingRuntimeBridge {
             profileName = config.profileName,
             sessionId = sessions.incrementAndGet()
         )
+        return true
     }
 
     fun setForegroundPackage(packageName: String?) {
