@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         ControllerInputMonitor.onMotionEvent(event)
+        viewModel.calibrationManager.onMotionEvent(event)
         return super.dispatchGenericMotionEvent(event)
     }
 
