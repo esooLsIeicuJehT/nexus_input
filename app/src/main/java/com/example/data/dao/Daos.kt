@@ -48,6 +48,9 @@ interface ConfigProfileDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: ConfigProfileEntity)
 
+    @Query("UPDATE config_profiles SET isDefault = 0 WHERE gamePackage = :gamePackage")
+    suspend fun clearDefaults(gamePackage: String)
+
     @Query("DELETE FROM config_profiles WHERE id = :id")
     suspend fun deleteProfile(id: String)
 }

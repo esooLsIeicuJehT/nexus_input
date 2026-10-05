@@ -93,8 +93,11 @@ object LegacyProfileMigration {
     internal fun parse(text: String): MappingConfig {
         val json = JSONObject(text)
         require(json.getInt("schema") == 1) { "Unsupported legacy schema" }
-        fun nullableString(key: String) = if (json.isNull(key)) null else json.getString(key).also {
+        fun nullableString(key: String): String? {
+            require(json.has(key)) { "Missing legacy $key" }
+            return if (json.isNull(key)) null else json.getString(key).also {
             require(it.isNotBlank()) { "$key cannot be blank" }
+        }
         }
         val backend = nullableString("preferredBackend")?.let {
             when (it) {

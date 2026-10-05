@@ -18,6 +18,12 @@ class ProfileIntegrityTest {
         assertTrue(ProfileValidator.errors(config(a), expectedId="other").isNotEmpty())
         assertTrue(ProfileValidator.errors(config(a), expectedPackage="com.other.game").isNotEmpty())
     }
+    @Test fun explicitAndImplicitStickAxesCannotBindTheSamePhysicalAxis() {
+        val implicit=MappingNode("ls",.3f,.3f,type=NodeType.JOYSTICK_ZONE,boundKey="LS")
+        val explicit=implicit.copy(id="other",axisX=0,axisY=1)
+        assertTrue(ProfileValidator.errors(config(implicit,explicit)).any { it.contains("duplicate physical") })
+        assertTrue(ProfileValidator.errors(config(implicit,explicit.copy(axisX=1,axisY=11))).any { it.contains("duplicate physical") })
+    }
     @Test fun exactSlotsAndInvalidNumbersAreRejected() {
         val a=MappingNode("a",.3f,.3f,touchSlot=2)
         val b=a.copy(id="b",boundKey="B")

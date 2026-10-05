@@ -52,6 +52,8 @@ import kotlinx.coroutines.launch
 class MainAppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = ControlystDatabase.getDatabase(application)
+    private val profilePersistence = com.example.data.ProfilePersistence(db)
+    private val saveMutex = kotlinx.coroutines.sync.Mutex()
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
     val privilegeDetector = PrivilegeDetector(application)
     val calibrationManager = CalibrationManager(application)
@@ -248,50 +250,54 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     fun launchGameWithMapping(game: GameEntity, context: Context) {
         viewModelScope.launch {
-            // Start foreground mapping service
-            val serviceIntent = Intent(context, MappingForegroundService::class.java).apply {
-                action = MappingForegroundService.ACTION_START_MAPPING
-                putExtra(MappingForegroundService.EXTRA_GAME_PACKAGE, game.packageName)
-                putExtra(MappingForegroundService.EXTRA_CONFIG_ID, _activeConfig.value.id)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-
-            // Launch target application
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(game.packageName)
-            if (launchIntent != null) {
+            try {
+                val launchIntent = context.packageManager.getLaunchIntentForPackage(game.packageName)
+                    ?: error("${game.displayName} is not installed or has no launch activity")
+                require(com.example.service.ControlystAccessibilityService.isServiceRunning()) {
+                    "Enable the NEXUS INPUT accessibility service before launching with mapping"
+                }
+                val config = if (_activeConfig.value.gamePackage == game.packageName) _activeConfig.value else {
+                    val saved = db.configProfileDao().getDefaultForGame(game.packageName)
+                        ?: error("Save a profile for ${game.displayName} before launching")
+                    ControlystRepository.deserializeJsonToConfig(saved.jsonBlob)
+                }
+                val errors = com.example.input.ProfileValidator.errors(config, game.packageName)
+                require(errors.isEmpty()) { errors.joinToString("; ") }
+                saveMutex.lock()
+                try { profilePersistence.save(config) } finally { saveMutex.unlock() }
+                val serviceIntent = Intent(context, MappingForegroundService::class.java).apply {
+                    action = MappingForegroundService.ACTION_START_MAPPING
+                    putExtra(MappingForegroundService.EXTRA_GAME_PACKAGE, game.packageName)
+                    putExtra(MappingForegroundService.EXTRA_CONFIG_ID, config.id)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(serviceIntent)
+                else context.startService(serviceIntent)
+                _selectedGame.value = game
+                _activeConfig.value = config
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
-                showSnack("Launched ${game.displayName} with NEXUS INPUT HUD!")
-            } else {
-                showSnack("Target app ${game.displayName} ready. NEXUS INPUT HUD started.")
+                showSnack("Launch requested for ${game.displayName}. Backend readiness appears in the mapping status.")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                com.example.service.MappingRuntimeBridge.reportError("Launch failed: ${error.message}")
+                showSnack("Launch failed: ${error.message}")
             }
         }
     }
 
-    fun updateActiveConfig(updated: MappingConfig) {
+    fun updateActiveConfig(updated: MappingConfig, onSaved: () -> Unit = {}) {
         val errors = com.example.input.ProfileValidator.errors(updated, requireBindings = false)
         if (errors.isNotEmpty()) { showSnack("Profile rejected: " + errors.joinToString("; ")); return }
         _activeConfig.value = updated
         viewModelScope.launch {
-            val json = ControlystRepository.serializeConfigToJson(updated)
-            repository.insertProfile(
-                ConfigProfileEntity(
-                    id = updated.id,
-                    gamePackage = updated.gamePackage,
-                    profileName = updated.profileName,
-                    jsonBlob = json,
-                    isDefault = true,
-                    updatedAt = System.currentTimeMillis(),
-                    author = updated.author,
-                    isOfficialVerified = updated.isOfficialVerified,
-                    rating = updated.rating,
-                    downloads = updated.downloadCount
-                )
-            )
+            saveMutex.lock()
+            try {
+                profilePersistence.save(updated)
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile save failed: ${error.message}")
+            } finally { saveMutex.unlock() }
         }
     }
 
@@ -520,7 +526,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         val updatedCfg = currentCfg.copy(joystick = updatedJoystick, buttons = currentCfg.buttons.map {
             if (it.type == NodeType.JOYSTICK_ZONE) it.copy(deadzoneInner = innerDZ, deadzoneOuter = outerDZ) else it
         })
-        updateActiveConfig(updatedCfg)
-        showSnack("Calibration saved to Room database successfully!")
+        updateActiveConfig(updatedCfg) { showSnack("Calibration saved to Room database successfully!") }
     }
 }

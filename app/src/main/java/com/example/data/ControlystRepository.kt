@@ -74,19 +74,15 @@ class ControlystRepository(
             // Exclude Controlyst itself
             if (pkg == context.packageName) continue
             val appName = info.loadLabel(pm).toString()
-            val isLikelyGame = appName.contains("game", ignoreCase = true) ||
-                    pkg.contains("game", ignoreCase = true) ||
-                    pkg.contains("mobile", ignoreCase = true) ||
-                    pkg.contains("unity", ignoreCase = true)
-
+            val isGame = android.os.Build.VERSION.SDK_INT >= 26 &&
+                info.activityInfo.applicationInfo.category == android.content.pm.ApplicationInfo.CATEGORY_GAME
             list.add(
                 GameEntity(
                     packageName = pkg,
                     displayName = appName,
                     iconUri = "",
-                    isGameTag = isLikelyGame,
-                    antiCheatSeverity = if (isLikelyGame) AntiCheatSeverity.MODERATE else AntiCheatSeverity.SAFE,
-                    antiCheatNotes = if (isLikelyGame) "App categorized as interactive game" else "Standard Android application"
+                    isGameTag = isGame,
+                    antiCheatNotes = "Game compatibility has not been assessed"
                 )
             )
         }
@@ -153,6 +149,11 @@ class ControlystRepository(
             crosshairObj.put("thicknessDp", config.crosshair.thicknessDp)
             crosshairObj.put("gapDp", config.crosshair.gapDp)
             crosshairObj.put("colorHex", config.crosshair.colorHex)
+            crosshairObj.put("opacity", config.crosshair.opacity)
+            crosshairObj.put("outlineEnabled", config.crosshair.outlineEnabled)
+            crosshairObj.put("outlineColorHex", config.crosshair.outlineColorHex)
+            crosshairObj.put("outlineThicknessDp", config.crosshair.outlineThicknessDp)
+            crosshairObj.put("currentSpreadMultiplier", config.crosshair.currentSpreadMultiplier)
             crosshairObj.put("offsetX", config.crosshair.offsetX)
             crosshairObj.put("offsetY", config.crosshair.offsetY)
             crosshairObj.put("dynamicSpread", config.crosshair.dynamicSpread)
@@ -218,11 +219,7 @@ class ControlystRepository(
             val crosshairObj = json.optJSONObject("crosshair")
             val crosshair = if (crosshairObj != null) {
                 val shapeStr = crosshairObj.optString("shape", "CLASSIC_CROSS")
-                val shape = try {
-                    com.example.model.CrosshairShape.valueOf(shapeStr)
-                } catch (e: Exception) {
-                    com.example.model.CrosshairShape.CLASSIC_CROSS
-                }
+                val shape = com.example.model.CrosshairShape.valueOf(shapeStr)
                 CrosshairConfig(
                     isEnabled = crosshairObj.optBoolean("isEnabled", false),
                     shape = shape,
@@ -230,6 +227,11 @@ class ControlystRepository(
                     thicknessDp = crosshairObj.optDouble("thicknessDp", 2.5).toFloat(),
                     gapDp = crosshairObj.optDouble("gapDp", 4.0).toFloat(),
                     colorHex = crosshairObj.optString("colorHex", "#00F0FF"),
+                    opacity = crosshairObj.optDouble("opacity", .9).toFloat(),
+                    outlineEnabled = crosshairObj.optBoolean("outlineEnabled", true),
+                    outlineColorHex = crosshairObj.optString("outlineColorHex", "#000000"),
+                    outlineThicknessDp = crosshairObj.optDouble("outlineThicknessDp", 1.0).toFloat(),
+                    currentSpreadMultiplier = crosshairObj.optDouble("currentSpreadMultiplier", 1.0).toFloat(),
                     offsetX = crosshairObj.optDouble("offsetX", 0.0).toFloat(),
                     offsetY = crosshairObj.optDouble("offsetY", 0.0).toFloat(),
                     dynamicSpread = crosshairObj.optBoolean("dynamicSpread", true)

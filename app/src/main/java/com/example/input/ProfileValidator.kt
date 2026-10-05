@@ -28,9 +28,12 @@ object ProfileValidator {
         if (config.profileName.isBlank()) add("Profile name is required")
         if (!config.gamePackage.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+"))) add("Exact Android game package is required")
         if (expectedPackage != null && config.gamePackage != expectedPackage) add("Profile targets ${config.gamePackage}, not $expectedPackage")
+        if (config.lastUpdated < 0) add("Profile timestamp cannot be negative")
+        if (config.controllerProfileId != null && config.controllerProfileId.isBlank()) add("Controller profile ID cannot be blank")
         if (requireBindings && config.buttons.isEmpty()) add("Profile has no input bindings")
         runCatching { TouchSlotAllocator.assign(config) }.exceptionOrNull()?.let { add(it.message ?: "Invalid touch slots") }
         val inputs = mutableSetOf<String>()
+        val axes = mutableSetOf<Int>()
         config.buttons.forEach { node ->
             val label = node.label.ifBlank { node.id }
             if (node.id.isBlank()) add("Node ID is required")
@@ -52,7 +55,10 @@ object ProfileValidator {
             } else if (node.inputScanCode != null) "SCAN_${node.inputScanCode}" else canonical
             if (node.type == NodeType.JOYSTICK_ZONE && canonical != "LS" && node.axisX == null) add("$label: joystick must bind LS or explicit axes")
             if (node.type == NodeType.CAMERA_DRAG && canonical != "RS" && node.axisX == null) add("$label: camera must bind RS or explicit axes")
-            val identity = if (node.axisX != null) "AXES_${node.axisX}_${node.axisY}" else input
+            val stickAxes = if (node.axisX != null && node.axisY != null) listOf(node.axisX, node.axisY)
+                else when (node.type) { NodeType.JOYSTICK_ZONE -> listOf(0, 1); NodeType.CAMERA_DRAG -> listOf(11, 14); else -> emptyList() }
+            if (stickAxes.any { !axes.add(it) }) add("$label: duplicate physical stick axis")
+            val identity = if (stickAxes.isNotEmpty()) "AXES_${stickAxes.sorted().joinToString("_")}" else input
             if (identity.isBlank() || (node.inputKeyCode == null && node.inputScanCode == null && node.axisX == null && canonical !in ControllerBindingAliases.supported)) add("$label: unsupported physical input '${node.boundKey}'")
             if (!inputs.add(identity)) add("$label: duplicate physical input $identity")
             if (node.type == NodeType.TURBO && node.turboHz !in 2..30) add("$label: turbo must be 2..30 Hz")
