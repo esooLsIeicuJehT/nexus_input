@@ -53,6 +53,7 @@ class ControllerInputTest {
         ControllerInputMonitor.onMotionEvent(event);event.recycle()
         assertEquals("Test fixture gamepad",ControllerInputMonitor.state.value.connectedEventSource)
         assertEquals(.25f,ControllerInputMonitor.state.value.axes["LX"]!!,0f)
+        assertEquals(.25f,ControllerInputMonitor.state.value.normalizedAxes["LX"]!!,0f)
         assertEquals(-1f,ControllerInputMonitor.state.value.axes["HAT_X"]!!,0f)
         assertFalse(ControllerInputMonitor.state.value.axes.containsKey("RX"))
         ControllerInputMonitor.onDeviceRemoved(999);assertFalse(ControllerInputMonitor.state.value.axes.isEmpty())

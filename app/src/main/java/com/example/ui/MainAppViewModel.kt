@@ -548,7 +548,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
         updateActiveConfig(_activeConfig.value.copy(buttons = combined))
         _aiHudCandidates.value = emptyList()
-        showSnack("Confirmed and applied ${newNodes.size} AI-detected controls!")
+        showSnack("Assigned ${newNodes.size} image regions. Review the profile before mapping.")
     }
 
     fun dismissAiHudCandidates() {
