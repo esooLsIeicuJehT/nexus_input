@@ -33,9 +33,9 @@ data class StickCalibrationState(
 )
 
 data class TriggerCalibrationState(
-    val phase: String = "REST",
+    val phase: String = "NOT CALIBRATED",
     val restValue: Float = 0f,
-    val maxPullValue: Float = 1.0f,
+    val maxPullValue: Float = 0f,
     val currentPull: Float = 0f,
     val progressPercent: Float = 0f,
     val isMeasured: Boolean = false,
@@ -159,7 +159,11 @@ class CalibrationManager(private val context: Context) {
         axisY: Int = MotionEvent.AXIS_Y,
         onUpdate: (StickCalibrationState) -> Unit
     ): Boolean = withContext(Dispatchers.Default) {
-        if (!calibrationLock.tryLock()) return@withContext false
+        if (!calibrationLock.tryLock()) {
+            _stickState.value = _stickState.value.copy(error = "Another controller calibration is already running")
+            onUpdate(_stickState.value)
+            return@withContext false
+        }
         try {
             val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
                 it.getMotionRange(axisX, InputDevice.SOURCE_JOYSTICK) != null &&
@@ -206,7 +210,10 @@ class CalibrationManager(private val context: Context) {
     }
 
     suspend fun runTriggerCalibration(left: Boolean): Boolean = withContext(Dispatchers.Default) {
-        if (!calibrationLock.tryLock()) return@withContext false
+        if (!calibrationLock.tryLock()) {
+            _triggerState.value = _triggerState.value.copy(error = "Another controller calibration is already running")
+            return@withContext false
+        }
         try {
             val preferred = if (left) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_RTRIGGER
             val alternate = if (left) MotionEvent.AXIS_BRAKE else MotionEvent.AXIS_GAS
@@ -250,15 +257,24 @@ class CalibrationManager(private val context: Context) {
     suspend fun measureTouchLatency(injector: InputInjector): TouchLatencyResult = withContext(Dispatchers.IO) {
         _latencyResult.value = TouchLatencyResult(isTesting = true)
         val start = SystemClock.elapsedRealtimeNanos()
-        val result = try {
+        var ownsBackend = false
+        var result: TouchLatencyResult
+        try {
             check(!com.example.service.MappingRuntimeBridge.state.value.armed) { "Stop mapping before timing a separate backend call" }
+            ownsBackend = true
             check(injector.prepare()) { "Backend not ready" }
             check(injector.injectTap(5f, 5f)) { "Backend rejected injection" }
-            TouchLatencyResult((SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,
+            result = TouchLatencyResult((SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,
                 "BACKEND CALL DURATION; NOT TOUCH LATENCY")
         } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             android.util.Log.e("NexusCalibration", "Injection timing failed", error)
-            TouchLatencyResult(grade = "FAILED: ${error.message}")
+            result = TouchLatencyResult(grade = "FAILED: ${error.message}")
+        } finally {
+            if (ownsBackend) try { injector.cleanup() } catch(error: Exception) {
+                android.util.Log.e("NexusCalibration", "Timing backend cleanup failed", error)
+                result = TouchLatencyResult(grade = "FAILED: backend cleanup: ${error.message}")
+            }
         }
         _latencyResult.value = result
         result

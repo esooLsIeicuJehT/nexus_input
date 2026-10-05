@@ -35,4 +35,33 @@ class CalibrationTest {
         }
     }
 
+    private class TimingTransport : com.example.injector.InputInjector {
+        override val method = com.example.model.PrivilegeMethod.KERNELSU
+        var prepared = 0;var cleaned = 0;var reject = false;var cleanupFails = false
+        override fun isAvailable() = true
+        override fun prepare(): Boolean { prepared++;return true }
+        override fun injectTap(x: Float,y: Float) = !reject
+        override fun injectDrag(path: List<android.graphics.PointF>,durationMs: Long) = false
+        override fun injectKeyEvent(keyCode: Int,action: Int) = false
+        override fun cleanup() { cleaned++;check(!cleanupFails) { "cleanup rejected" } }
+    }
+    @Test fun timingAlwaysCleansItsOwnBackendAndReportsRejectedRequests() = kotlinx.coroutines.runBlocking {
+        com.example.service.MappingRuntimeBridge.disarm()
+        val transport = TimingTransport();val manager = manager()
+        assertTrue(manager.measureTouchLatency(transport).grade.startsWith("BACKEND CALL"))
+        assertEquals(1,transport.cleaned)
+        transport.reject = true
+        assertTrue(manager.measureTouchLatency(transport).grade.contains("Backend rejected"));assertEquals(2,transport.cleaned)
+        transport.cleanupFails = true
+        assertTrue(manager.measureTouchLatency(transport).grade.contains("backend cleanup"));assertEquals(3,transport.cleaned)
+    }
+    @Test fun timingDoesNotPrepareOrCloseAnArmedBackend() = kotlinx.coroutines.runBlocking {
+        val transport=TimingTransport()
+        com.example.service.MappingRuntimeBridge.arm("com.test.game",com.example.model.MappingConfig(id="timing",profileName="Timing",gamePackage="com.test.game",buttons=listOf(com.example.model.MappingNode("a",.2f,.3f))))
+        try {
+            assertTrue(manager().measureTouchLatency(transport).grade.contains("Stop mapping"))
+            assertEquals(0,transport.prepared);assertEquals(0,transport.cleaned)
+        } finally { com.example.service.MappingRuntimeBridge.disarm() }
+    }
+
 }
