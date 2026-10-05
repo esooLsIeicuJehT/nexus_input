@@ -92,6 +92,14 @@ check_update() {
         return 10
     fi
 
+    if [ "$REMOTE_CODE" -lt "$CURRENT_CODE" ] 2>/dev/null; then
+        write_status "state=local_newer" "remoteVersion=$REMOTE_VERSION" "remoteVersionCode=$REMOTE_CODE" \
+            "message=Published update channel is older than the installed module"
+        echo "STATE=LOCAL_NEWER"
+        echo "MESSAGE=Published update channel is older than installed $CURRENT_VERSION; no downgrade will be offered"
+        return 0
+    fi
+
     write_status "state=up_to_date" "remoteVersion=$REMOTE_VERSION" "remoteVersionCode=$REMOTE_CODE"
     echo "STATE=UP_TO_DATE"
     return 0
@@ -111,7 +119,8 @@ install_update() {
     check_update
     CHECK_RC=$?
     if [ "$CHECK_RC" -eq 0 ]; then
-        echo "MESSAGE=Already up to date"
+        STATE=$(json_string state 2>/dev/null || true)
+        echo "MESSAGE=No newer published update is available"
         return 0
     fi
     [ "$CHECK_RC" -eq 10 ] || return "$CHECK_RC"
