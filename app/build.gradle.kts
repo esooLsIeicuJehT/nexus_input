@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -12,7 +13,7 @@ plugins {
 val termuxPrebuiltNative =
   providers.gradleProperty("termuxPrebuiltNative").orNull == "true"
 
-val nexusVersion = java.util.Properties().apply {
+val nexusVersion = Properties().apply {
   rootProject.file("version.properties").inputStream().use { load(it) }
 }
 val signingEnvironment = listOf("KEYSTORE_PATH", "STORE_PASSWORD", "KEY_PASSWORD").associateWith { System.getenv(it)?.takeIf(String::isNotBlank) }
