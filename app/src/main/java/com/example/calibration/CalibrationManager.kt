@@ -157,7 +157,7 @@ class CalibrationManager(private val context: Context) {
     ): Boolean = withContext(Dispatchers.Default) {
         if (!calibrationLock.tryLock()) return@withContext false
         try {
-            val device = InputDevice.getDeviceIds().mapNotNull(InputDevice::getDevice).firstOrNull {
+            val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
                 it.getMotionRange(axisX, InputDevice.SOURCE_JOYSTICK) != null &&
                     it.getMotionRange(axisY, InputDevice.SOURCE_JOYSTICK) != null
             } ?: error("No connected controller exposes the requested stick axes")
@@ -206,7 +206,7 @@ class CalibrationManager(private val context: Context) {
         try {
             val preferred = if (left) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_RTRIGGER
             val alternate = if (left) MotionEvent.AXIS_BRAKE else MotionEvent.AXIS_GAS
-            val device = InputDevice.getDeviceIds().mapNotNull(InputDevice::getDevice).firstOrNull {
+            val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
                 it.getMotionRange(preferred) != null || it.getMotionRange(alternate) != null
             } ?: error("No controller exposes this analog trigger")
             val axis = if (device.getMotionRange(preferred) != null) preferred else alternate

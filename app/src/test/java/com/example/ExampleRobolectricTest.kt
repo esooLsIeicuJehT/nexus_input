@@ -74,7 +74,7 @@ class ExampleRobolectricTest {
         assertTrue(prop.contains("webroot=webroot"))
 
         val webUiHtml = com.example.module.KernelSuModuleManager.getWebUiHtml()
-        assertTrue(webUiHtml.contains("NEXUS INPUT"))
+        assertTrue(webUiHtml.contains("Controlyst WebUI"))
         assertTrue(webUiHtml.contains("/dev/uinput"))
         assertTrue(webUiHtml.contains("1000 Hz"))
     }
