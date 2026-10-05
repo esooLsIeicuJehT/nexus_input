@@ -5,8 +5,9 @@ const APK_COMPONENT = `${APK_PACKAGE}/com.example.MainActivity`;
 const MODULE_ID = 'gamepad.pro.root';
 const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
 let githubUpdateAvailable = false;
+let rootExecTail = Promise.resolve();
 
-function execRoot(command) {
+function execRootNow(command) {
   return new Promise((resolve, reject) => {
     if (!window.ksu || typeof window.ksu.exec !== 'function') {
       reject(new Error('KernelSU WebUI API is unavailable'));
@@ -36,8 +37,16 @@ function execRoot(command) {
   });
 }
 
+function execRoot(command) {
+  const run = () => execRootNow(command);
+  const request = rootExecTail.then(run, run);
+  rootExecTail = request.then(() => undefined, () => undefined);
+  return request;
+}
+
 function state(id, text, kind) {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = text;
   el.className = kind || '';
 }
@@ -189,6 +198,8 @@ async function checkGithubUpdate() {
       status.textContent = `Update ${kv.REMOTE_VERSION} is available. The ZIP will be SHA-256 verified before KernelSU stages it.`;
     } else if (r.errno === 0 && kv.STATE === 'UP_TO_DATE') {
       status.textContent = 'NEXUS INPUT KernelSU Companion is up to date.';
+    } else if (r.errno === 0 && kv.STATE === 'LOCAL_NEWER') {
+      status.textContent = kv.MESSAGE || 'Installed module is newer than the published update channel. No downgrade will be offered.';
     } else {
       status.textContent = kv.MESSAGE || r.stderr || r.stdout || `Update check failed (exit ${r.errno})`;
     }
@@ -340,4 +351,4 @@ document.getElementById('applyCpuFrequencies').addEventListener('click',() => ap
 document.getElementById('applyDevfreqGovernor').addEventListener('click',() => applyRootControl('devfreq-governor',['devfreqDevice','devfreqGovernor'].map(id => document.getElementById(id).value)));
 document.getElementById('applySwappiness').addEventListener('click',() => applyRootControl('swappiness',[document.getElementById('swappiness').value]));
 document.getElementById('readControlLog').addEventListener('click',readControlLog);
-refreshCapabilities();
+state('controlStatus','Device capabilities are not scanned automatically. Tap “Read device capabilities” to query live root values.','');
