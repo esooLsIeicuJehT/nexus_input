@@ -106,14 +106,6 @@ case "$(uname -m)" in
     ;;
 esac
 
-mkdir -p "$HOME/.gradle"
-AIDL_LINE="android.aidlFromMavenOverride=$TERMUX_AIDL"
-if grep -q '^android.aidlFromMavenOverride=' "$HOME/.gradle/gradle.properties" 2>/dev/null; then
-  sed -i "s#^android.aidlFromMavenOverride=.*#$AIDL_LINE#" "$HOME/.gradle/gradle.properties"
-else
-  echo "$AIDL_LINE" >> "$HOME/.gradle/gradle.properties"
-fi
-
 echo "Using Gradle: $PINNED_GRADLE_VERSION ($GRADLE_SOURCE)"
 echo "Using SDK: $SDK_DIR"
 echo "Using build-tools: $BUILD_TOOLS_DIR"
