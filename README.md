@@ -1,3 +1,7 @@
+[![Android v1 debug and release validation](https://github.com/esooLsIeicuJehT/nexus_input/actions/workflows/android-debug.yml/badge.svg)](https://github.com/esooLsIeicuJehT/nexus_input/actions/workflows/android-debug.yml)
+
+
+
 # NEXUS INPUT 1.0.0 candidate
 
 Android gamepad-to-touch mapping with per-game profiles, real controller sampling, screenshot mapping, an in-game editor, crosshair and presented-frame overlays. This branch is a release candidate; CI compilation does not establish hardware verification or production acceptance.
