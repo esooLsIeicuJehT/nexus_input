@@ -1,0 +1,83 @@
+name: Publish KernelSU updater manifest
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-updater:
+    if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify release identity and canonical KernelSU asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          props=dict(line.split('=',1) for line in Path('version.properties').read_text().splitlines() if '=' in line)
+          expected='v'+props['versionName']
+          actual=os.environ['TAG']
+          if actual != expected:
+              raise SystemExit(f'Published tag {actual!r} does not match current Nexus version {expected!r}')
+          PY
+          VERSION="$(sed -n 's/^versionName=//p' version.properties | head -n1)"
+          ZIP="NEXUS_INPUT-KernelSU-Companion-v${VERSION}.zip"
+          mkdir -p "$RUNNER_TEMP/nexus-release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ZIP" --dir "$RUNNER_TEMP/nexus-release"
+          test -s "$RUNNER_TEMP/nexus-release/$ZIP"
+          printf '%s\n' "$ZIP" > "$RUNNER_TEMP/nexus-release/zip-name"
+
+      - name: Generate verified public update.json
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          ZIP="$(cat "$RUNNER_TEMP/nexus-release/zip-name")"
+          SHA="$(sha256sum "$RUNNER_TEMP/nexus-release/$ZIP" | awk '{print $1}')"
+          VERSION="$(sed -n 's/^versionName=//p' version.properties | head -n1)"
+          CODE="$(sed -n 's/^versionCode=//p' version.properties | head -n1)"
+          python3 - <<PY
+          import json
+          from pathlib import Path
+          manifest={
+              'version': '$VERSION',
+              'versionCode': int('$CODE'),
+              'zipUrl': 'https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/$ZIP',
+              'sha256': '$SHA',
+              'changelog': 'https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md',
+          }
+          Path('update.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          data=json.loads(Path('update.json').read_text())
+          assert re.fullmatch(r'[a-f0-9]{64}',data['sha256'])
+          assert data['versionCode'] > 0
+          assert data['zipUrl'].startswith('https://github.com/esooLsIeicuJehT/nexus_input/releases/download/')
+          PY
+
+      - name: Commit updater manifest to main
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- update.json; then
+            echo 'Public updater manifest already matches this release.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add update.json
+          git commit -m "Publish KernelSU updater for ${{ github.event.release.tag_name }}"
+          git push origin HEAD:main
