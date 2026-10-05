@@ -68,7 +68,7 @@ class ShizukuInjector(
     }
 
     override fun cleanup() = synchronized(lock) {
-        runtime?.cleanup()?.let { result("cleanup", it) }
+        runtime?.cleanup()?.let { check(result("cleanup", it)) { "Shizuku cleanup was rejected; inspect backend logs" } }
         runtime = null
         Unit
     }

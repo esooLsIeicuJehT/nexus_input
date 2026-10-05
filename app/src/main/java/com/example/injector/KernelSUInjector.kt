@@ -81,7 +81,7 @@ class KernelSUInjector(
     }
 
     override fun cleanup() = synchronized(lock) {
-        runtime?.cleanup()?.let { result("cleanup", it) }
+        runtime?.cleanup()?.let { check(result("cleanup", it)) { "KernelSUInjector cleanup was rejected; inspect backend logs" } }
         runtime = null
         runtimeWidth = 0
         runtimeHeight = 0
@@ -104,14 +104,14 @@ class KernelSUInjector(
             return existing
         }
 
-        existing?.cleanup()?.let { result("geometry cleanup", it) }
+        existing?.cleanup()?.let { check(result("geometry cleanup", it)) { "KernelSUInjector geometry cleanup was rejected" } }
         runtime = null
 
         val created = RuntimeKernelSUInjector(
             context = appContext,
             width = geometry.first,
             height = geometry.second,
-            maxSlots = 10
+            maxSlots = com.example.input.TouchSlotAllocator.MAX_SLOTS
         )
         return when (val connected = created.connect()) {
             InjectionResult.Success -> {

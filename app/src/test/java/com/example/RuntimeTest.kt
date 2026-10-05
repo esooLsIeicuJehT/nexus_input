@@ -191,4 +191,17 @@ class RuntimeTest {
         } finally { runtime.shutdown(null) }
     }
 
+    @Test fun pointerIdsUpTo31AreAllowedButContactCountNeverExceedsAndroidLimit() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val nodes=(0 until 17).map { id -> MappingNode("h$id",.2f,.3f,boundKey="A",inputKeyCode=KeyEvent.KEYCODE_BUTTON_A+id,buttonBehavior=ButtonBehavior.HOLD,touchSlot=if(id==0)31 else id-1) }
+        val profile=config(*nodes.toTypedArray())
+        try {
+            nodes.forEach { runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,it.inputKeyCode!!),profile,backend) }
+            runtime.awaitIdle();assertEquals(16,backend.calls.count { it.first=="down" })
+            assertTrue(backend.calls.any { it.first=="down" && it.second==31 })
+            assertTrue(errors.any { it.contains("16 simultaneous") });assertTrue(runtime.releaseAll(backend))
+            assertEquals(16,backend.calls.count { it.first=="up" })
+        } finally { runtime.shutdown(null) }
+    }
+
 }
