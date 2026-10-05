@@ -20,6 +20,7 @@ import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 class ProfileWorkflowTest {
     private fun await(predicate: () -> Boolean) {
         val deadline=System.nanoTime()+5_000_000_000
