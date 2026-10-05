@@ -134,6 +134,8 @@ class ControlystRepository(
                 nodeObj.put("touchSlot", node.touchSlot ?: JSONObject.NULL)
                 nodeObj.put("axisX", node.axisX ?: JSONObject.NULL); nodeObj.put("axisY", node.axisY ?: JSONObject.NULL)
                 nodeObj.put("invertY", node.invertY)
+                nodeObj.put("triggerPressThreshold", node.triggerPressThreshold)
+                nodeObj.put("triggerReleaseThreshold", node.triggerReleaseThreshold)
                 nodeObj.put("macroActions", JSONArray().apply { node.macroActions.forEach { step ->
                     put(JSONObject().apply { put("delayMs", step.delayMs); put("durationMs", step.durationMs)
                         put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm) })
@@ -205,6 +207,8 @@ class ControlystRepository(
                             inputKeyCode = optionalInt("inputKeyCode"), inputScanCode = optionalInt("inputScanCode"),
                             touchSlot = optionalInt("touchSlot"), axisX = optionalInt("axisX"), axisY = optionalInt("axisY"),
                             invertY = nodeObj.optBoolean("invertY", false),
+                            triggerPressThreshold = nodeObj.optDouble("triggerPressThreshold", .55).toFloat(),
+                            triggerReleaseThreshold = nodeObj.optDouble("triggerReleaseThreshold", .35).toFloat(),
                             macroActions = nodeObj.optJSONArray("macroActions")?.let { array ->
                                 (0 until array.length()).map { index -> array.getJSONObject(index).let { step ->
                                     MacroStep(step.getLong("delayMs"), step.getString("actionType"),

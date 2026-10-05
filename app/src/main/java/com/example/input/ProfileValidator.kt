@@ -61,6 +61,9 @@ object ProfileValidator {
             val identity = if (stickAxes.isNotEmpty()) "AXES_${stickAxes.sorted().joinToString("_")}" else input
             if (identity.isBlank() || (node.inputKeyCode == null && node.inputScanCode == null && node.axisX == null && canonical !in ControllerBindingAliases.supported)) add("$label: unsupported physical input '${node.boundKey}'")
             if (!inputs.add(identity)) add("$label: duplicate physical input $identity")
+            if(!node.triggerPressThreshold.isFinite() || !node.triggerReleaseThreshold.isFinite() ||
+                node.triggerReleaseThreshold !in 0f..1f || node.triggerPressThreshold !in 0f..1f ||
+                node.triggerReleaseThreshold >= node.triggerPressThreshold) add("$label: invalid trigger hysteresis")
             if (node.type == NodeType.TURBO && node.turboHz !in 2..30) add("$label: turbo must be 2..30 Hz")
             if (node.type == NodeType.MACRO) {
                 if (node.macroActions.isEmpty() || node.macroActions.size > 100) add("$label: macro must contain 1..100 actions")

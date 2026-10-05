@@ -600,6 +600,21 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun calibrateTriggerAndSave(left: Boolean) {
+        viewModelScope.launch {
+            if(!calibrationManager.runTriggerCalibration(left)) {
+                showSnack("Trigger calibration failed: ${triggerCalibrationState.value.error ?: triggerCalibrationState.value.phase}");return@launch
+            }
+            val measured=triggerCalibrationState.value
+            val key=if(left) "LT" else "RT"
+            val targets=_activeConfig.value.buttons.filter { com.example.input.ControllerBindingAliases.canonical(it.boundKey)==key }
+            if(targets.isEmpty()) { showSnack("Trigger measured; add a $key binding before saving its thresholds");return@launch }
+            updateActiveConfig(_activeConfig.value.copy(buttons=_activeConfig.value.buttons.map { node ->
+                if(node in targets) node.copy(triggerPressThreshold=measured.pressThreshold,triggerReleaseThreshold=measured.releaseThreshold) else node
+            })) { showSnack("Measured $key thresholds saved to Room") }
+        }
+    }
+
     fun saveCalibrationToRoom(innerDZ: Float, outerDZ: Float) {
         val currentCfg = _activeConfig.value
         val updatedJoystick = currentCfg.joystick.copy(

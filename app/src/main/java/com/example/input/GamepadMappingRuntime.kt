@@ -51,6 +51,13 @@ class GamepadMappingRuntime(
         }
     }
 
+    private fun schedule(delayMs: Long, action: () -> Unit) {
+        val token=generation
+        executor.schedule({
+            if(token==generation) try { action() } catch(error:Exception) { onError("Scheduled touch failed: ${error.message}") }
+        },delayMs,TimeUnit.MILLISECONDS)
+    }
+
     internal fun awaitIdle() { executor.submit {}.get(2, TimeUnit.SECONDS) }
 
     fun handleKeyEvent(event: KeyEvent, config: MappingConfig, injector: InputInjector): Boolean {
@@ -232,12 +239,12 @@ class GamepadMappingRuntime(
             onError("Tap down failed for ${node.label.ifBlank { node.boundKey }}")
             return
         }
-        executor.schedule({
+        schedule(durationMillis.coerceAtLeast(1L)) {
             if(activeSlots.contains(slot)) {
                 if(injector.endTouch(slot)) activeSlots.remove(slot)
                 else onError("Tap up failed for ${node.label.ifBlank { node.boundKey }}")
             }
-        }, durationMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+        }
     }
 
     private fun startTurbo(node: MappingNode, config: MappingConfig, injector: InputInjector) {
@@ -245,7 +252,7 @@ class GamepadMappingRuntime(
         val hz = node.turboHz.coerceIn(2, 30)
         val period = (1_000L / hz).coerceAtLeast(33L)
         val future = executor.scheduleAtFixedRate(
-            { pulse(node, config, injector, min(30L, period - 1L)) },
+            { try { pulse(node, config, injector, min(30L, period - 1L)) } catch(error:Exception) { onError("Turbo touch failed: ${error.message}") } },
             0L,
             period,
             TimeUnit.MILLISECONDS
@@ -271,7 +278,7 @@ class GamepadMappingRuntime(
         node.macroActions.forEach { step ->
             at += step.delayMs.coerceAtLeast(0L)
             val scheduledAt = at
-            executor.schedule({ executeMacroStep(node, slot, step, injector) }, scheduledAt, TimeUnit.MILLISECONDS)
+            schedule(scheduledAt) { executeMacroStep(node, slot, step, injector) }
             if (step.actionType.equals("TAP", ignoreCase = true)) {
                 at += step.durationMs.coerceAtLeast(1L)
             }
@@ -298,12 +305,12 @@ class GamepadMappingRuntime(
                         activeSlots.remove(slot)
                         onError("Macro tap down failed for ${node.label}")
                     } else {
-                        executor.schedule({
+                        schedule(step.durationMs.coerceAtLeast(1L)) {
                             if(activeSlots.contains(slot)) {
                                 if(injector.endTouch(slot)) activeSlots.remove(slot)
                                 else onError("Macro tap up failed for ${node.label}")
                             }
-                        }, step.durationMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+                        }
                     }
                 }
             }
@@ -332,9 +339,15 @@ class GamepadMappingRuntime(
         config: MappingConfig,
         injector: InputInjector
     ) {
-        val wasPressed = digitalAxisState[id] == true
-        val nowPressed = if (wasPressed) value > 0.35f else value > 0.55f
-        handleDigital(id, nowPressed, aliases, config, injector)
+        matchingNodes(config,aliases).forEach { node ->
+            val channel = "${id}_${node.id}"
+            val wasPressed = digitalAxisState[channel] == true
+            val nowPressed = value > if(wasPressed) node.triggerReleaseThreshold else node.triggerPressThreshold
+            if(wasPressed != nowPressed) {
+                digitalAxisState[channel] = nowPressed
+                handleOwnedInput(channel,node,nowPressed,config,injector)
+            }
+        }
     }
 
     private fun handleDigital(

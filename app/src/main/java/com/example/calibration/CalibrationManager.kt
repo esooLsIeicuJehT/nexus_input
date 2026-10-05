@@ -37,7 +37,11 @@ data class TriggerCalibrationState(
     val restValue: Float = 0f,
     val maxPullValue: Float = 1.0f,
     val currentPull: Float = 0f,
-    val progressPercent: Float = 0f
+    val progressPercent: Float = 0f,
+    val isMeasured: Boolean = false,
+    val error: String? = null,
+    val pressThreshold: Float = .55f,
+    val releaseThreshold: Float = .35f
 )
 
 data class TouchLatencyResult(
@@ -207,9 +211,9 @@ class CalibrationManager(private val context: Context) {
             val preferred = if (left) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_RTRIGGER
             val alternate = if (left) MotionEvent.AXIS_BRAKE else MotionEvent.AXIS_GAS
             val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
-                it.getMotionRange(preferred) != null || it.getMotionRange(alternate) != null
+                it.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null || it.getMotionRange(alternate,InputDevice.SOURCE_JOYSTICK) != null
             } ?: error("No controller exposes this analog trigger")
-            val axis = if (device.getMotionRange(preferred) != null) preferred else alternate
+            val axis = if (device.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null) preferred else alternate
             val rest = mutableListOf<Float>(); val pull = mutableListOf<Float>()
             suspend fun gather(target: MutableList<Float>, phase: String) {
                 _triggerState.value = TriggerCalibrationState(phase = phase)
@@ -221,16 +225,25 @@ class CalibrationManager(private val context: Context) {
             }
             gather(rest, "REST: release trigger, press slightly then release")
             gather(pull, "PULL: repeatedly pull trigger fully")
-            require(rest.size >= 3 && pull.size >= 3) { "Insufficient real trigger events" }
-            require(pull.max() - rest.min() > .5f) { "Trigger travel was not fully sampled" }
-            _triggerState.value = TriggerCalibrationState("CALIBRATION COMPLETE", rest.min(), pull.max(), pull.last(), 1f)
+            val (press,release) = computeTriggerThresholds(rest,pull)
+            require(InputDevice.getDevice(device.id)?.descriptor == device.descriptor) { "Controller disconnected or changed" }
+            _triggerState.value = TriggerCalibrationState("CALIBRATION COMPLETE",rest.max(),pull.max(),pull.last(),1f,true,null,press,release)
             true
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
-            _triggerState.value = TriggerCalibrationState(phase = "FAILED: ${error.message}")
+            _triggerState.value = TriggerCalibrationState(phase = "CALIBRATION FAILED",error=error.message)
             android.util.Log.e("NexusCalibration", "Trigger calibration failed", error)
             false
         } finally { calibrationLock.unlock() }
+    }
+
+    internal fun computeTriggerThresholds(rest: List<Float>, pull: List<Float>): Pair<Float,Float> {
+        require(rest.size>=3 && pull.size>=3) { "Insufficient real trigger events" }
+        require((rest+pull).all { it.isFinite() && it in 0f..1f }) { "Invalid Android trigger sample" }
+        val minimum=rest.max();val maximum=pull.max()
+        require(minimum<.4f && maximum-minimum>.5f) { "Release the trigger during rest and fully pull it during sampling" }
+        val travel=maximum-minimum
+        return minimum+travel*.55f to minimum+travel*.35f
     }
 
     // Measures the synchronous backend API call only; never device-to-photon latency.
@@ -238,6 +251,7 @@ class CalibrationManager(private val context: Context) {
         _latencyResult.value = TouchLatencyResult(isTesting = true)
         val start = SystemClock.elapsedRealtimeNanos()
         val result = try {
+            check(!com.example.service.MappingRuntimeBridge.state.value.armed) { "Stop mapping before timing a separate backend call" }
             check(injector.prepare()) { "Backend not ready" }
             check(injector.injectTap(5f, 5f)) { "Backend rejected injection" }
             TouchLatencyResult((SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,

@@ -239,21 +239,21 @@ fun CalibrationScreen(
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
-                Text(triggerState.phase + " • ${triggerState.currentPull}", color = TextSecondary)
+                Text(triggerState.phase + " • ${triggerState.currentPull}" + (triggerState.error?.let { " • $it" } ?: ""), color = TextSecondary)
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { coroutineScope.launch { viewModel.calibrationManager.runTriggerCalibration(true) } },
+                        onClick = { viewModel.calibrateTriggerAndSave(true) },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
                         Text("Calibrate LT")
                     }
                     OutlinedButton(
-                        onClick = { coroutineScope.launch { viewModel.calibrationManager.runTriggerCalibration(false) } },
+                        onClick = { viewModel.calibrateTriggerAndSave(false) },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
@@ -281,7 +281,7 @@ fun CalibrationScreen(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (latencyResult.roundTripMs > 0)
-                        "Benchmark Score: ${latencyResult.roundTripMs} ms • ${latencyResult.grade}"
+                        "Backend call: ${latencyResult.roundTripMs} ms • ${latencyResult.grade}"
                     else
                         latencyResult.grade + ". Includes backend preparation; does not measure screen presentation.",
                     color = if (latencyResult.roundTripMs > 0) CyberCyan else TextSecondary,
@@ -302,7 +302,7 @@ fun CalibrationScreen(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isTestingLatency) "Benchmarking Latency..." else "Run Touch Benchmark", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (isTestingLatency) "Timing request..." else "Time backend call", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -324,7 +324,7 @@ fun CalibrationScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Current Device Ratio: ${activeConfig.targetAspectRatio}. All normalized nodes (0..1) automatically adapt across 16:9, 19.5:9, 20:9, foldables, and tablets.",
+                    "Profile target ratio: ${activeConfig.targetAspectRatio}. All normalized nodes (0..1) automatically adapt across 16:9, 19.5:9, 20:9, foldables, and tablets.",
                     color = TextSecondary,
                     fontSize = 13.sp
                 )

@@ -150,5 +150,14 @@ class RuntimeTest {
         while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline2) Thread.sleep(5)
         assertTrue(backend.calls.any { it.first=="up" });runtime.shutdown(backend)
     }
+    @Test fun savedTriggerHysteresisControlsTheActualHoldLifecycle() {
+        val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)});val backend=Recording()
+        val c=config(MappingNode("calibrated",.3f,.4f,boundKey="RT",triggerPressThreshold=.8f,triggerReleaseThreshold=.6f))
+        runtime.handleMotionSnapshot(sample(rt=.7f),c,backend);runtime.awaitIdle();assertTrue(backend.calls.isEmpty())
+        runtime.handleMotionSnapshot(sample(rt=.9f),c,backend);runtime.awaitIdle();assertEquals(1,backend.calls.count { it.first=="down" })
+        runtime.handleMotionSnapshot(sample(rt=.7f),c,backend);runtime.awaitIdle();assertEquals(0,backend.calls.count { it.first=="up" })
+        runtime.handleMotionSnapshot(sample(rt=.5f),c,backend);runtime.awaitIdle();assertEquals(1,backend.calls.count { it.first=="up" })
+        runtime.shutdown(null)
+    }
 
 }
