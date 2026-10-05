@@ -142,6 +142,8 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "NEXUS accessibility service interrupted")
+        MappingRuntimeBridge.disarm("Accessibility capture interrupted; mapper disarmed")
+        teardownInjectorAsync()
     }
 
     override fun onDestroy() {
@@ -169,7 +171,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
                 val probes = PrivilegeDetector(this).probeAll()
                 val requiresPersistent = mappingRuntime.requiresPersistentTouch(config)
-                val order = listOf(
+                val order = config.preferredBackend?.let { listOf(it) } ?: listOf(
                     PrivilegeMethod.KERNELSU,
                     PrivilegeMethod.SHIZUKU,
                     PrivilegeMethod.MAGISK,
@@ -179,7 +181,10 @@ class ControlystAccessibilityService : AccessibilityService() {
                 val failures = mutableListOf<String>()
                 for (method in order) {
                     val probe = probes.firstOrNull { it.method == method } ?: continue
-                    if (!probe.isDetected) continue
+                    if (!probe.isDetected || method == PrivilegeMethod.APATCH) {
+                        failures += "$method unavailable: ${probe.state}"
+                        continue
+                    }
                     if (method == PrivilegeMethod.ACCESSIBILITY && requiresPersistent) {
                         failures += "Accessibility cannot satisfy persistent-touch requirements"
                         continue
@@ -209,7 +214,8 @@ class ControlystAccessibilityService : AccessibilityService() {
                         runCatching { previous.cleanup() }
                     }
                     activeInjector = candidate
-                    MappingRuntimeBridge.setBackend(method, true, null)
+                    MappingRuntimeBridge.setBackend(method, true, null,
+                        failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" })
                     Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}")
                     return@execute
                 }

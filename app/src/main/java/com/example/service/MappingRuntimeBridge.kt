@@ -14,7 +14,8 @@ data class MappingRuntimeState(
     val profileName: String? = null,
     val backend: PrivilegeMethod? = null,
     val backendReady: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val notice: String? = null
 )
 
 /**
@@ -53,12 +54,13 @@ object MappingRuntimeBridge {
         )
     }
 
-    fun setBackend(method: PrivilegeMethod, ready: Boolean, error: String? = null) {
+    fun setBackend(method: PrivilegeMethod, ready: Boolean, error: String? = null, notice: String? = null) {
         val current = _state.value
         _state.value = current.copy(
             backend = method,
             backendReady = ready,
-            error = error
+            error = error,
+            notice = notice
         )
     }
 

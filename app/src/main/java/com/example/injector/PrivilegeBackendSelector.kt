@@ -12,7 +12,6 @@ object PrivilegeBackendSelector {
         PrivilegeMethod.KERNELSU,
         PrivilegeMethod.SHIZUKU,
         PrivilegeMethod.MAGISK,
-        PrivilegeMethod.APATCH,
         PrivilegeMethod.ACCESSIBILITY
     )
 
@@ -20,6 +19,7 @@ object PrivilegeBackendSelector {
         results: List<PrivilegeProbeResult>,
         forced: PrivilegeMethod? = null
     ): PrivilegeProbeResult? {
+        if (forced == PrivilegeMethod.APATCH) return null
         if (forced != null) {
             return results.firstOrNull {
                 it.method == forced && it.state == PrivilegeAvailabilityState.AVAILABLE

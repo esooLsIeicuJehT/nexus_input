@@ -205,6 +205,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun overridePrivilegeMethod(method: PrivilegeMethod) {
+        updateActiveConfig(_activeConfig.value.copy(preferredBackend = method))
         _activePrivilegeMethod.value = method
         currentInjector = InputInjectorFactory.createInjector(method)
         showSnack("Switched injector to: ${method.title}")

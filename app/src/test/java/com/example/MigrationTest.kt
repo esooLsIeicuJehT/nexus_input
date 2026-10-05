@@ -48,6 +48,6 @@ class MigrationTest {
             .addMigrations(ControlystDatabase.MIGRATION_1_2).build()
         assertEquals(123L,db.gameDao().getGame("com.saved.game")!!.playTimeMinutes)
         assertNull(db.profileMigrationDao().get("none"))
-        db.close();context.deleteDatabase(name)
+        db.close();context.deleteDatabase(name); Unit
     }
 }
