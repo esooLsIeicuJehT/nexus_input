@@ -118,7 +118,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             ControllerBindingAliases.supported.sorted().chunked(4).forEach { keys -> Row { keys.forEach { key ->
                 FilterChip(selected=binding==key,onClick={binding=key;behavior=if(key in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP},label={Text(key)})
             } } }
-            if(binding !in setOf("LS","RS") && node?.type!=NodeType.MACRO) Row { Text("Turbo repeat (10 Hz)");Switch(turbo,{turbo=it}) }
+            if(binding !in setOf("LS","RS") && node?.type!=NodeType.MACRO) Row { Text("Turbo repeat (${node?.turboHz ?: 10} Hz)");Switch(turbo,{turbo=it}) }
             Row { ButtonBehavior.entries.forEach { value -> FilterChip(selected=behavior==value,onClick={behavior=value},label={Text(value.name)}) } }
         }
     },confirmButton={TextButton(onClick={

@@ -52,6 +52,8 @@ class ControlystAccessibilityService : AccessibilityService() {
     @Volatile
     private var activeInjector: InputInjector? = null
 
+    private val failedCleanup = java.util.concurrent.ConcurrentHashMap.newKeySet<InputInjector>()
+
     @Volatile
     private var runtimePreparing = false
 
@@ -186,6 +188,10 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     private fun prepareRuntimeAsync() {
         if (activeInjector != null || runtimePreparing || backendExecutor.isShutdown) return
+        if(failedCleanup.isNotEmpty()) {
+            MappingRuntimeBridge.disarm("Previous backend release is unconfirmed. Use panic to retry cleanup before restarting mapping.")
+            return
+        }
         runtimePreparing = true
         backendExecutor.execute {
             try {
@@ -263,21 +269,23 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     private fun cleanupCandidate(injector: InputInjector): Boolean = try {
         injector.cleanup()
+        failedCleanup.remove(injector)
         true
     } catch(error: Exception) {
+        failedCleanup.add(injector)
         Log.e(TAG,"Backend cleanup failed",error)
         MappingRuntimeBridge.disarm("Backend cleanup failed: ${error.message}")
         false
     }
 
-    private fun cleanupRuntime(injector: InputInjector) {
+    private fun cleanupRuntime(injector: InputInjector): Boolean {
         capturedDevices.clear()
         val released=mappingRuntime.releaseAll(injector)
-        if(!released) MappingRuntimeBridge.reportError("Backend contact release could not be confirmed")
-        runCatching { injector.cleanup() }.onFailure {
-            Log.e(TAG,"Backend cleanup failed",it)
-            MappingRuntimeBridge.reportError("Backend cleanup failed: ${it.message}")
-        }
+        val cleaned=cleanupCandidate(injector)
+        if(released && cleaned) { failedCleanup.remove(injector);return true }
+        failedCleanup.add(injector)
+        MappingRuntimeBridge.disarm("Backend contact release or cleanup could not be confirmed. Panic can retry the retained backend.")
+        return false
     }
 
     private fun teardownInjectorAsync() {
@@ -315,15 +323,12 @@ class ControlystAccessibilityService : AccessibilityService() {
         MappingRuntimeBridge.disarm("Emergency stop requested")
         if (backendExecutor.isShutdown) { onComplete(injector == null); return }
         backendExecutor.execute {
-            var released = true
-            if (injector != null) {
-                released = mappingRuntime.releaseAll(injector)
-                runCatching { injector.cleanup() }.onFailure {
-                    Log.e(TAG, "Backend cleanup failed during panic", it)
-                    released = false
-                }
-            }
-            onComplete(released)
+            // Teardowns queued before panic complete first; retained failures must also be retried.
+            val targets=failedCleanup.toMutableSet().apply { if(injector!=null) add(injector) }
+            var released=true
+            targets.forEach { if(!cleanupRuntime(it)) released=false }
+            if(!gestures.awaitIdle(200)) released=false
+            onComplete(released && failedCleanup.isEmpty())
         }
     }
 
