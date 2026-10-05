@@ -13,7 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -92,6 +92,10 @@ fun NexusHomeScreen(
     val context = LocalContext.current
     val games by viewModel.games.collectAsState()
     val selectedGame by viewModel.selectedGame.collectAsState()
+    val installed by viewModel.installedApps.collectAsState()
+    val loading by viewModel.appInventoryLoading.collectAsState()
+    var showApps by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     val activeConfig by viewModel.activeConfig.collectAsState()
     val controller by viewModel.controllerProfile.collectAsState()
     val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
@@ -321,7 +325,12 @@ fun NexusProfilesScreen(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Profiles", "Game library") }
+        item {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                SectionTitle("Profiles", "Game library")
+                Button(onClick={showApps=true;viewModel.refreshInstalledApps()}) { Text("Add game") }
+            }
+        }
 
         if (games.isEmpty()) {
             item {
@@ -353,6 +362,21 @@ fun NexusProfilesScreen(
         }
         item { Spacer(Modifier.height(16.dp)) }
     }
+    if(showApps) AlertDialog(onDismissRequest={showApps=false},title={Text("Choose an installed app")},text={
+        Column {
+            OutlinedTextField(query,{query=it},label={Text("Search name or package")})
+            if(loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            LazyColumn(Modifier.heightIn(max=360.dp)) {
+                items(installed.filter { it.displayName.contains(query,true) || it.packageName.contains(query,true) },key={it.packageName}) { app ->
+                    TextButton(onClick={viewModel.addGame(app);showApps=false}) {
+                        Column { Text(app.displayName);Text(app.packageName,style=MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+            if(!loading && installed.isEmpty()) Text("Android returned no launchable apps. Check package visibility and logs.")
+        }
+    },confirmButton={TextButton(onClick={showApps=false}) { Text("Close") }})
+
 }
 
 @Composable
@@ -406,6 +430,9 @@ fun NexusProfileDetailScreen(
     val context = LocalContext.current
     val game by viewModel.selectedGame.collectAsState()
     val config by viewModel.activeConfig.collectAsState()
+    val allProfiles by viewModel.profiles.collectAsState()
+    var showCreate by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
@@ -450,6 +477,13 @@ fun NexusProfileDetailScreen(
         }
 
         NexusPanel(Modifier.fillMaxWidth()) {
+            Text("SAVED PROFILES",color=NexusCyan,fontWeight=FontWeight.Bold)
+            allProfiles.filter { it.gamePackage==game?.packageName }.forEach { profile ->
+                TextButton(onClick={viewModel.selectSavedProfile(profile)}) { Text(if(profile.id==config.id) "${profile.profileName} · selected" else profile.profileName) }
+            }
+            OutlinedButton(onClick={showCreate=true},enabled=game!=null) { Text("New profile") }
+        }
+        NexusPanel(Modifier.fillMaxWidth()) {
             Text("LAYOUT MODE", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text(config.profileName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("Target aspect ratio ${config.targetAspectRatio}", color = TextSecondary, fontSize = 10.sp)
@@ -473,6 +507,10 @@ fun NexusProfileDetailScreen(
             }
         }
     }
+    if(showCreate) AlertDialog(onDismissRequest={showCreate=false},title={Text("New game profile")},text={OutlinedTextField(newName,{newName=it},label={Text("Profile name")})},
+        confirmButton={TextButton(onClick={viewModel.createProfile(newName);showCreate=false;newName=""},enabled=newName.isNotBlank()) { Text("Create") }},
+        dismissButton={TextButton(onClick={showCreate=false}) { Text("Cancel") }})
+
 }
 
 @Composable

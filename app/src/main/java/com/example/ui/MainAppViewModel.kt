@@ -244,28 +244,66 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         showSnack("Layout mapped to: ${type.displayName}")
     }
 
-    fun selectGame(game: GameEntity) {
-        _selectedGame.value = game
+    private val _installedApps = MutableStateFlow<List<GameEntity>>(emptyList())
+    val installedApps = _installedApps.asStateFlow()
+    private val _appInventoryLoading = MutableStateFlow(false)
+    val appInventoryLoading = _appInventoryLoading.asStateFlow()
+    fun refreshInstalledApps() {
         viewModelScope.launch {
-            // Find default config for this game
-            val list = db.configProfileDao().getDefaultForGame(game.packageName)
-            if (list != null) {
-                _activeConfig.value = ControlystRepository.deserializeJsonToConfig(list.jsonBlob)
-            } else {
-                // Generate base template config
-                _activeConfig.value = MappingConfig(
-                    id = "${game.packageName}_default",
-                    profileName = "${game.displayName} Layout",
-                    gamePackage = game.packageName,
-                    gameTitle = game.displayName
-                )
+            _appInventoryLoading.value = true
+            try { _installedApps.value = withContext(Dispatchers.IO) { repository.scanInstalledApps().distinctBy { it.packageName }.sortedBy { it.displayName.lowercase() } } }
+            catch(error: Exception) { if(error is kotlinx.coroutines.CancellationException) throw error;showSnack("Installed app query failed: ${error.message}") }
+            finally { _appInventoryLoading.value = false }
+        }
+    }
+    private var selectionJob: kotlinx.coroutines.Job? = null
+    fun selectGame(game: GameEntity) {
+        selectionJob?.cancel()
+        _selectedGame.value = game
+        _activeConfig.value = MappingConfig(id="${game.packageName}_default",profileName="${game.displayName} Layout",gamePackage=game.packageName,gameTitle=game.displayName)
+        selectionJob = viewModelScope.launch {
+            try {
+                val saved = db.configProfileDao().getDefaultForGame(game.packageName)
+                if(saved != null) {
+                    val config = ControlystRepository.deserializeJsonToConfig(saved.jsonBlob)
+                    val errors = com.example.input.ProfileValidator.errors(config, game.packageName, saved.id, false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") }
+                    _activeConfig.value = config
+                }
+            } catch(error: Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile load failed: ${error.message}")
             }
+        }
+    }
+    fun selectSavedProfile(entity: ConfigProfileEntity) {
+        selectionJob?.cancel()
+        selectionJob=viewModelScope.launch {
+            try {
+                val config=ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
+                val errors=com.example.input.ProfileValidator.errors(config,entity.gamePackage,entity.id,false)
+                require(errors.isEmpty()) { errors.joinToString("; ") }
+                _activeConfig.value=config
+                _selectedGame.value=db.gameDao().getGame(config.gamePackage)
+                profilePersistence.save(config)
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile selection failed: ${error.message}")
+            }
+        }
+    }
+    fun createProfile(name: String) {
+        val game=_selectedGame.value ?: run { showSnack("Choose a game before creating a profile");return }
+        if(name.isBlank()) { showSnack("Profile name is required");return }
+        updateActiveConfig(MappingConfig(id=java.util.UUID.randomUUID().toString(),profileName=name.trim(),gamePackage=game.packageName,gameTitle=game.displayName)) {
+            showSnack("Profile created. Add physical input bindings in Mapper.")
         }
     }
 
     fun launchGameWithMapping(game: GameEntity, context: Context) {
         viewModelScope.launch {
             try {
+                selectionJob?.join()
                 val launchIntent = context.packageManager.getLaunchIntentForPackage(game.packageName)
                     ?: error("${game.displayName} is not installed or has no launch activity")
                 require(com.example.service.ControlystAccessibilityService.isServiceRunning()) {
@@ -390,8 +428,15 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     fun addGame(game: GameEntity) {
         viewModelScope.launch {
-            repository.insertGame(game)
-            showSnack("Added ${game.displayName} to library")
+            try {
+                require(getApplication<Application>().packageManager.getLaunchIntentForPackage(game.packageName) != null) { "Application is no longer installed or launchable" }
+                repository.insertGame(game)
+                selectGame(game)
+                showSnack("Added ${game.displayName} to library")
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Add game failed: ${error.message}")
+            }
         }
     }
 

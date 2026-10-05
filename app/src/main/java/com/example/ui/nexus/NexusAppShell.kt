@@ -178,8 +178,8 @@ fun NexusAppShell(
                     onBack = { viewModel.selectTab("system") }
                 )
                 "macro" -> MacroTimelineEditor(
-                    onBack = { viewModel.selectTab("mapper") },
-                    onSaveMacro = { viewModel.showSnack("Saved macro: ${it.name}") }
+                    viewModel = viewModel,
+                    onBack = { viewModel.selectTab("mapper") }
                 )
                 "safety" -> GameSafetyScreen(onBack = { viewModel.selectTab("system") })
                 else -> NexusHomeScreen(viewModel, viewModel::selectTab)
