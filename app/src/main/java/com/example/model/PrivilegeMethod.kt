@@ -8,31 +8,31 @@ enum class PrivilegeMethod(
 ) {
     SHIZUKU(
         title = "Shizuku (Wireless ADB)",
-        description = "High-performance direct shell event injection without root. Minimal latency, zero kernel modifications.",
+        description = "Shell input injection through the actual Shizuku UserService. Requires a running Shizuku server and granted permission.",
         requiresRoot = false,
         badgeLabel = "Recommended No-Root"
     ),
     MAGISK(
-        title = "Magisk Root (su /dev/input)",
-        description = "Standard systemless root access. Grants direct /dev/input raw event synthesis and kernel-level process management.",
+        title = "Magisk RootService /dev/uinput",
+        description = "Persistent touch transport through libsu RootService and JNI /dev/uinput. Requires root authorization and uinput access.",
         requiresRoot = true,
         badgeLabel = "Deep Root"
     ),
     KERNELSU(
-        title = "KernelSU Userspace Daemon",
-        description = "Kernel-integrated root with userspace daemon socket. Ultra-low latency raw touch frame injection.",
+        title = "KernelSU RootService /dev/uinput",
+        description = "Persistent touch transport through the existing libsu RootService and JNI /dev/uinput. The companion module supplies diagnostics.",
         requiresRoot = true,
         badgeLabel = "Kernel Direct"
     ),
     APATCH(
-        title = "APatch Kernel Patch",
-        description = "Kernel-level patch root. Full input subsystem access with clean process cleanup on game termination.",
+        title = "APatch — UNVERIFIED",
+        description = "Unavailable until the RootService transport is tested on actual APatch hardware.",
         requiresRoot = true,
-        badgeLabel = "Kernel Patch"
+        badgeLabel = "UNVERIFIED"
     ),
     ACCESSIBILITY(
         title = "Accessibility Fallback (Non-Root)",
-        description = "Standard Android AccessibilityService gesture injection. Works on any stock device without root or PC connection.",
+        description = "Android gesture dispatch for TAP mappings. Persistent HOLD, sticks and camera drag require Shizuku or root.",
         requiresRoot = false,
         badgeLabel = "Stock Compatible"
     )

@@ -71,7 +71,7 @@ class ExampleRobolectricTest {
     fun `verify KernelSU module metadata and WebUI HTML content generation`() {
         val prop = com.example.module.KernelSuModuleManager.getModuleProp()
         assertTrue(prop.contains("id=gamepad.pro.root"))
-        assertTrue(prop.contains("webroot=webroot"))
+        assertTrue(prop.contains("name=NEXUS INPUT Root Companion"))
 
         val webUiHtml = com.example.module.KernelSuModuleManager.getWebUiHtml()
         assertTrue(webUiHtml.contains("NEXUS INPUT"))

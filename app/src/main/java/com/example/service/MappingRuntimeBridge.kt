@@ -50,7 +50,7 @@ object MappingRuntimeBridge {
         _state.value = current.copy(
             targetForeground = isTarget,
             backendReady = if (isTarget) current.backendReady else false,
-            error = if (isTarget) current.error else null
+            error = current.error
         )
     }
 

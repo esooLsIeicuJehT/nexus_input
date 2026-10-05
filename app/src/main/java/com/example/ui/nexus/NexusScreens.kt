@@ -570,6 +570,10 @@ fun NexusSystemScreen(
 ) {
     val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
     val probes by viewModel.privilegeResults.collectAsState()
+    val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
+    val panic by com.example.service.PanicKillSwitch.state.collectAsState()
+    val diagnostics by viewModel.diagnostics.collectAsState()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
@@ -578,7 +582,7 @@ fun NexusSystemScreen(
         SectionTitle("System", "Engine & integrations")
 
         NexusPanel(Modifier.fillMaxWidth()) {
-            Text("ACTIVE INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+            Text("REQUESTED INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
             Text(activePrivilege.title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
             Text(activePrivilege.badgeLabel, color = TextSecondary, fontSize = 10.sp)
             Spacer(Modifier.height(10.dp))
@@ -586,6 +590,31 @@ fun NexusSystemScreen(
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("Re-check backends")
+            }
+        }
+
+        NexusPanel(Modifier.fillMaxWidth()) {
+            Text("MAPPING STATUS", color = NexusCyan, fontWeight = FontWeight.Bold)
+            Text(if (runtime.backendReady) "Backend ready: ${runtime.backend}" else if (runtime.armed) "Armed; backend not ready" else "Disarmed", color = TextPrimary)
+            Text("Target in foreground: ${runtime.targetForeground}", color = TextSecondary)
+            runtime.notice?.let { Text(it, color = AccentAmber) }
+            runtime.error?.let { Text(it, color = AccentRose) }
+            if (panic.isKilled) {
+                Text(if (panic.releaseConfirmed) "Panic: backend acknowledged release" else "Panic: release not confirmed", color = AccentAmber)
+                panic.error?.let { Text(it, color = AccentRose) }
+            }
+        }
+        NexusPanel(Modifier.fillMaxWidth()) {
+            Text("RELEASE SELF-CHECK", color = NexusCyan, fontWeight = FontWeight.Bold)
+            Text("Reads device, permission, storage and backend observations. No test touches are injected.", color = TextSecondary)
+            Button(onClick = viewModel::runSelfCheck) { Text("Collect diagnostics") }
+            diagnostics?.let { report ->
+                OutlinedButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NEXUS INPUT diagnostics",report))
+                    viewModel.showSnack("Diagnostics copied")
+                }) { Text("Copy report") }
+                Text(report, color = TextSecondary, fontSize = 9.sp)
             }
         }
 

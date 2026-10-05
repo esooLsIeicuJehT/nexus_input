@@ -185,6 +185,21 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private val _diagnostics = MutableStateFlow<String?>(null)
+    val diagnostics = _diagnostics.asStateFlow()
+    fun runSelfCheck() {
+        viewModelScope.launch {
+            try {
+                _diagnostics.value = withContext(Dispatchers.IO) { com.example.diagnostics.ReleaseDiagnostics.collect(getApplication()) }
+                showSnack("Device observations collected. Injection still requires the device test checklist.")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _diagnostics.value = "Self-check failed: ${error.message}"
+                showSnack(_diagnostics.value!!)
+            }
+        }
+    }
+
     fun selectTab(tab: String) {
         _currentTab.value = tab
     }

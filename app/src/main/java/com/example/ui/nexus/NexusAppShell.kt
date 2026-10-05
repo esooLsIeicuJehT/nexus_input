@@ -24,7 +24,6 @@ import com.example.ui.calibration.CalibrationScreen
 import com.example.ui.community.CommunityShareScreen
 import com.example.ui.crosshair.CrosshairStudioScreen
 import com.example.ui.macro.MacroTimelineEditor
-import com.example.ui.overlay.FloatingOverlayHUD
 import com.example.ui.root.KernelSuWebUiScreen
 import com.example.ui.safety.GameSafetyScreen
 import com.example.ui.theme.*
@@ -52,10 +51,15 @@ fun NexusAppShell(
 ) {
     val currentTab by viewModel.currentTab.collectAsState()
     val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
+    val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
     val configuration = LocalConfiguration.current
     val immersiveLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         currentTab in setOf("mapper", "profile_detail")
 
+    androidx.compose.runtime.LaunchedEffect(runtime.error, runtime.notice) {
+        runtime.error?.let { snackbarHostState.showSnackbar(it) }
+        runtime.notice?.let { snackbarHostState.showSnackbar(it) }
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation),
         topBar = {
@@ -97,7 +101,7 @@ fun NexusAppShell(
                                 border = BorderStroke(1.dp, NexusCyan.copy(alpha = 0.35f))
                             ) {
                                 Text(
-                                    activePrivilege.badgeLabel,
+                                    runtime.backend?.let { if (runtime.backendReady) "$it READY" else "$it NOT READY" } ?: "DISARMED",
                                     color = NexusCyan,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
@@ -181,15 +185,7 @@ fun NexusAppShell(
                 else -> NexusHomeScreen(viewModel, viewModel::selectTab)
             }
 
-            if (!immersiveLandscape) {
-                FloatingOverlayHUD(
-                    viewModel = viewModel,
-                    onOpenMapper = { viewModel.selectTab("mapper") },
-                    onOpenCrosshair = { viewModel.selectTab("crosshair") },
-                    onOpenCalibration = { viewModel.selectTab("calibration") },
-                    onOpenRootWebUi = { viewModel.selectTab("root_webui") }
-                )
-            }
+
         }
     }
 }
