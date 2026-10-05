@@ -6,13 +6,14 @@ import android.view.MotionEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Process-local monitor for physical controller events delivered to the Nexus Input activity.
+ * Process-local monitor for physical controller events delivered to Nexus Input.
  *
  * This is intentionally observational only: it does not synthesize input and it does not
- * manufacture values for axes a device does not expose. The Devices tester can therefore
- * distinguish real Android events from configured profile values.
+ * manufacture values for axes a device does not expose. The Devices tester and calibration
+ * can therefore distinguish real Android events from configured profile values.
  */
 data class ControllerLiveState(
     val connectedEventSource: String? = null,
@@ -20,12 +21,14 @@ data class ControllerLiveState(
     val axes: Map<String, Float> = emptyMap(),
     val normalizedAxes: Map<String, Float> = emptyMap(),
     val pressedButtons: Set<String> = emptySet(),
-    val lastEventUptimeMs: Long = 0L
+    val lastEventUptimeMs: Long = 0L,
+    val observedEventSequence: Long = 0L
 )
 
 object ControllerInputMonitor {
     private val _state = MutableStateFlow(ControllerLiveState())
     val state: StateFlow<ControllerLiveState> = _state.asStateFlow()
+    private val observedEvents = AtomicLong()
 
     fun onMotionEvent(event: MotionEvent) {
         if (!isControllerSource(event.source)) return
@@ -64,7 +67,8 @@ object ControllerInputMonitor {
             deviceId = device?.id,
             axes = axes,
             normalizedAxes = normalized,
-            lastEventUptimeMs = event.eventTime
+            lastEventUptimeMs = event.eventTime,
+            observedEventSequence = observedEvents.incrementAndGet()
         )
     }
 
@@ -83,12 +87,15 @@ object ControllerInputMonitor {
             connectedEventSource = event.device?.name,
             deviceId = event.device?.id,
             pressedButtons = updated,
-            lastEventUptimeMs = event.eventTime
+            lastEventUptimeMs = event.eventTime,
+            observedEventSequence = observedEvents.incrementAndGet()
         )
     }
 
     fun onDeviceRemoved(id: Int) {
-        if(_state.value.deviceId==id) _state.value=ControllerLiveState()
+        if(_state.value.deviceId==id) {
+            _state.value=ControllerLiveState(observedEventSequence = observedEvents.incrementAndGet())
+        }
     }
 
     private fun isControllerSource(source: Int): Boolean {
