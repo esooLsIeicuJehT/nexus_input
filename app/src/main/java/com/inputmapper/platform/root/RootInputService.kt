@@ -3,6 +3,7 @@ package com.inputmapper.platform.root
 import android.content.Intent
 import android.os.IBinder
 import android.os.Process
+import android.util.Log
 import com.topjohnwu.superuser.ipc.RootService
 import java.io.File
 
@@ -21,15 +22,27 @@ class RootInputService : RootService() {
         override fun readSurfaceLatency(layer: String): String = com.inputmapper.platform.core.SurfaceFrameProbe.latency(layer)
 
         override fun create(width: Int, height: Int, maxSlots: Int): String = synchronized(this@RootInputService) {
-            rootGuard()?.let { return@synchronized it }
-            nativeLoadError?.let { return@synchronized "ERROR NATIVE_LOAD $it" }
-            if (devicesCreated) return@synchronized "OK ALREADY"
+            rootGuard()?.let {
+                Log.e(TAG, "create rejected: $it")
+                return@synchronized it
+            }
+            nativeLoadError?.let {
+                val reply = "ERROR NATIVE_LOAD $it"
+                Log.e(TAG, "create rejected: $reply")
+                return@synchronized reply
+            }
+            if (devicesCreated) {
+                Log.i(TAG, "create requested while virtual devices are already active")
+                return@synchronized "OK ALREADY"
+            }
+            Log.i(TAG, "creating virtual input devices ${width}x$height slots=$maxSlots uid=${Process.myUid()}")
             val rc = NativeUinputBridge.nativeCreate(width, height, maxSlots)
             if (rc == 0) {
                 devicesCreated = true
+                Log.i(TAG, "virtual input devices created successfully")
                 "OK"
             } else {
-                nativeFailure("CREATE", rc)
+                nativeFailure("CREATE", rc).also { Log.e(TAG, it) }
             }
         }
 
@@ -83,6 +96,7 @@ class RootInputService : RootService() {
 
         override fun destroyDevices(): String = synchronized(this@RootInputService) {
             if (devicesCreated) {
+                Log.i(TAG, "destroying virtual input devices")
                 NativeUinputBridge.nativeDestroy()
                 devicesCreated = false
             }
@@ -90,9 +104,14 @@ class RootInputService : RootService() {
         }
     }
 
-    override fun onBind(intent: Intent): IBinder = binder
+    override fun onBind(intent: Intent): IBinder {
+        Log.i(TAG, "RootInputService bound uid=${Process.myUid()} pid=${Process.myPid()}")
+        nativeLoadError?.let { Log.e(TAG, "JNI unavailable: $it") }
+        return binder
+    }
 
     override fun onDestroy() {
+        Log.i(TAG, "RootInputService destroying; devicesCreated=$devicesCreated")
         synchronized(this) {
             if (devicesCreated) {
                 NativeUinputBridge.nativeDestroy()
@@ -106,7 +125,7 @@ class RootInputService : RootService() {
         if (Process.myUid() == 0) null else "ERROR NOT_ROOT uid=${Process.myUid()}"
 
     private fun reply(operation: String, rc: Int): String =
-        if (rc == 0) "OK" else nativeFailure(operation, rc)
+        if (rc == 0) "OK" else nativeFailure(operation, rc).also { Log.e(TAG, it) }
 
     private fun nativeFailure(operation: String, rc: Int): String =
         "ERROR NATIVE_$operation rc=$rc ${NativeUinputBridge.nativeLastError()}"
@@ -121,6 +140,8 @@ class RootInputService : RootService() {
     }
 
     companion object {
+        private const val TAG = "NexusRootInput"
+
         @Volatile
         private var nativeLoadError: String? = null
 
@@ -130,6 +151,7 @@ class RootInputService : RootService() {
                     System.loadLibrary("uinput_jni")
                 } catch (t: Throwable) {
                     nativeLoadError = "${t.javaClass.simpleName}:${t.message ?: "unknown"}"
+                    Log.e(TAG, "Failed to load uinput_jni: $nativeLoadError", t)
                 }
             }
         }
