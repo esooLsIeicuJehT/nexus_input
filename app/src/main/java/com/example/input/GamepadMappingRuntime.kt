@@ -143,7 +143,7 @@ class GamepadMappingRuntime(
                 executor.queue.toList().forEach { (it as? java.util.concurrent.Future<*>)?.cancel(false) }
                 executor.purge()
                 turboTasks.values.forEach { it.cancel(false) }; turboTasks.clear()
-                motionTask?.cancel(false); motionTask = null; latestMotion = null
+                motionTask?.cancel(false); motionTask = null; latestMotion = null; lastStickTickNanos = 0L
                 activeSlots.toList().asReversed().forEach { slot ->
                     val released = runCatching { injector.endTouch(slot) }.getOrElse {
                         onError("Panic release threw for slot $slot: ${it.message}"); false
@@ -407,7 +407,7 @@ class GamepadMappingRuntime(
             if (isPressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, 0, config, injector)
     }
 
-    private fun handleSticks(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
+    private fun handleSticks(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector, dtSeconds: Float) {\n        require(dtSeconds.isFinite() && dtSeconds in 0f..0.064f) { "Invalid stick tick interval $dtSeconds" }
         val size = screenSizeProvider() ?: run { onError("Stick geometry is unavailable");return }
         val width = size.first.toFloat()
         val height = size.second.toFloat()
