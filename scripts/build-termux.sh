@@ -19,6 +19,7 @@ need java
 need python3
 need curl
 need unzip
+need file
 
 WRAPPER_PROPS="$ROOT/gradle/wrapper/gradle-wrapper.properties"
 [ -f "$WRAPPER_PROPS" ] || fail "Missing $WRAPPER_PROPS; cannot determine the pinned Gradle version."
@@ -79,24 +80,46 @@ fi
 
 BUILD_TOOLS_DIR="$(find "$SDK_DIR/build-tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n 1)"
 [ -n "$BUILD_TOOLS_DIR" ] || fail "No Android SDK build-tools directory found under $SDK_DIR/build-tools."
-if [ ! -L "$BUILD_TOOLS_DIR/aidl" ] || [ "$(readlink "$BUILD_TOOLS_DIR/aidl" 2>/dev/null || true)" != "$PREFIX/bin/aidl" ]; then
-  if [ -e "$BUILD_TOOLS_DIR/aidl" ] && [ ! -e "$BUILD_TOOLS_DIR/aidl.google-original" ]; then
-    mv "$BUILD_TOOLS_DIR/aidl" "$BUILD_TOOLS_DIR/aidl.google-original"
-  else
-    rm -f "$BUILD_TOOLS_DIR/aidl"
-  fi
-  ln -s "$PREFIX/bin/aidl" "$BUILD_TOOLS_DIR/aidl"
-fi
 
-[ -x "$PREFIX/bin/aidl" ] || fail "Termux AIDL is not executable at $PREFIX/bin/aidl"
-[ -L "$BUILD_TOOLS_DIR/aidl" ] || fail "SDK build-tools AIDL override was not created."
-[ "$(readlink "$BUILD_TOOLS_DIR/aidl")" = "$PREFIX/bin/aidl" ] || fail "SDK build-tools AIDL does not point to Termux AIDL."
+# Google's build-tools AIDL is a desktop-host binary. On Android/ARM64 it must be
+# replaced by Termux's native AIDL. Preserve the original once, then force the
+# override every run so an SDK update or partial install cannot silently restore x86_64.
+TERMUX_AIDL="$(command -v aidl)"
+SDK_AIDL="$BUILD_TOOLS_DIR/aidl"
+[ -x "$TERMUX_AIDL" ] || fail "Termux AIDL is not executable at $TERMUX_AIDL"
+
+if [ -e "$SDK_AIDL" ] && [ ! -L "$SDK_AIDL" ] && [ ! -e "$SDK_AIDL.google-original" ]; then
+  mv "$SDK_AIDL" "$SDK_AIDL.google-original"
+fi
+rm -f "$SDK_AIDL"
+ln -s "$TERMUX_AIDL" "$SDK_AIDL"
+
+RESOLVED_AIDL="$(readlink -f "$SDK_AIDL" 2>/dev/null || true)"
+[ "$RESOLVED_AIDL" = "$TERMUX_AIDL" ] || fail "SDK AIDL override resolves to '$RESOLVED_AIDL', expected '$TERMUX_AIDL'."
+AIDL_FILE_INFO="$(file "$RESOLVED_AIDL")"
+case "$(uname -m)" in
+  aarch64|arm64)
+    echo "$AIDL_FILE_INFO" | grep -Eqi 'aarch64|ARM aarch64' || fail "Termux AIDL is not ARM64: $AIDL_FILE_INFO"
+    ;;
+  *)
+    fail "Unsupported Termux host architecture '$(uname -m)'; this build path is verified only for ARM64 Android."
+    ;;
+esac
+
+mkdir -p "$HOME/.gradle"
+AIDL_LINE="android.aidlFromMavenOverride=$TERMUX_AIDL"
+if grep -q '^android.aidlFromMavenOverride=' "$HOME/.gradle/gradle.properties" 2>/dev/null; then
+  sed -i "s#^android.aidlFromMavenOverride=.*#$AIDL_LINE#" "$HOME/.gradle/gradle.properties"
+else
+  echo "$AIDL_LINE" >> "$HOME/.gradle/gradle.properties"
+fi
 
 echo "Using Gradle: $PINNED_GRADLE_VERSION ($GRADLE_SOURCE)"
 echo "Using SDK: $SDK_DIR"
 echo "Using build-tools: $BUILD_TOOLS_DIR"
-echo "Using Termux AIDL: $PREFIX/bin/aidl"
-ls -l "$BUILD_TOOLS_DIR/aidl"
+echo "Using Termux AIDL: $TERMUX_AIDL"
+echo "SDK AIDL -> $RESOLVED_AIDL"
+echo "$AIDL_FILE_INFO"
 
 OUT="$ROOT/app/src/main/jniLibs/arm64-v8a"
 rm -rf "$ROOT/.termux-native"
@@ -132,8 +155,6 @@ fi
 
 python3 scripts/check_native_boundary.py
 
-# Native libraries are created outside Gradle on Termux. Remove only native/package
-# intermediates so AGP cannot reuse a graph that predates the freshly-built .so.
 rm -rf \
   app/build/intermediates/merged_jni_libs \
   app/build/intermediates/merged_native_libs \
@@ -163,8 +184,6 @@ fi
 
 echo "Merged JNI verified: $MERGED_SO"
 
-# Force a fresh complete APK pipeline. In Termux mode build.gradle keeps debug symbols
-# for all JNI libraries so AGP must not invoke the NDK's desktop-host llvm-strip binary.
 "${GRADLE_CMD[@]}" \
   :app:assembleDebug \
   -PtermuxPrebuiltNative=true \
