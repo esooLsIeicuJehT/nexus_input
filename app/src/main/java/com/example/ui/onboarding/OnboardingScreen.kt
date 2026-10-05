@@ -319,7 +319,7 @@ fun StepWelcome() {
         Spacer(Modifier.height(6.dp))
 
         Text(
-            text = "Android Game-Mapping & Performance-Tuning Engine",
+            text = "NEXUS INPUT · Android Gamepad-to-Touch Mapper",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = ControlystCyan,
                 fontWeight = FontWeight.SemiBold

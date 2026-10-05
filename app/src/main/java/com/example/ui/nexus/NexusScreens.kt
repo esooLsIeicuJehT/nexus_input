@@ -690,7 +690,7 @@ fun NexusSystemScreen(
         SectionTitle("Tools", "System controls")
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
-        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("community") }
+        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("profile_files") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }
         SystemAction("Onboarding", "Run setup and permission checks again", Icons.Default.HelpOutline) { viewModel.restartOnboarding() }
     }

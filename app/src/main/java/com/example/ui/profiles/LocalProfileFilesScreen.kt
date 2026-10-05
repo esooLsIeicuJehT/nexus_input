@@ -1,4 +1,4 @@
-package com.example.ui.community
+package com.example.ui.profiles
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -31,7 +31,7 @@ import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CommunityShareScreen(
+fun LocalProfileFilesScreen(
     viewModel: MainAppViewModel
 ) {
     val profiles by viewModel.profiles.collectAsState()
@@ -81,7 +81,7 @@ fun CommunityShareScreen(
 
         Spacer(Modifier.height(14.dp))
 
-        // Community Repository Header
+        // Local saved profiles
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

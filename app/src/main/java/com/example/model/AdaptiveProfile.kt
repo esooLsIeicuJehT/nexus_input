@@ -29,8 +29,7 @@ data class ProfileInheritance(
     val parentProfileName: String? = null,
     val overriddenNodeIds: Set<String> = emptySet(),
     val inheritJoystick: Boolean = true,
-    val inheritCamera: Boolean = true,
-    val inheritPerformanceProfile: Boolean = true
+    val inheritCamera: Boolean = true
 )
 
 enum class ContextualTriggerType {

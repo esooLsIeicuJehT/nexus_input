@@ -78,4 +78,11 @@ class ProfileWorkflowTest {
         file.delete();bitmap.recycle()
     }
 
+    @Test fun productionNavigationRejectsCommunityAndVipWhileKeepingLocalProfileFiles() = withViewModel { vm,_ ->
+        vm.selectTab("home")
+        vm.selectTab("community");assertEquals("home",vm.currentTab.value);assertTrue(vm.snackMessage.value!!.contains("unavailable"))
+        vm.selectTab("vip");assertEquals("home",vm.currentTab.value)
+        vm.selectTab("profile_files");assertEquals("profile_files",vm.currentTab.value)
+    }
+
 }

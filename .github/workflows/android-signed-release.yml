@@ -46,6 +46,7 @@ jobs:
       - name: Native and module regression tests
         run: |
           python3 scripts/check_native_boundary.py
+          python3 scripts/check_architecture_boundary.py
           python3 -m unittest discover -s scripts/tests -v
           node --test scripts/tests/webui.test.js
           sh -n kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh

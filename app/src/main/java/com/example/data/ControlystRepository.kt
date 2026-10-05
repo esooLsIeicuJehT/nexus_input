@@ -264,7 +264,7 @@ class ControlystRepository(
                 targetAspectRatio = targetAspect,
                 buttons = buttons,
                 crosshair = crosshair,
-                author = json.optString("author", "Community"),
+                author = json.optString("author", "Local user"),
                 isOfficialVerified = json.optBoolean("isOfficialVerified", false),
                 rating = json.optDouble("rating", 0.0).toFloat(),
                 downloadCount = json.optInt("downloadCount", 0),

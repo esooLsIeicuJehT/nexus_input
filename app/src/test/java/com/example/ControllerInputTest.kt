@@ -46,7 +46,10 @@ class ControllerInputTest {
     private fun motion(x:Float,y:Float)=MotionEvent.obtain(0,10,MotionEvent.ACTION_MOVE,1,
         arrayOf(MotionEvent.PointerProperties().apply { id=0;toolType=MotionEvent.TOOL_TYPE_UNKNOWN }),
         arrayOf(MotionEvent.PointerCoords().apply { setAxisValue(MotionEvent.AXIS_X,x);setAxisValue(MotionEvent.AXIS_Y,y);setAxisValue(MotionEvent.AXIS_HAT_X,-1f) }),
-        0,0,1f,1f,41,0,InputDevice.SOURCE_JOYSTICK,0)
+        0,0,1f,1f,41,0,InputDevice.SOURCE_JOYSTICK,0).also {
+            // Robolectric InputEvent shadow does not resolve deviceId through InputManager.
+            shadowOf(it).setDevice(InputDevice.getDevice(41))
+        }
     @Test fun testerUsesActualDeliveredAxesAndClearsTheRemovedDevice() {
         device();val event=motion(.25f,-.5f)
         assertEquals(41,event.deviceId);assertNotNull(event.device)
