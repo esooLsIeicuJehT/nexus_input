@@ -22,7 +22,7 @@ class ShizukuInputUserService internal constructor(
 ) : IShizukuInputService.Stub() {
     // Keep resolver failures observable through selfTest instead of losing the process before
     // its binder can explain why initialization failed.
-    constructor() : this(runCatching { FrameworkInputBridge.resolve() })
+    constructor() : this(kotlin.runCatching { FrameworkInputBridge.resolve() })
 
     @Suppress("UNUSED_PARAMETER")
     constructor(context: Context) : this()
