@@ -16,6 +16,42 @@ import org.robolectric.annotation.Config
 /** Recording transport is a unit-test fixture. It does not verify Android injection. */
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class RuntimeTest {
+    @Test fun stalledStickAndTurboExecutionDoesNotReplayMissedTicksInABurst() {
+        for(sticks in listOf(true,false)) {
+            val entered=java.util.concurrent.CountDownLatch(1)
+            val resume=java.util.concurrent.CountDownLatch(1)
+            val ticks=CopyOnWriteArrayList<Long>()
+            val firstFinished=java.util.concurrent.atomic.AtomicLong()
+            val transport=Recording()
+            fun tick(): Boolean {
+                ticks.add(System.nanoTime())
+                if(ticks.size==1) {
+                    entered.countDown()
+                    check(resume.await(2,java.util.concurrent.TimeUnit.SECONDS))
+                    firstFinished.set(System.nanoTime())
+                }
+                return true
+            }
+            val backend=object:InputInjector by transport {
+                override val method=if(sticks) PrivilegeMethod.KERNELSU else PrivilegeMethod.ACCESSIBILITY
+                override fun moveTouch(pointerId:Int,x:Float,y:Float)=tick()
+                override fun injectTap(x:Float,y:Float)=tick()
+            }
+            val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)})
+            try {
+                if(sticks) runtime.handleMotionSnapshot(sample(lx=1f),config(MappingNode("ls",.2f,.7f,.12f,NodeType.JOYSTICK_ZONE,"LS")),backend)
+                else runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(MappingNode("turbo",.2f,.3f,type=NodeType.TURBO,boundKey="A",turboHz=30)),backend)
+                assertTrue(entered.await(1,java.util.concurrent.TimeUnit.SECONDS))
+                Thread.sleep(120)
+                resume.countDown()
+                val deadline=System.nanoTime()+1_000_000_000
+                while(ticks.size<2 && System.nanoTime()<deadline) Thread.sleep(2)
+                assertTrue("Expected the next real tick",ticks.size>=2)
+                val minimumGap=if(sticks) 12_000_000L else 28_000_000L
+                assertTrue("Missed ticks must not catch up immediately",ticks[1]-firstFinished.get()>=minimumGap)
+            } finally { resume.countDown();runtime.shutdown(backend) }
+        }
+    }
     private class Recording : InputInjector {
         override val method=PrivilegeMethod.KERNELSU
         val calls=CopyOnWriteArrayList<Triple<String,Int,Pair<Float,Float>>>()

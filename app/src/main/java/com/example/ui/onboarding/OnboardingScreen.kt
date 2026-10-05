@@ -1,7 +1,9 @@
 package com.example.ui.onboarding
 
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -240,10 +242,8 @@ fun OnboardingScreen(
             )
             else -> Triple(
                 "System Notifications",
-                "Ensures the foreground mapping service stays alive in the background and sends your daily progress report.",
-                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                }
+                "Shows mapping service status and the panic-stop action while mapping is active.",
+                notificationSettingsIntent(context)
             )
         }
 
@@ -275,6 +275,13 @@ fun OnboardingScreen(
             shape = RoundedCornerShape(16.dp)
         )
     }
+}
+
+/** Use an API-supported settings destination; notification settings was added in Android 8. */
+internal fun notificationSettingsIntent(context: Context): Intent = if(Build.VERSION.SDK_INT >= 26) {
+    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName)
+} else {
+    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:${context.packageName}"))
 }
 
 @Composable

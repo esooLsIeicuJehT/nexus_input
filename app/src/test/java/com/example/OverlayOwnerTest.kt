@@ -8,6 +8,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class OverlayOwnerTest {
+    @Test fun onlyTheMappingServiceHostsConfiguredCrosshairWindows() {
+        val context=androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        @Suppress("DEPRECATION")
+        val services=context.packageManager.getPackageInfo(context.packageName,android.content.pm.PackageManager.GET_SERVICES).services
+        assertTrue(services.any { it.name.endsWith(".MappingForegroundService") })
+        assertFalse(services.any { it.name.endsWith(".CrosshairOverlayService") })
+    }
     @Test fun composeWindowHasRestoredSavedStateAndACompleteLifecycle() {
         val owner=OverlayOwner()
         assertTrue(owner.savedStateRegistry.isRestored)

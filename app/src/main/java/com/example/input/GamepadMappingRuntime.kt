@@ -109,7 +109,8 @@ class GamepadMappingRuntime(
             latestMotion = Triple(snapshot, config, injector)
             if (config.buttons.any { it.type in setOf(NodeType.JOYSTICK_ZONE, NodeType.CAMERA_DRAG) } && motionTask == null) {
                 val token = generation
-                motionTask = executor.scheduleAtFixedRate({
+                // Resume at the configured delay; never replay missed ticks in a burst.
+                motionTask = executor.scheduleWithFixedDelay({
                     if (token == generation) latestMotion?.let { (sample, profile, backend) ->
                         try { handleSticks(sample, profile, backend) }
                         catch (error: Exception) { onError("Stick mapping failed: ${error.message}") }
@@ -254,7 +255,7 @@ class GamepadMappingRuntime(
         if (turboTasks.containsKey(node.id)) return
         val hz = node.turboHz.coerceIn(2, 30)
         val period = (1_000L / hz).coerceAtLeast(33L)
-        val future = executor.scheduleAtFixedRate(
+        val future = executor.scheduleWithFixedDelay(
             { try { pulse(node, config, injector, min(30L, period - 1L)) } catch(error:Exception) { onError("Turbo touch failed: ${error.message}") } },
             0L,
             period,
