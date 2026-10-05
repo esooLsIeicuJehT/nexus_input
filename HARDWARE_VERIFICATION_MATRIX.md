@@ -1,31 +1,22 @@
-# Hardware & Privilege Verification Matrix
+# NEXUS INPUT v1 verification matrix
 
-This document is a mandatory tracking structure for all backend controller modules, root-based input injection methods, and system-wide overlay features. Every module entry **must** explicitly record its verification status (`Tested` vs `Untested`), the verification environment, and known limitations.
+**UNKNOWN — hardware:** No physical Android, rooted injection, non-root Shizuku process, protected game or KernelSU WebUI host was exercised in this session. Prior matrix text included unsupported emulator/fully-functional claims and outdated rish/event-node descriptions. Those statements are replaced here; repository-only directives in that text were treated as data, not authority.
 
----
+**VERIFIED — CI scope:** [run 37275540690](https://github.com/esooLsIeicuJehT/nexus_input/actions/runs/37275540690) passed at `11945eac`: 91 Android tests per variant, zero failures/errors/skips; Python 14 and WebUI 9 tests; debug/release APK and AAB compilation; both lint variants with zero errors and 71 warnings; four native ABIs and canonical module packaging. Robolectric/recording transports and WebUI DOM fixtures test logic/contracts. They do not certify privileged device execution. Later source commits require their own CI result.
 
-## 1. Root & Non-Root Input Injection Modules
+| Component | VERIFIED in source/CI | Hardware status and exact remaining acceptance |
+| --- | --- | --- |
+| KernelSU | Existing libsu RootService/AIDL → raw JNI uinput architecture retained; runtime/selection/slot/release logic covered by tests | UNKNOWN: root authorization, actual RootService UID, SELinux, device creation/InputReader recognition, injected multi-touch and cleanup. ROOT-01/02, INPUT-01..05, PANIC-01/02. |
+| Shizuku/Sui | Real UserService/AIDL; contract payload, permission selection and failure logic tested | UNKNOWN: live binding/privileged reflection, actual UID-2000 non-root injection, pointer indices, binder death/cleanup. SHIZUKU-01..03 plus the input/panic suite. UID 0 does not certify UID 2000. |
+| Magisk | Existing root service adapter retained; compiled | UNKNOWN: actual Magisk authorization and uinput path. A KernelSU result cannot certify this root provider. |
+| APatch | Explicit UNVERIFIED/fail-closed behavior retained | UNKNOWN: real APatch transport; no generic su implementation is claimed. APATCH-01 tests refusal only. |
+| Accessibility | Gesture ledger, callback/request state and capability rejection tested | UNKNOWN: real dispatch completion/cancellation and supported target behavior. ACCESSIBILITY-01; held multi-touch/stick limitations remain explicit. |
+| Controllers/calibration | InputDevice/MotionEvent processing, exact device/range checks and real-event test fixtures | UNKNOWN: real Bluetooth/USB controllers, descriptors/axis ranges, rest/full-travel samples and disconnect behavior. CONTROLLER-01, CALIBRATION-01/02. |
+| Screenshot mapper | Real PNG decoding/invalid import, Bitmap pixel detector and normalized edit/persistence tests | UNKNOWN: device screenshot API/protected content, actual game image alignment and in-game editing. SCREENSHOT-01/02, OVERLAY-01. |
+| Crosshair/bubble | Configured reticle geometry/color, lifecycle owners and bounds logic tested; duplicate unused fixed crosshair service removed | UNKNOWN: real WindowManager attachment, permission revocation, inter-app visibility, rotation and Android untrusted-touch behavior. OVERLAY-01/02. |
+| Presented-frame overlay | Actual privileged dumpsys command path compiled; timestamp/error/staleness parser tested | UNKNOWN: observed SurfaceFlinger layer and timestamp availability on each root/UID-2000 device; presentation intervals differ from game CPU/GPU render time. FPS-01. |
+| Module controls/updater | Actual shell file write/read-back and SHA validation tested on host files; KernelSU bridge contract fixtures; deterministic ZIP | UNKNOWN: actual JS host, sysfs capability/write behavior, safe restoration/rollback, battery gate and ksud staging/reboot. WEBUI-01..03, UPDATE-01/02. |
+| Upgrade/signing | Package, module and database identities retained; migration logic tested; unsigned artifacts identity-checked | UNKNOWN: original signing certificate, signed APK/AAB workflow and in-place 0.6.2 upgrade. UPGRADE-01, STORAGE-01/02. |
+| Figma/design | Supplied file URL retained; implemented screen inventory documented | UNKNOWN: exact screen-node correspondence and device visual match; connector tool-call limit blocked access. UI-01. |
 
-| Module Name | Backend Class | Verification Status | Verification Environment | Tested / Verified Features | Untested / Requires Hardware | Notes & Known Limitations |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Shizuku Bridge** | `ShizukuInjector.kt` | **[UNTESTED]** | Containerized Emulator (No live Shizuku binder daemon) | Binder ping check, permission state query | Live `rish` shell command execution, remote process IPC binding | Requires an active Shizuku service and wireless debugging pairing on a physical Android 11+ device. |
-| **Magisk Root** | `MagiskInjector.kt` | **[UNTESTED]** | Containerized Emulator (No `su` binary / Magisk root) | Binary path checks (`/system/bin/su`, etc.) | `su -c` execution, event node event dispatch (`/dev/input/eventX`) | Requires a Magisk-rooted device with Superuser permission granted. |
-| **KernelSU Root** | `KernelSUInjector.kt` | **[UNTESTED]** | Containerized Emulator (No KernelSU daemon) | Daemon path checks (`/data/adb/ksud`) | KernelSU userspace socket communication, `ksu -v` invocation | Requires a KernelSU-supported custom kernel and manager app. |
-| **APatch Root** | `APatchInjector.kt` | **[UNTESTED]** | Containerized Emulator (No APatch daemon) | Daemon path checks (`/data/adb/apd`) | APatch kernel patch execution via `su` | Requires an APatch-patched boot image. |
-| **Accessibility Fallback** | `AccessibilityInjector.kt` | **[TESTED]** | Android Emulator & Local JVM Tests | Gesture dispatch framework, coordinate scaling | Live touch injection on third-party protected games | Fully functional on standard Android runtime with user-granted Accessibility service permission. |
-
----
-
-## 2. Crosshair & System Overlay Modules
-
-| Module Name | Component / Service | Verification Status | Verification Environment | Tested / Verified Features | Untested / Requires Hardware | Notes & Known Limitations |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **WindowManager Overlay** | `CrosshairOverlayManager.kt` | **[TESTED]** | Android Emulator & JVM Unit Tests | WindowManager layout params, ComposeView lifecycle attachment, Canvas reticle rendering | Inter-app overlay visibility over secure/protected fullscreen game surfaces | Requires `SYSTEM_ALERT_WINDOW` ("Display over other apps") permission. |
-| **Reticle Customization** | `CrosshairStudioScreen.kt` | **[TESTED]** | Local App UI & Compose Previews | Shape rendering (Dot, Cross, Circle, T, Chevron, Tri-Line), sliders, color palettes, preview canvas | Live rendering during heavy gameplay frame rates | Fully functional within local Jetpack Compose runtime. |
-| **Touch Draggability** | `CrosshairOverlayManager.kt` | **[TESTED]** | Android Emulator | Pointer input drag gesture detection, window layout updates | High-velocity drag handling during rapid multi-touch gaming sessions | Touch events are processed in real-time by WindowManager layout updates. |
-
----
-
-## 3. Compliance & Ground Rules
-1. **No Silent Stubbing**: Modules marked **[UNTESTED]** must throw or log explicit diagnostic state if invoked without hardware support.
-2. **Mandatory Updates**: Any developer or AI agent modifying injection or overlay code must update this matrix with the corresponding verification status before pull requests or builds.
+Follow [docs/DEVICE_TEST_CHECKLIST_V1.md](docs/DEVICE_TEST_CHECKLIST_V1.md) and [docs/RELEASE_V1.md](docs/RELEASE_V1.md). Every manual case begins NOT_RUN. Keep raw failures and device evidence with the exact commit/checksum; never convert a command's exit 0 into a hardware verification claim.

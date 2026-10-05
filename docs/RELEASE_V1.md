@@ -6,6 +6,8 @@
 
 ## Build evidence and candidate status
 
+**VERIFIED — later source validation:** [run 37275540690](https://github.com/esooLsIeicuJehT/nexus_input/actions/runs/37275540690), commit `11945eac1e3d6938683c0356bd23c402dbbe7e88`, passed all build/test/lint/identity/package steps. Downloaded XML from artifact `11330526242` contains `testDebugUnitTest: tests=91 failures=0 errors=0 skipped=0` and the same release result, across 25 suites per variant. Both lint reports contain 71 warnings and zero errors/fatals. Raw job output includes `Ran 14 tests in 0.490s`, WebUI `# tests 9`, `# pass 9`, `# fail 0`, and `BUILD SUCCESSFUL in 4m`. Its debug APK, unsigned release APK/AAB and canonical module ZIP were downloaded. Final metadata/matrix cleanup is a later commit and requires its own CI result; the historical results below retain their exact revision scope.
+
 **VERIFIED — CI:** [run 37273471652](https://github.com/esooLsIeicuJehT/nexus_input/actions/runs/37273471652), commit `2c5d14943d8c1a5a796a2e32970f025026331ae4`, completed successfully. The job's verbatim output includes:
 
 ```text
