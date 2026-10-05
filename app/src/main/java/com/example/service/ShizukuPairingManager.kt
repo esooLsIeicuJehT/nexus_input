@@ -21,7 +21,7 @@ data class ShizukuPairingState(
     val isHelperNotificationActive: Boolean = false,
     val lastEnteredCode: String? = null,
     val isPairingSuccessful: Boolean = false,
-    val pairingPort: Int = 5555,
+    val pairingPort: Int = 0,
     val statusMessage: String = "Pairing helper idle"
 )
 
@@ -50,12 +50,22 @@ object ShizukuPairingManager {
         }
     }
 
-    fun showPairingNotification(context: Context, customPort: Int = 5555) {
+    fun showPairingNotification(context: Context, customPort: Int = 0) {
+        notificationObservation?.cancel()
+        _pairingState.value = ShizukuPairingState(pairingPort=customPort)
+        if(customPort !in 1..65535) { notificationFailure("Enter the actual wireless pairing port (1..65535)");return }
+        if(Build.VERSION.SDK_INT < 30) { notificationFailure("Wireless ADB pairing requires Android 11 or later");return }
+        try {
         createNotificationChannel(context)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if(!manager.areNotificationsEnabled()) { notificationFailure("Android notifications are disabled; grant notification permission or pair in Shizuku's manager");return }
+        if(manager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            notificationFailure("The pairing notification channel is disabled in Android settings");return
+        }
         _pairingState.value = _pairingState.value.copy(
-            isHelperNotificationActive = true,
+            isHelperNotificationActive = false,
             pairingPort = customPort,
-            statusMessage = "Notification helper active. Open Developer Options to view 6-digit code."
+            statusMessage = "Pairing notification requested; waiting for Android to expose it"
         )
 
         // Intent to open Developer Options directly
@@ -122,13 +132,35 @@ object ShizukuPairingManager {
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", stopPendingIntent)
             .build()
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, notification)
+        notificationObservation=scope.launch {
+            repeat(10) {
+                if(manager.activeNotifications.any { it.id==NOTIFICATION_ID }) {
+                    _pairingState.value=_pairingState.value.copy(isHelperNotificationActive=true,
+                        statusMessage="Android exposes the pairing notification. Enter the current code from Developer Options.")
+                    return@launch
+                }
+                delay(100)
+            }
+            notificationFailure("Android did not expose the requested pairing notification; inspect notification settings")
+        }
+        } catch(error:Exception) {
+            Log.e("NexusPairing","Pairing notification failed",error)
+            notificationFailure("Pairing notification failed: ${error.javaClass.simpleName}: ${error.message}")
+        }
     }
+
+    private var notificationObservation: Job? = null
+    private fun notificationFailure(message: String) {
+        _pairingState.value=_pairingState.value.copy(isHelperNotificationActive=false,isPairingSuccessful=false,statusMessage=message)
+        Log.e("NexusPairing",message)
+    }
+
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun handlePairingCodeReceived(context: Context, code: String, port: Int): Job = scope.launch {
+        notificationObservation?.cancel()
         val cleanCode = code.trim()
         val outcome = when {
             !cleanCode.matches(Regex("[0-9]{6}")) -> PairingOutcome(false, "Pairing code must contain exactly six ASCII digits.")
@@ -150,7 +182,8 @@ object ShizukuPairingManager {
 
     internal data class PairingOutcome(val success: Boolean, val message: String)
 
-    internal fun evaluateAdbPair(exitCode: Int, output: String): PairingOutcome {
+    internal fun evaluateAdbPair(exitCode: Int, output: String, outputTruncated: Boolean=false): PairingOutcome {
+        if(outputTruncated) return PairingOutcome(false,"ADB pairing output exceeded the limit; success could not be confirmed")
         val confirmed = exitCode == 0 && output.lineSequence().any {
             it.trim().startsWith("Successfully paired to ")
         }
@@ -170,13 +203,16 @@ object ShizukuPairingManager {
             val output = async(Dispatchers.IO) {
                 child.inputStream.bufferedReader().use { reader ->
                     val text = StringBuilder()
+                    var truncated=false
                     val buffer = CharArray(1024)
                     while (true) {
                         val count = reader.read(buffer)
                         if (count < 0) break
-                        if (text.length < 16384) text.append(buffer, 0, minOf(count, 16384 - text.length))
+                        val available=(16384-text.length).coerceAtLeast(0)
+                        text.append(buffer,0,minOf(count,available))
+                        if(count>available) truncated=true
                     }
-                    text.toString()
+                    text.toString() to truncated
                 }
             }
             child.outputStream.bufferedWriter().use { it.write(code + "\n") }
@@ -184,16 +220,21 @@ object ShizukuPairingManager {
                 child.destroy()
                 output.cancel()
                 PairingOutcome(false, "ADB pairing timed out. Pair using the Shizuku manager.")
-            } else evaluateAdbPair(child.exitValue(), output.await())
+            } else {
+                val observed=output.await()
+                evaluateAdbPair(child.exitValue(),observed.first,observed.second)
+            }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            PairingOutcome(false, "ADB pairing unavailable: ${error.javaClass.simpleName}. Pair using the Shizuku manager.")
+            Log.e("NexusPairing","ADB pairing command failed",error)
+            PairingOutcome(false, "ADB pairing unavailable: ${error.javaClass.simpleName}: ${error.message}. Pair using the Shizuku manager.")
         } finally {
             process?.destroy()
         }
     }
 
     fun dismissHelper(context: Context) {
+        notificationObservation?.cancel()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(NOTIFICATION_ID)
         _pairingState.value = _pairingState.value.copy(

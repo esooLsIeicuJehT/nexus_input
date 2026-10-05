@@ -454,7 +454,7 @@ fun StepRootDetection(
     val context = LocalContext.current
     val shizukuPairingState by viewModel.shizukuPairingState.collectAsState()
     var inlineCodeInput by remember { mutableStateOf("") }
-    var inlinePortInput by remember { mutableStateOf("5555") }
+    var inlinePortInput by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -599,13 +599,22 @@ fun StepRootDetection(
 
                         Spacer(Modifier.height(10.dp))
 
+                        OutlinedTextField(
+                            value=inlinePortInput,
+                            onValueChange={ inlinePortInput=it },
+                            label={ Text("Actual wireless pairing port") },
+                            supportingText={ Text("Use the port shown by Android's pair-with-code dialog") },
+                            singleLine=true,
+                            modifier=Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
                                 onClick = {
-                                    val port = inlinePortInput.toIntOrNull() ?: 5555
+                                    val port = inlinePortInput.toIntOrNull() ?: 0
                                     viewModel.startShizukuPairingHelper(port)
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
@@ -654,7 +663,7 @@ fun StepRootDetection(
                             Button(
                                 onClick = {
                                     if (inlineCodeInput.isNotBlank()) {
-                                        val port = inlinePortInput.toIntOrNull() ?: 5555
+                                        val port = inlinePortInput.toIntOrNull() ?: 0
                                         viewModel.submitShizukuPairingCode(inlineCodeInput, port)
                                     }
                                 },
@@ -774,7 +783,7 @@ fun StepPermissions(
         )
         PermissionItemCard(
             title = "4. Notifications",
-            subtitle = "Maintains persistent background service and sends daily progress.",
+            subtitle = "Shows mapping status and the panic-stop action while mapping is active.",
             tag = "Recommended",
             onClick = { onOpenRationale("NOTIFICATIONS") }
         )

@@ -439,16 +439,16 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     val shizukuPairingState: StateFlow<ShizukuPairingState> = ShizukuPairingManager.pairingState
 
-    fun startShizukuPairingHelper(port: Int = 5555) {
+    fun startShizukuPairingHelper(port: Int = 0) {
         ShizukuPairingManager.showPairingNotification(getApplication(), port)
-        showSnack("Pairing Notification posted! Enter code directly in notification.")
+        showSnack(ShizukuPairingManager.pairingState.value.statusMessage)
     }
 
     fun dismissShizukuPairingHelper() {
         ShizukuPairingManager.dismissHelper(getApplication())
     }
 
-    fun submitShizukuPairingCode(code: String, port: Int = 5555) {
+    fun submitShizukuPairingCode(code: String, port: Int = 0) {
         ShizukuPairingManager.handlePairingCodeReceived(getApplication(), code, port)
     }
 
