@@ -244,8 +244,12 @@ class ControlystAccessibilityService : AccessibilityService() {
 
                     activeInjector?.let(::cleanupRuntime)
                     activeInjector = candidate
+                    val notices = listOfNotNull(
+                        failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" },
+                        candidate.readinessDetails()
+                    )
                     MappingRuntimeBridge.setBackend(method, true, null,
-                        failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" })
+                        notices.takeIf { it.isNotEmpty() }?.joinToString("; "))
                     Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}")
                     return@execute
                 }

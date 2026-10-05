@@ -30,7 +30,8 @@ class InGameMapperOverlay(private val context: Context) {
     private val density = context.resources.displayMetrics.density
     private var bubble: TextView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
-    private var panel: LinearLayout? = null
+    private var panel: ScrollView? = null
+    private var panelStatus: TextView? = null
     private var editor: FrameLayout? = null
     private var dialog: AlertDialog? = null
     private var session: MapperEditSession? = null
@@ -61,12 +62,15 @@ class InGameMapperOverlay(private val context: Context) {
         gravity = Gravity.TOP or Gravity.LEFT
         if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
-    private fun fail(message: String, error: Throwable? = null) {
-        android.util.Log.e("NexusOverlay",message,error)
-        MappingRuntimeBridge.reportError(message)
-        Toast.makeText(context,message,Toast.LENGTH_LONG).show()
+    private fun fail(message: String, error: Throwable? = null, preserveRuntimeError: Boolean = false) {
+        val original = MappingRuntimeBridge.state.value.error.takeIf { preserveRuntimeError }
+        val displayed = if (original == null) message else "$message\n$original"
+        android.util.Log.e("NexusOverlay",displayed,error)
+        if (original == null) MappingRuntimeBridge.reportError(message)
+        Toast.makeText(context,displayed,Toast.LENGTH_LONG).show()
     }
     private fun remove(view: View?) { if (view != null) try { wm.removeView(view) } catch(error:Exception) { fail("Overlay removal failed: ${error.message}",error) } }
+    private fun closePanel() { remove(panel);panel=null;panelStatus=null }
     private fun button(label: String, action: () -> Unit) = Button(context).apply {
         text = label; textSize = 11f; setTextColor(Color.WHITE); setBackgroundColor(0xFF183247.toInt())
         setOnClickListener { action() }
@@ -105,30 +109,41 @@ class InGameMapperOverlay(private val context: Context) {
         bubbleObserver?.cancel()
         bubbleObserver=scope.launch { MappingRuntimeBridge.state.collect { state ->
             view.setTextColor(if(state.backendReady) 0xFF20D5A4.toInt() else if(state.error!=null) 0xFFFF6588.toInt() else 0xFF00D9EE.toInt())
+            panelStatus?.text = MapperPanelStatus.text(state)
         } }
     }
 
     private fun togglePanel() {
-        if (panel != null) { remove(panel);panel=null;return }
+        if (panel != null) { closePanel();return }
+        val status = TextView(context).apply {
+            text = MapperPanelStatus.text(MappingRuntimeBridge.state.value)
+            textSize = 11f;setTextColor(Color.WHITE);setPadding(8,8,8,8)
+        }
         val menu=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL;setPadding(8,8,8,8);setBackgroundColor(0xF5071827.toInt())
-            addView(TextView(context).apply { text="NEXUS INPUT · ${MappingRuntimeBridge.state.value.profileName ?: "Disarmed"}";setTextColor(Color.WHITE) })
+            addView(TextView(context).apply { text="NEXUS INPUT";setTextColor(Color.WHITE) })
+            addView(status)
             addView(button("Edit game layout") { beginEdit() })
             addView(button("Panic release") { PanicKillSwitch.triggerPanic(context,"Floating controls") })
-            addView(button("Close controls") { remove(panel);panel=null })
+            addView(button("Close controls") { closePanel() })
         }
-        val layout=params((260*density).roundToInt(),WindowManager.LayoutParams.WRAP_CONTENT).apply { x=bubbleParams?.x?:0;y=(bubbleParams?.y?:0)+(54*density).roundToInt() }
-        clamp(layout,(260*density).roundToInt(),(180*density).roundToInt())
-        try { wm.addView(menu,layout);panel=menu } catch(error:Exception) { fail("Floating controls failed: ${error.message}",error) }
+        val (screenWidth,screenHeight) = displaySize()
+        val width = (300*density).roundToInt().coerceAtMost(screenWidth.coerceAtLeast(1))
+        val height = (360*density).roundToInt().coerceAtMost(screenHeight.coerceAtLeast(1))
+        val window = ScrollView(context).apply { addView(menu) }
+        val layout=params(width,height).apply { x=bubbleParams?.x?:0;y=(bubbleParams?.y?:0)+(54*density).roundToInt() }
+        clamp(layout,width,height)
+        try { wm.addView(window,layout);panel=window;panelStatus=status }
+        catch(error:Exception) { fail("Floating controls failed: ${error.message}",error) }
     }
 
     private fun beginEdit() {
-        val config=MappingRuntimeBridge.config.value ?: run { fail("No armed game profile is available to edit");return }
-        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Capture service is unavailable; release cannot be confirmed");return }
-        remove(panel);panel=null
+        val config=MappingRuntimeBridge.config.value ?: run { fail("No armed game profile is available to edit",preserveRuntimeError=true);return }
+        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Capture service is unavailable; release cannot be confirmed",preserveRuntimeError=true);return }
+        closePanel()
         service.emergencyRelease { released -> handler.post {
             if(closed) return@post
-            if(!released) { fail("Mapper edit aborted: backend did not acknowledge release");return@post }
+            if(!released) { fail("Mapper edit aborted: backend did not acknowledge release",preserveRuntimeError=true);return@post }
             session=MapperEditSession(config);selected=null;openEditor()
         } }
     }
@@ -199,11 +214,11 @@ class InGameMapperOverlay(private val context: Context) {
             fail("Screen orientation changed during editing; mapping stopped. Inspect the saved profile before restarting.")
             finishEdit(null)
         }
-        else { bubbleObserver?.cancel();bubbleObserver=null;remove(panel);panel=null;remove(bubble);bubble=null;show() }
+        else { bubbleObserver?.cancel();bubbleObserver=null;closePanel();remove(bubble);bubble=null;show() }
     }
     fun hide() {
         closed=true;bubbleObserver?.cancel();bubbleObserver=null;saveJob?.cancel();saveJob=null;handler.removeCallbacksAndMessages(null);dialog?.dismiss();dialog=null
-        remove(editor);editor=null;remove(panel);panel=null;remove(bubble);bubble=null;session=null;scope.cancel()
+        remove(editor);editor=null;closePanel();remove(bubble);bubble=null;session=null;scope.cancel()
     }
     private inner class EditorCanvas : View(context) {
         private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
@@ -226,6 +241,19 @@ class InGameMapperOverlay(private val context: Context) {
             };return true
         }
         override fun performClick(): Boolean { super.performClick();return true }
+    }
+}
+
+/** Connection and foreground observations do not establish delivery to the game. */
+internal object MapperPanelStatus {
+    fun text(state: MappingRuntimeState): String = buildString {
+        append("Mapping: ").append(if (state.armed) "armed" else "stopped")
+        append("\nProfile: ").append(state.profileName ?: "none armed")
+        append("\nBackend: ").append(state.backend?.title ?: "not selected")
+        append("\nBackend connection prepared: ").append(state.backendReady)
+        append("\nTarget in foreground: ").append(state.targetForeground)
+        state.notice?.let { append("\nNotice: ").append(it) }
+        state.error?.let { append("\nError: ").append(it) }
     }
 }
 

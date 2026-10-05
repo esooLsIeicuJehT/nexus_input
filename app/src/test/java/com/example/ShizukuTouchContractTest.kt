@@ -30,6 +30,7 @@ class ShizukuTouchContractTest {
     }
     private fun client(receiver:Receiver)=ShizukuInjector(ApplicationProvider.getApplicationContext<Context>()).also {
         it.javaClass.getDeclaredField("remote").apply { isAccessible=true }.set(it,receiver)
+        it.javaClass.getDeclaredField("readyForInput").apply { isAccessible=true }.setBoolean(it,true)
     }
     @Test fun multiTouchUsesAndroidPointerIndexesAndPreservesOtherContacts() {
         val receiver=Receiver();val injector=client(receiver)

@@ -14,6 +14,9 @@ interface InputInjector {
      */
     fun prepare(): Boolean = isAvailable()
 
+    /** Observed initialization details; absence of details is not delivery verification. */
+    fun readinessDetails(): String? = null
+
     fun injectTap(x: Float, y: Float): Boolean
 
     fun injectDrag(path: List<PointF>, durationMs: Long): Boolean

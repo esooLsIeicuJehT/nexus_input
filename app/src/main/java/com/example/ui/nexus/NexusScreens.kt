@@ -615,7 +615,8 @@ fun NexusSystemScreen(
     viewModel: MainAppViewModel,
     onNavigate: (String) -> Unit
 ) {
-    val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
+    val activeConfig by viewModel.activeConfig.collectAsState()
+    val requestedBackend = activeConfig.preferredBackend
     val probes by viewModel.privilegeResults.collectAsState()
     val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
     val panic by com.example.service.PanicKillSwitch.state.collectAsState()
@@ -630,8 +631,14 @@ fun NexusSystemScreen(
 
         NexusPanel(Modifier.fillMaxWidth()) {
             Text("REQUESTED INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-            Text(activePrivilege.title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
-            Text(activePrivilege.badgeLabel, color = TextSecondary, fontSize = 10.sp)
+            Text(requestedBackend?.title ?: "Automatic", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            Text("Profile: ${activeConfig.profileName}", color = TextSecondary, fontSize = 10.sp)
+            Text(if (requestedBackend == null) "Automatic selection reports failed candidates before choosing an available backend."
+                else "This profile requires ${requestedBackend.title}; it will stop if that backend cannot be prepared.",
+                color = TextSecondary, fontSize = 10.sp)
+            OutlinedButton(onClick = { viewModel.overridePrivilegeMethod(null) }, enabled = requestedBackend != null) {
+                Text("Use Automatic")
+            }
             Spacer(Modifier.height(10.dp))
             OutlinedButton(onClick = { viewModel.refreshPrivileges() }) {
                 Icon(Icons.Default.Refresh, contentDescription = null)
@@ -678,7 +685,7 @@ fun NexusSystemScreen(
                         Text(probe.method.title, color = TextPrimary, fontWeight = FontWeight.Bold)
                         Text(probe.statusDetail, color = TextSecondary, fontSize = 9.sp)
                     }
-                    if (probe.isDetected && probe.method != activePrivilege) {
+                    if (probe.isDetected && probe.method != requestedBackend) {
                         TextButton(onClick = { viewModel.overridePrivilegeMethod(probe.method) }) {
                             Text("Use")
                         }

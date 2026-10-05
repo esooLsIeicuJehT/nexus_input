@@ -12,22 +12,33 @@ import com.inputmapper.platform.shizuku.ShizukuInjector as RuntimeShizukuInjecto
  * Adapter from the existing Nexus injector API to the recovered Shizuku
  * UserService/AIDL implementation. No rish shell fallback is used.
  */
-class ShizukuInjector(
-    context: Context = NexusRuntimeContext.require()
+class ShizukuInjector internal constructor(
+    context: Context,
+    private val runtimeFactory: (Context) -> RuntimeShizukuInjector,
+    private val availabilityCheck: (Context) -> Boolean
 ) : InputInjector {
+    constructor(context: Context = NexusRuntimeContext.require()) : this(
+        context,
+        { RuntimeShizukuInjector(it) },
+        { ShizukuAccess.snapshot(it).let { state -> state.binderAlive && state.permissionGranted } }
+    )
     override val method: PrivilegeMethod = PrivilegeMethod.SHIZUKU
 
     private val appContext = context.applicationContext
     private val lock = Any()
     @Volatile private var runtime: RuntimeShizukuInjector? = null
+    private var runtimeReady = false
 
     override fun isAvailable(): Boolean {
-        val access = ShizukuAccess.snapshot(appContext)
-        return access.binderAlive && access.permissionGranted
+        return availabilityCheck(appContext)
     }
 
     override fun prepare(): Boolean = synchronized(lock) {
         ensureRuntime() != null
+    }
+
+    override fun readinessDetails(): String? = runtime?.connectionDetails?.let {
+        "UserService initialized: $it. Game-visible touch delivery is unverified."
     }
 
     override fun injectTap(x: Float, y: Float): Boolean = synchronized(lock) {
@@ -71,6 +82,7 @@ class ShizukuInjector(
     override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer) ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
 
     override fun cleanup() = synchronized(lock) {
+        runtimeReady = false
         runtime?.cleanup()?.let { check(result("cleanup", it)) { "Shizuku cleanup was rejected; inspect backend logs" } }
         runtime = null
         Unit
@@ -83,17 +95,23 @@ class ShizukuInjector(
             return null
         }
 
-        runtime?.let { return it }
-        val created = RuntimeShizukuInjector(appContext)
+        runtime?.let { return if (runtimeReady) it else null }
+        val created = runtimeFactory(appContext)
         return when (val connected = created.connect()) {
             InjectionResult.Success -> {
                 runtime = created
-                Log.i(TAG, "Shizuku UserService connected")
+                runtimeReady = true
+                Log.i(TAG, "Shizuku UserService initialized: ${created.connectionDetails}; game-visible touch delivery is unverified")
                 created
             }
             is InjectionResult.Failure -> {
                 Log.e(TAG, "Shizuku connect failed [${connected.code}]: ${connected.message}", connected.cause)
-                created.cleanup()
+                val cleanup = created.cleanup()
+                if (cleanup is InjectionResult.Failure) {
+                    // Keep the failed resource available to the caller's cleanup/panic retry.
+                    runtime = created
+                    throw IllegalStateException("Shizuku preparation failed and cleanup remains unconfirmed: ${cleanup.message}", cleanup.cause)
+                }
                 null
             }
         }

@@ -49,9 +49,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class MainAppViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val db = ControlystDatabase.getDatabase(application)
+class MainAppViewModel @JvmOverloads constructor(
+    application: Application,
+    private val db: ControlystDatabase = ControlystDatabase.getDatabase(application)
+) : AndroidViewModel(application) {
     private val profilePersistence = com.example.data.ProfilePersistence(db)
     private val saveMutex = kotlinx.coroutines.sync.Mutex()
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
@@ -181,11 +182,14 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun overridePrivilegeMethod(method: PrivilegeMethod) {
-        updateActiveConfig(_activeConfig.value.copy(preferredBackend = method))
-        _activePrivilegeMethod.value = method
-        currentInjector = InputInjectorFactory.createInjector(method)
-        showSnack("Switched injector to: ${method.title}")
+    fun overridePrivilegeMethod(method: PrivilegeMethod?) {
+        val updated = _activeConfig.value.copy(preferredBackend = method)
+        updateActiveConfig(updated) {
+            if (_activeConfig.value == updated) {
+                currentInjector = InputInjectorFactory.createInjector(method ?: _activePrivilegeMethod.value)
+            }
+            showSnack("Profile backend saved: ${method?.title ?: "Automatic"}. Launch the game to prepare it.")
+        }
     }
 
     fun detectController() {
@@ -299,6 +303,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     fun updateActiveConfig(updated: MappingConfig, onSaved: () -> Unit = {}) {
         val errors = com.example.input.ProfileValidator.errors(updated, requireBindings = false)
         if (errors.isNotEmpty()) { showSnack("Profile rejected: " + errors.joinToString("; ")); return }
+        val previous = _activeConfig.value
         _activeConfig.value = updated
         viewModelScope.launch {
             saveMutex.lock()
@@ -307,6 +312,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
+                if (_activeConfig.value == updated) _activeConfig.value = previous
                 showSnack("Profile save failed: ${error.message}")
             } finally { saveMutex.unlock() }
         }
