@@ -18,12 +18,13 @@ data class CameraSettings(
 )
 
 data class MappingConfig(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val id: String,
     val profileName: String,
     val gamePackage: String,
     val gameTitle: String = "",
     val controllerType: ControllerType = ControllerType.XBOX,
+    val preferredBackend: PrivilegeMethod? = null,
     val targetAspectRatio: String = "19.5:9", // "16:9", "19.5:9", "20:9", "4:3"
     val joystick: JoystickSettings = JoystickSettings(),
     val camera: CameraSettings = CameraSettings(),

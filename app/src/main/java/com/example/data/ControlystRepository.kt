@@ -14,6 +14,7 @@ import com.example.model.CrosshairConfig
 import com.example.model.MappingConfig
 import com.example.model.MappingNode
 import com.example.model.NodeType
+import com.example.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -247,6 +248,19 @@ class ControlystRepository(
             json.put("gameTitle", config.gameTitle)
             json.put("controllerType", config.controllerType.name)
             json.put("targetAspectRatio", config.targetAspectRatio)
+            json.put("preferredBackend", config.preferredBackend?.name ?: JSONObject.NULL)
+            json.put("joystick", JSONObject().apply {
+                put("innerDeadzone", config.joystick.innerDeadzone); put("outerDeadzone", config.joystick.outerDeadzone)
+                put("runThresholdNorm", config.joystick.runThresholdNorm); put("sprintLockEnabled", config.joystick.sprintLockEnabled)
+                put("curveExponent", config.joystick.curveExponent)
+            })
+            json.put("camera", JSONObject().apply {
+                put("horizontalSensitivity", config.camera.horizontalSensitivity); put("verticalSensitivity", config.camera.verticalSensitivity)
+                put("accelerationCurve", config.camera.accelerationCurve); put("smoothingFrames", config.camera.smoothingFrames)
+                put("invertY", config.camera.invertY); put("mouseDpiScale", config.camera.mouseDpiScale)
+            })
+            json.put("antiRecoilEnabled", config.antiRecoilEnabled); json.put("antiRecoilVerticalPull", config.antiRecoilVerticalPull)
+            json.put("tags", JSONArray(config.tags))
 
             val buttonsArray = JSONArray()
             for (node in config.buttons) {
@@ -262,6 +276,16 @@ class ControlystRepository(
                 nodeObj.put("deadzoneInner", node.deadzoneInner)
                 nodeObj.put("deadzoneOuter", node.deadzoneOuter)
                 nodeObj.put("sensitivity", node.sensitivity)
+                nodeObj.put("buttonBehavior", node.buttonBehavior.name)
+                nodeObj.put("inputKeyCode", node.inputKeyCode ?: JSONObject.NULL)
+                nodeObj.put("inputScanCode", node.inputScanCode ?: JSONObject.NULL)
+                nodeObj.put("touchSlot", node.touchSlot ?: JSONObject.NULL)
+                nodeObj.put("axisX", node.axisX ?: JSONObject.NULL); nodeObj.put("axisY", node.axisY ?: JSONObject.NULL)
+                nodeObj.put("invertY", node.invertY)
+                nodeObj.put("macroActions", JSONArray().apply { node.macroActions.forEach { step ->
+                    put(JSONObject().apply { put("delayMs", step.delayMs); put("durationMs", step.durationMs)
+                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm) })
+                } })
                 buttonsArray.put(nodeObj)
             }
             json.put("buttons", buttonsArray)
@@ -290,16 +314,12 @@ class ControlystRepository(
         fun deserializeJsonToConfig(jsonStr: String): MappingConfig {
             val json = JSONObject(jsonStr)
             val schemaVersion = json.optInt("schemaVersion", 1)
-            val id = json.optString("id", "profile_${System.currentTimeMillis()}")
+            val id = json.getString("id")
             val name = json.optString("profileName", "Imported Profile")
-            val pkg = json.optString("gamePackage", "unknown.game")
+            val pkg = json.getString("gamePackage")
             val title = json.optString("gameTitle", "")
             val ctrlTypeStr = json.optString("controllerType", "XBOX")
-            val ctrlType = try {
-                ControllerType.valueOf(ctrlTypeStr)
-            } catch (e: Exception) {
-                ControllerType.XBOX
-            }
+            val ctrlType = ControllerType.valueOf(ctrlTypeStr)
             val targetAspect = json.optString("targetAspectRatio", "19.5:9")
 
             val buttons = mutableListOf<MappingNode>()
@@ -308,16 +328,13 @@ class ControlystRepository(
                 for (i in 0 until buttonsArray.length()) {
                     val nodeObj = buttonsArray.getJSONObject(i)
                     val typeStr = nodeObj.optString("type", "BUTTON")
-                    val type = try {
-                        NodeType.valueOf(typeStr)
-                    } catch (e: Exception) {
-                        NodeType.BUTTON
-                    }
+                    val type = NodeType.valueOf(typeStr)
+                    fun optionalInt(key: String): Int? = if (nodeObj.has(key) && !nodeObj.isNull(key)) nodeObj.getInt(key) else null
                     buttons.add(
                         MappingNode(
-                            id = nodeObj.optString("id", "node_$i"),
-                            xNorm = nodeObj.optDouble("xNorm", 0.5).toFloat(),
-                            yNorm = nodeObj.optDouble("yNorm", 0.5).toFloat(),
+                            id = nodeObj.getString("id"),
+                            xNorm = nodeObj.getDouble("xNorm").toFloat(),
+                            yNorm = nodeObj.getDouble("yNorm").toFloat(),
                             radiusNorm = nodeObj.optDouble("radiusNorm", 0.05).toFloat(),
                             type = type,
                             boundKey = nodeObj.optString("boundKey", "A"),
@@ -325,7 +342,18 @@ class ControlystRepository(
                             turboHz = nodeObj.optInt("turboHz", 10),
                             deadzoneInner = nodeObj.optDouble("deadzoneInner", 0.15).toFloat(),
                             deadzoneOuter = nodeObj.optDouble("deadzoneOuter", 0.95).toFloat(),
-                            sensitivity = nodeObj.optDouble("sensitivity", 1.0).toFloat()
+                            sensitivity = nodeObj.optDouble("sensitivity", 1.0).toFloat(),
+                            buttonBehavior = ButtonBehavior.valueOf(nodeObj.optString("buttonBehavior",
+                                if (nodeObj.optString("boundKey").uppercase() in setOf("LT","RT","L2","R2")) "HOLD" else "TAP")),
+                            inputKeyCode = optionalInt("inputKeyCode"), inputScanCode = optionalInt("inputScanCode"),
+                            touchSlot = optionalInt("touchSlot"), axisX = optionalInt("axisX"), axisY = optionalInt("axisY"),
+                            invertY = nodeObj.optBoolean("invertY", false),
+                            macroActions = nodeObj.optJSONArray("macroActions")?.let { array ->
+                                (0 until array.length()).map { index -> array.getJSONObject(index).let { step ->
+                                    MacroStep(step.getLong("delayMs"), step.getString("actionType"),
+                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"))
+                                } }
+                            } ?: emptyList()
                         )
                     )
                 }
@@ -354,7 +382,16 @@ class ControlystRepository(
                 CrosshairConfig()
             }
 
+            val joystick = json.optJSONObject("joystick") ?: JSONObject()
+            val camera = json.optJSONObject("camera") ?: JSONObject()
             return MappingConfig(
+                preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
+                joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
+                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", true), joystick.optDouble("curveExponent", 1.0).toFloat()),
+                camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),
+                    camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
+                antiRecoilEnabled = json.optBoolean("antiRecoilEnabled", false), antiRecoilVerticalPull = json.optDouble("antiRecoilVerticalPull", 0.0).toFloat(),
+                tags = json.optJSONArray("tags")?.let { array -> (0 until array.length()).map { array.getString(it) } } ?: emptyList(),
                 schemaVersion = schemaVersion,
                 id = id,
                 profileName = name,
@@ -366,7 +403,7 @@ class ControlystRepository(
                 crosshair = crosshair,
                 author = json.optString("author", "Community"),
                 isOfficialVerified = json.optBoolean("isOfficialVerified", false),
-                rating = json.optDouble("rating", 4.5).toFloat(),
+                rating = json.optDouble("rating", 0.0).toFloat(),
                 downloadCount = json.optInt("downloadCount", 0),
                 lastUpdated = json.optLong("lastUpdated", System.currentTimeMillis())
             )

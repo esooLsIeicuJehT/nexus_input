@@ -18,19 +18,31 @@ object ControllerBindingAliases {
         KeyEvent.KEYCODE_BUTTON_START -> setOf("START")
         KeyEvent.KEYCODE_BUTTON_SELECT -> setOf("SELECT", "BACK")
         KeyEvent.KEYCODE_BUTTON_MODE -> setOf("GUIDE", "MODE")
-        KeyEvent.KEYCODE_DPAD_UP -> setOf("DPAD_UP", "UP")
-        KeyEvent.KEYCODE_DPAD_DOWN -> setOf("DPAD_DOWN", "DOWN")
-        KeyEvent.KEYCODE_DPAD_LEFT -> setOf("DPAD_LEFT", "LEFT")
-        KeyEvent.KEYCODE_DPAD_RIGHT -> setOf("DPAD_RIGHT", "RIGHT")
+        KeyEvent.KEYCODE_DPAD_UP -> setOf("DPAD_UP", "UP", "D_UP")
+        KeyEvent.KEYCODE_DPAD_DOWN -> setOf("DPAD_DOWN", "DOWN", "D_DOWN")
+        KeyEvent.KEYCODE_DPAD_LEFT -> setOf("DPAD_LEFT", "LEFT", "D_LEFT")
+        KeyEvent.KEYCODE_DPAD_RIGHT -> setOf("DPAD_RIGHT", "RIGHT", "D_RIGHT")
         else -> emptySet()
     }
 
     fun leftTrigger(): Set<String> = setOf("LT", "L2")
     fun rightTrigger(): Set<String> = setOf("RT", "R2")
-    fun dpadUp(): Set<String> = setOf("DPAD_UP", "UP")
-    fun dpadDown(): Set<String> = setOf("DPAD_DOWN", "DOWN")
-    fun dpadLeft(): Set<String> = setOf("DPAD_LEFT", "LEFT")
-    fun dpadRight(): Set<String> = setOf("DPAD_RIGHT", "RIGHT")
+    fun dpadUp(): Set<String> = setOf("DPAD_UP", "UP", "D_UP")
+    fun dpadDown(): Set<String> = setOf("DPAD_DOWN", "DOWN", "D_DOWN")
+    fun dpadLeft(): Set<String> = setOf("DPAD_LEFT", "LEFT", "D_LEFT")
+    fun dpadRight(): Set<String> = setOf("DPAD_RIGHT", "RIGHT", "D_RIGHT")
+
+    val supported = setOf("A", "B", "X", "Y", "LB", "RB", "LT", "RT", "L3", "R3",
+        "START", "SELECT", "GUIDE", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT", "LS", "RS")
+
+    fun canonical(value: String): String = when (normalized(value)) {
+        "CROSS" -> "A"; "CIRCLE" -> "B"; "SQUARE" -> "X"; "TRIANGLE" -> "Y"
+        "L1" -> "LB"; "R1" -> "RB"; "L2" -> "LT"; "R2" -> "RT"
+        "BACK" -> "SELECT"; "MODE" -> "GUIDE"
+        "D_UP", "UP" -> "DPAD_UP"; "D_DOWN", "DOWN" -> "DPAD_DOWN"
+        "D_LEFT", "LEFT" -> "DPAD_LEFT"; "D_RIGHT", "RIGHT" -> "DPAD_RIGHT"
+        else -> normalized(value)
+    }
 
     fun normalized(value: String): String = value.trim().uppercase()
 }

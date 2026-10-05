@@ -60,3 +60,11 @@ interface MacroDao {
     @Query("DELETE FROM macros WHERE id = :id")
     suspend fun deleteMacro(id: Long)
 }
+
+@Dao
+interface ProfileMigrationDao {
+    @Query("SELECT * FROM profile_migrations WHERE sourceKey = :key")
+    suspend fun get(key: String): com.example.data.entity.ProfileMigrationEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: com.example.data.entity.ProfileMigrationEntity)
+}

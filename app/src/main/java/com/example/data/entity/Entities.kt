@@ -41,3 +41,6 @@ data class MacroEntity(
     val triggerKey: String,
     val stepsJson: String
 )
+
+@Entity(tableName = "profile_migrations")
+data class ProfileMigrationEntity(@PrimaryKey val sourceKey: String, val checksum: String, val importedAt: Long)

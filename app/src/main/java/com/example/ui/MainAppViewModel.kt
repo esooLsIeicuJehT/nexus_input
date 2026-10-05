@@ -172,7 +172,11 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            repository.prepopulateDefaultsIfEmpty()
+            val migration = withContext(Dispatchers.IO) {
+                com.example.data.LegacyProfileMigration.migrate(getApplication(), db)
+            }
+            if (migration.errors.isNotEmpty()) showSnack(migration.errors.joinToString("\n"))
+            else if (migration.imported > 0) showSnack("Migrated ${migration.imported} legacy profiles into Room; original source retained.")
             refreshPrivileges()
             detectController()
         }
@@ -267,6 +271,8 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateActiveConfig(updated: MappingConfig) {
+        val errors = com.example.input.ProfileValidator.errors(updated, requireBindings = false)
+        if (errors.isNotEmpty()) { showSnack("Profile rejected: " + errors.joinToString("; ")); return }
         _activeConfig.value = updated
         viewModelScope.launch {
             val json = ControlystRepository.serializeConfigToJson(updated)
@@ -542,7 +548,9 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
             innerDeadzone = innerDZ,
             outerDeadzone = outerDZ
         )
-        val updatedCfg = currentCfg.copy(joystick = updatedJoystick)
+        val updatedCfg = currentCfg.copy(joystick = updatedJoystick, buttons = currentCfg.buttons.map {
+            if (it.type == NodeType.JOYSTICK_ZONE) it.copy(deadzoneInner = innerDZ, deadzoneOuter = outerDZ) else it
+        })
         updateActiveConfig(updatedCfg)
         showSnack("Calibration saved to Room database successfully!")
     }

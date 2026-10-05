@@ -134,10 +134,9 @@ class MappingForegroundService : Service() {
                     return@launch
                 }
 
-            if (config.gamePackage.isNotBlank() && config.gamePackage != gamePkg) {
-                failLoadedProfile(
-                    "Profile '${config.profileName}' targets ${config.gamePackage}, not $gamePkg"
-                )
+            val errors = com.example.input.ProfileValidator.errors(config, gamePkg, configId)
+            if (errors.isNotEmpty()) {
+                failLoadedProfile("Profile validation failed: " + errors.joinToString("; "))
                 return@launch
             }
 
