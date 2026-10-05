@@ -22,6 +22,7 @@
 
       <nav class="side-nav" aria-label="KernelSU sections">
         <a href="#overview" class="active"><span>◈</span> Overview</a>
+        <a href="#capabilities-panel"><span>⚙</span> Device controls</a>
         <a href="#devices-panel"><span>⌁</span> Devices</a>
         <a href="#runtime-panel"><span>▣</span> Runtime</a>
         <a href="#update-panel"><span>↻</span> Updates</a>
@@ -39,7 +40,7 @@
         <div>
           <div class="eyebrow">SYSTEM / ROOT COMPANION</div>
           <h1>KernelSU Control Center</h1>
-          <p>Input backend health, Android runtime state, module updates, and connected Linux input nodes.</p>
+          <p>Device capabilities, guarded root controls, input backend health, and module updates.</p>
         </div>
         <div class="top-actions">
           <button id="refresh" class="button ghost">Refresh diagnostics</button>
@@ -50,8 +51,8 @@
       <section class="hero-panel">
         <div class="hero-orb"><span>N</span></div>
         <div class="hero-copy">
-          <div class="eyebrow"><i class="live-dot"></i> NEXUS ROOT ENGINE</div>
-          <h2>Kernel-level status, without pretend-green lights.</h2>
+          <div class="eyebrow">NEXUS ROOT CONTROL PLANE</div>
+          <h2>Root status and observed device controls.</h2>
           <p>The cards below are populated by live shell probes through KernelSU WebUI. Missing permissions, devices, or APK state remain visible as failures.</p>
         </div>
       </section>
@@ -82,6 +83,35 @@
           <strong id="processes">Checking…</strong>
           <small>Matching live process contexts</small>
         </article>
+      </section>
+
+      <section class="card" id="capabilities-panel">
+        <div class="card-heading"><div><div class="eyebrow">DEVICE CAPABILITIES</div><h3>Root controls and safeguards</h3></div><button id="refreshCapabilities" class="button ghost">Read device capabilities</button></div>
+        <p>Only values exposed by this device populate the controls. Every change checks actual read-back. Tuning is refused when Android battery state is unavailable, charge is below 20%, or battery temperature is 45°C or above. Kernel thermal protections remain active.</p>
+        <div class="detail-grid">
+          <article><h3>CPU policies</h3><pre id="cpuCapabilities">Not read</pre>
+            <label>Observed policy <select id="cpuPolicy" disabled></select></label>
+            <label>Available governor <select id="cpuGovernor" disabled></select></label>
+            <button id="applyCpuGovernor" class="button ghost" disabled>Apply governor with read-back</button>
+            <label>Available minimum kHz <select id="cpuMinimum" disabled></select></label>
+            <label>Available maximum kHz <select id="cpuMaximum" disabled></select></label>
+            <button id="applyCpuFrequencies" class="button ghost" disabled>Apply frequency interval</button>
+          </article>
+          <article><h3>GPU / devfreq devices</h3><pre id="devfreqCapabilities">Not read</pre>
+            <label>Observed devfreq device <select id="devfreqDevice" disabled></select></label>
+            <label>Available governor <select id="devfreqGovernor" disabled></select></label>
+            <button id="applyDevfreqGovernor" class="button ghost" disabled>Apply devfreq governor</button>
+          </article>
+          <article><h3>Thermal state</h3><pre id="thermalCapabilities">Not read</pre></article>
+          <article><h3>ZRAM / memory / sysctl</h3><pre id="memoryCapabilities">Not read</pre>
+            <label>vm.swappiness (0..100) <input id="swappiness" type="number" min="0" max="100" disabled></label>
+            <button id="applySwappiness" class="button ghost" disabled>Apply with read-back</button>
+          </article>
+          <article><h3>Battery safeguards</h3><pre id="batteryCapabilities">Not read</pre></article>
+          <article><h3>Performance presets</h3><pre id="presetCapabilities">Not read</pre></article>
+        </div>
+        <pre id="controlStatus">No root change has been requested.</pre>
+        <button id="readControlLog" class="button ghost">Read root control log</button>
       </section>
 
       <section class="card update-card" id="update-panel">

@@ -39,7 +39,7 @@ jobs:
           python3 scripts/check_architecture_boundary.py
           python3 -m unittest discover -s scripts/tests -v
           node --test scripts/tests/webui.test.js
-          sh -n kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh
+          sh -n kernelsu-module/control.sh kernelsu-module/control-lib.sh kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh
       - name: Debug and release regression tests, APK and AAB validation
         run: gradle --no-daemon --stacktrace -PunsignedRelease=true :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:lintDebug :app:lintRelease
       - name: Verify packaged identity and native libraries

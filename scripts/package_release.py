@@ -6,7 +6,7 @@ import json
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','skip_mount',
+FILES = ('module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','control.sh','control-lib.sh','skip_mount',
          'webroot/index.html','webroot/app.js','webroot/style.css')
 
 def properties(path):

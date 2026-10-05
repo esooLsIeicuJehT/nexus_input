@@ -8,9 +8,9 @@ const source = fs.readFileSync(path.join(__dirname,'../../kernelsu-module/webroo
 function sandbox(ksu) {
   const elements = new Map();const timers = new Map();let counter=0;
   const context = { window: { ksu }, document: { getElementById(id) {
-    if (!elements.has(id)) elements.set(id,{textContent:'',className:'',disabled:false,dataset:{},addEventListener(){}});
+    if (!elements.has(id)) elements.set(id,{textContent:'',className:'',disabled:false,dataset:{},value:'',children:[],addEventListener(){},replaceChildren(){this.children=[];this.value=''},appendChild(child){this.children.push(child);if(!this.value)this.value=child.value}});
     return elements.get(id);
-  } }, setTimeout(fn){const id=++counter;timers.set(id,fn);return id},clearTimeout(id){timers.delete(id)} };
+  },createElement(){return {value:'',textContent:''}} }, setTimeout(fn){const id=++counter;timers.set(id,fn);return id},clearTimeout(id){timers.delete(id)} };
   vm.createContext(context);vm.runInContext(source,context);
   return {context,elements,timers};
 }
@@ -44,4 +44,20 @@ test('AVAILABLE text with failure status never enables updater installation', as
   const calls=[];const {context,elements}=sandbox({exec(...args){calls.push(args)}});
   const check=context.checkGithubUpdate();context.window[calls.at(-1)[2]](1,'STATE=AVAILABLE\nREMOTE_VERSION=2.0.0','failed');
   await check;assert.equal(elements.get('installUpdate').disabled,true);
+});
+
+test('incomplete capability output cannot enable root tuning controls', async () => {
+  const calls=[];const {context,elements}=sandbox({exec(...args){calls.push(args)}});
+  const request=context.refreshCapabilities();context.window[calls.at(-1)[2]](0,'CPU_BEGIN\nPOLICY=0\nCPU_END','');
+  await request;assert.equal(elements.get('applyCpuGovernor').disabled,true);
+  assert.match(elements.get('controlStatus').textContent,/Missing capability section/);
+});
+test('root controls are populated only from observed policy governors and frequencies', async () => {
+  const calls=[];const {context,elements}=sandbox({exec(...args){calls.push(args)}});
+  const request=context.refreshCapabilities();
+  context.window[calls.at(-1)[2]](0,'CPU_BEGIN\nPOLICY=0\nscaling_available_governors=schedutil powersave\nscaling_governor=schedutil\nscaling_available_frequencies=300000 1000000\nscaling_min_freq=300000\nscaling_max_freq=1000000\nCPU_END\nDEVFREQ_BEGIN\nDEVFREQ_END\nTHERMAL_BEGIN\nread-only\nTHERMAL_END\nMEMORY_BEGIN\nswappiness=60\nMEMORY_END\nBATTERY_BEGIN\nlevel: 80\nBATTERY_END\nPRESETS_BEGIN\nNo verified presets\nPRESETS_END','');
+  await request;assert.equal(elements.get('cpuPolicy').value,'0');
+  assert.deepEqual(elements.get('cpuGovernor').children.map(value=>value.value),['schedutil','powersave']);
+  assert.equal(elements.get('applyCpuGovernor').disabled,false);assert.equal(elements.get('applyDevfreqGovernor').disabled,true);
+  assert.equal(elements.get('swappiness').value,'60');
 });
