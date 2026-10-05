@@ -10,6 +10,7 @@ object SurfaceFrameStats {
     fun commandOutput(encoded: String): String {
         val result=JSONObject(encoded)
         check(result.getInt("uid") in setOf(0,2000)) { "Frame service did not report a privileged UID" }
+        check(!result.optBoolean("outputTruncated") && result.isNull("streamError")) { "Frame command output is incomplete" }
         check(!result.getBoolean("timedOut")) { "Frame query timed out" }
         check(!result.isNull("exitCode") && result.getInt("exitCode")==0) {
             "Frame query failed: ${result.optString("stderr")} (exit=${result.opt("exitCode")})"

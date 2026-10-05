@@ -7,9 +7,11 @@ data class CommandResult(
     val exitCode: Int?,
     val stdout: String,
     val stderr: String,
-    val timedOut: Boolean
+    val timedOut: Boolean,
+    val outputTruncated: Boolean = false,
+    val streamError: String? = null
 ) {
-    val succeeded: Boolean get() = !timedOut && exitCode == 0
+    val succeeded: Boolean get() = !timedOut && !outputTruncated && streamError == null && exitCode == 0
 }
 
 interface ShellExecutor {
@@ -30,8 +32,12 @@ class ProcessShellExecutor : ShellExecutor {
             outThread.start()
             errThread.start()
 
-            val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-            if (!finished) process.destroyForcibly()
+            val deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+            var finished=false
+            while(System.nanoTime()<deadline) {
+                try { process.exitValue();finished=true;break } catch(_:IllegalThreadStateException) { Thread.sleep(10) }
+            }
+            if (!finished) process.destroy()
 
             outThread.join(500)
             errThread.join(500)
@@ -40,7 +46,10 @@ class ProcessShellExecutor : ShellExecutor {
                 exitCode = if (finished) process.exitValue() else null,
                 stdout = outThread.text,
                 stderr = errThread.text,
-                timedOut = !finished
+                timedOut = !finished,
+                outputTruncated = outThread.truncated || errThread.truncated,
+                streamError = listOfNotNull(outThread.error,errThread.error,
+                    if(outThread.isAlive || errThread.isAlive) "Command output streams did not finish" else null).takeIf { it.isNotEmpty() }?.joinToString("; ")
             )
         } catch (t: Throwable) {
             CommandResult(
@@ -53,15 +62,25 @@ class ProcessShellExecutor : ShellExecutor {
     }
 
     private class StreamCollector(private val reader: BufferedReader) : Thread() {
-        @Volatile
-        var text: String = ""
-
+        @Volatile var text: String = ""
+        @Volatile var truncated = false
+        @Volatile var error: String? = null
+        init { isDaemon=true }
         override fun run() {
-            text = try {
-                reader.use { it.readText() }
-            } catch (_: Throwable) {
-                ""
-            }
+            val output=StringBuilder()
+            try {
+                reader.use { source ->
+                    val buffer=CharArray(4096)
+                    while(true) {
+                        val count=source.read(buffer)
+                        if(count<0) break
+                        val available=(262144-output.length).coerceAtLeast(0)
+                        output.append(buffer,0,minOf(count,available))
+                        if(count>available) truncated=true
+                    }
+                }
+            } catch(failure:Throwable) { error="Command output read failed: ${failure.javaClass.simpleName}: ${failure.message}" }
+            finally { text=output.toString() }
         }
     }
 }
