@@ -1,6 +1,6 @@
 const log = document.getElementById('log');
 
-const APK_PACKAGE = 'com.aistudio.controlyst.nxzvrq';
+const APK_PACKAGE = 'com.inputmapper.platform';
 const APK_COMPONENT = `${APK_PACKAGE}/com.example.MainActivity`;
 const MODULE_ID = 'gamepad.pro.root';
 const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
@@ -57,7 +57,7 @@ if pm path "$PACKAGE" >/dev/null 2>&1; then echo "APK=installed"; else echo "APK
 if [ -e /dev/uinput ]; then echo "UINPUT=$(ls -lZ /dev/uinput 2>&1)"; else echo "UINPUT=missing"; fi
 if [ -e /dev/uhid ]; then echo "UHID=$(ls -lZ /dev/uhid 2>&1)"; else echo "UHID=missing"; fi
 echo "SELINUX=$(getenforce 2>/dev/null || echo unknown)"
-echo "PROCESSES=$(ps -AZ 2>/dev/null | grep -E 'com\.aistudio\.controlyst\.nxzvrq|nexus\.input|gamepad\.pro' | tr '\n' ';' || true)"
+echo "PROCESSES=$(ps -AZ 2>/dev/null | grep -E 'com\.inputmapper\.platform|nexus\.input|gamepad\.pro' | tr '\n' ';' || true)"
 echo 'RUNTIME_STATUS_BEGIN'
 if [ -r /data/adb/gamepad-pro/runtime-status.txt ]; then
   cat /data/adb/gamepad-pro/runtime-status.txt

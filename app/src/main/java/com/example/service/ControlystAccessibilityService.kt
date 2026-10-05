@@ -1,74 +1,316 @@
 package com.example.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.res.Configuration
 import android.graphics.Path
 import android.graphics.PointF
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import com.example.injector.InputInjector
+import com.example.injector.InputInjectorFactory
+import com.example.injector.PrivilegeDetector
+import com.example.input.ControllerInputMonitor
+import com.example.input.GamepadMappingRuntime
+import com.example.model.PrivilegeMethod
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import java.util.concurrent.Executors
 
 class ControlystAccessibilityService : AccessibilityService() {
-
-    companion object {
-        private const val TAG = "ControlystA11y"
-        private var instance: ControlystAccessibilityService? = null
-
-        fun getInstance(): ControlystAccessibilityService? = instance
-
-        fun isServiceRunning(): Boolean = instance != null
-    }
-
+    private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val backendExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val mappingRuntime = GamepadMappingRuntime(
+        screenSizeProvider = ::screenSize,
+        onError = { message ->
+            Log.e(TAG, message)
+            MappingRuntimeBridge.reportError(message)
+        }
+    )
+
+    @Volatile
+    private var activeInjector: InputInjector? = null
+
+    @Volatile
+    private var runtimePreparing = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
-        Log.i(TAG, "Controlyst Accessibility Service Connected successfully")
+        currentInstance = this
+
+        val info = serviceInfo ?: AccessibilityServiceInfo()
+        info.flags = info.flags or
+            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            info.motionEventSources = InputDevice.SOURCE_JOYSTICK
+        }
+        serviceInfo = info
+
+        runtimeScope.launch {
+            MappingRuntimeBridge.state.collectLatest { state ->
+                if (!state.armed) {
+                    teardownInjectorAsync()
+                    return@collectLatest
+                }
+
+                if (!state.targetForeground) {
+                    val foreground = rootInActiveWindow?.packageName?.toString()
+                    if (!foreground.isNullOrBlank() && !isTransientSystemPackage(foreground)) {
+                        MappingRuntimeBridge.setForegroundPackage(foreground)
+                    }
+                }
+
+                val refreshed = MappingRuntimeBridge.state.value
+                if (refreshed.armed && refreshed.targetForeground) {
+                    prepareRuntimeAsync()
+                } else {
+                    teardownInjectorAsync()
+                }
+            }
+        }
+
+        Log.i(TAG, "NEXUS accessibility controller capture connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Listening for window state changed if needed for game foreground tracking
-    }
+        if (event == null) return
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) return
 
-    override fun onInterrupt() {
-        Log.w(TAG, "Controlyst Accessibility Service Interrupted")
-    }
+        val pkg = event.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
+        if (isTransientSystemPackage(pkg)) return
 
-    override fun onDestroy() {
-        super.onDestroy()
-        if (instance == this) {
-            instance = null
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            MappingRuntimeBridge.setForegroundPackage(pkg)
+        } else {
+            val state = MappingRuntimeBridge.state.value
+            if (state.armed && pkg == state.gamePackage && !state.targetForeground) {
+                MappingRuntimeBridge.setForegroundPackage(pkg)
+            }
         }
     }
 
-    /**
-     * Injects synthetic tap at exact screen coordinates (x, y)
-     */
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        ControllerInputMonitor.onKeyEvent(event)
+        if (!isControllerSource(event.source)) return false
+
+        val state = MappingRuntimeBridge.state.value
+        val config = MappingRuntimeBridge.config.value
+        val injector = activeInjector
+        if (!state.armed || !state.targetForeground || !state.backendReady || config == null || injector == null) {
+            if (state.armed && state.targetForeground) prepareRuntimeAsync()
+            return false
+        }
+
+        return mappingRuntime.handleKeyEvent(event, config, injector)
+    }
+
+    override fun onMotionEvent(event: MotionEvent) {
+        ControllerInputMonitor.onMotionEvent(event)
+        if (!isControllerSource(event.source)) return
+
+        val state = MappingRuntimeBridge.state.value
+        val config = MappingRuntimeBridge.config.value
+        val injector = activeInjector
+        if (!state.armed || !state.targetForeground || !state.backendReady || config == null || injector == null) {
+            if (state.armed && state.targetForeground) prepareRuntimeAsync()
+            return
+        }
+        mappingRuntime.handleMotionEvent(event, config, injector)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        reconnectForGeometryChange()
+    }
+
+    override fun onInterrupt() {
+        Log.w(TAG, "NEXUS accessibility service interrupted")
+    }
+
+    override fun onDestroy() {
+        val current = activeInjector
+        activeInjector = null
+        if (current != null) {
+            mappingRuntime.releaseAll(current)
+            runCatching { current.cleanup() }
+        }
+        mappingRuntime.shutdown(null)
+        backendExecutor.shutdownNow()
+        runtimeScope.cancel()
+        if (currentInstance === this) currentInstance = null
+        super.onDestroy()
+    }
+
+    private fun prepareRuntimeAsync() {
+        if (activeInjector != null || runtimePreparing || backendExecutor.isShutdown) return
+        runtimePreparing = true
+        backendExecutor.execute {
+            try {
+                val expectedState = MappingRuntimeBridge.state.value
+                val config = MappingRuntimeBridge.config.value
+                if (!expectedState.armed || !expectedState.targetForeground || config == null) return@execute
+
+                val probes = PrivilegeDetector(this).probeAll()
+                val requiresPersistent = mappingRuntime.requiresPersistentTouch(config)
+                val order = listOf(
+                    PrivilegeMethod.KERNELSU,
+                    PrivilegeMethod.SHIZUKU,
+                    PrivilegeMethod.MAGISK,
+                    PrivilegeMethod.ACCESSIBILITY
+                )
+
+                val failures = mutableListOf<String>()
+                for (method in order) {
+                    val probe = probes.firstOrNull { it.method == method } ?: continue
+                    if (!probe.isDetected) continue
+                    if (method == PrivilegeMethod.ACCESSIBILITY && requiresPersistent) {
+                        failures += "Accessibility cannot satisfy persistent-touch requirements"
+                        continue
+                    }
+
+                    val candidate = try {
+                        InputInjectorFactory.createInjector(method)
+                    } catch (t: Throwable) {
+                        failures += "$method creation failed: ${t.javaClass.simpleName}: ${t.message}"
+                        continue
+                    }
+
+                    if (!candidate.prepare()) {
+                        failures += "$method prepare failed"
+                        runCatching { candidate.cleanup() }
+                        continue
+                    }
+
+                    val liveState = MappingRuntimeBridge.state.value
+                    if (!liveState.armed || !liveState.targetForeground || liveState.configId != expectedState.configId) {
+                        runCatching { candidate.cleanup() }
+                        return@execute
+                    }
+
+                    activeInjector?.let { previous ->
+                        mappingRuntime.releaseAll(previous)
+                        runCatching { previous.cleanup() }
+                    }
+                    activeInjector = candidate
+                    MappingRuntimeBridge.setBackend(method, true, null)
+                    Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}")
+                    return@execute
+                }
+
+                val availableSummary = probes.joinToString { "${it.method}=${it.state}" }
+                val detail = buildString {
+                    append("No compatible injection backend could be prepared. ")
+                    append(availableSummary)
+                    if (failures.isNotEmpty()) append("; ").append(failures.joinToString("; "))
+                }
+                Log.e(TAG, detail)
+                MappingRuntimeBridge.reportError(detail)
+            } finally {
+                runtimePreparing = false
+            }
+        }
+    }
+
+    private fun teardownInjectorAsync() {
+        if (backendExecutor.isShutdown) return
+        val current = activeInjector ?: return
+        activeInjector = null
+        backendExecutor.execute {
+            mappingRuntime.releaseAll(current)
+            runCatching { current.cleanup() }
+        }
+    }
+
+    private fun reconnectForGeometryChange() {
+        if (backendExecutor.isShutdown) return
+        val current = activeInjector
+        activeInjector = null
+        val method = current?.method
+        if (method != null) {
+            MappingRuntimeBridge.setBackend(method, false, null)
+        }
+        backendExecutor.execute {
+            if (current != null) {
+                mappingRuntime.releaseAll(current)
+                runCatching { current.cleanup() }
+            }
+            runtimePreparing = false
+            val state = MappingRuntimeBridge.state.value
+            if (state.armed && state.targetForeground) prepareRuntimeAsync()
+        }
+    }
+
     fun performTap(x: Float, y: Float, durationMs: Long = 50L): Boolean {
+        if (!x.isFinite() || !y.isFinite()) return false
+        val path = Path().apply { moveTo(x, y) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(1L))
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        return dispatchGesture(gesture, null, mainHandler)
+    }
+
+    fun performDrag(points: List<PointF>, durationMs: Long): Boolean {
+        if (points.size < 2 || durationMs <= 0L || points.any { !it.x.isFinite() || !it.y.isFinite() }) return false
         val path = Path().apply {
-            moveTo(x, y)
+            moveTo(points.first().x, points.first().y)
+            points.drop(1).forEach { lineTo(it.x, it.y) }
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         return dispatchGesture(gesture, null, mainHandler)
     }
 
-    /**
-     * Injects synthetic drag/swipe along path points
-     */
-    fun performDrag(points: List<PointF>, durationMs: Long): Boolean {
-        if (points.isEmpty()) return false
-        val path = Path().apply {
-            moveTo(points[0].x, points[0].y)
-            for (i in 1 until points.size) {
-                lineTo(points[i].x, points[i].y)
-            }
+    @Suppress("DEPRECATION")
+    private fun screenSize(): Pair<Int, Int>? {
+        val wm = getSystemService(WindowManager::class.java) ?: return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            if (bounds.width() > 0 && bounds.height() > 0) bounds.width() to bounds.height() else null
+        } else {
+            val metrics = DisplayMetrics()
+            wm.defaultDisplay.getRealMetrics(metrics)
+            if (metrics.widthPixels > 0 && metrics.heightPixels > 0) metrics.widthPixels to metrics.heightPixels else null
         }
-        val safeDuration = durationMs.coerceAtLeast(40L)
-        val stroke = GestureDescription.StrokeDescription(path, 0, safeDuration)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, mainHandler)
+    }
+
+    private fun isControllerSource(source: Int): Boolean {
+        val gamepad = source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
+        val joystick = source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+        val dpad = source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
+        return gamepad || joystick || dpad
+    }
+
+    private fun isTransientSystemPackage(pkg: String): Boolean = pkg in setOf(
+        "android",
+        "com.android.systemui",
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller"
+    )
+
+    companion object {
+        private const val TAG = "NexusAccessibility"
+
+        @Volatile
+        private var currentInstance: ControlystAccessibilityService? = null
+
+        fun getInstance(): ControlystAccessibilityService? = currentInstance
+
+        fun isServiceRunning(): Boolean = currentInstance != null
     }
 }

@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-PACKAGE=com.aistudio.controlyst.nxzvrq
+PACKAGE=com.inputmapper.platform
 ACTIVITY=com.example.MainActivity
 COMPONENT="$PACKAGE/$ACTIVITY"
 
