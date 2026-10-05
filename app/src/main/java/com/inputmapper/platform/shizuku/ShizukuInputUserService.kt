@@ -17,14 +17,12 @@ import android.view.MotionEvent
  * Shizuku UserService is not a normal application process. InputManagerGlobal talks directly to
  * the input service and is the process-safe framework path on API 34+.
  */
-class ShizukuInputUserService() : IShizukuInputService.Stub() {
-    private data class InputBridge(
-        val target: Any,
-        val injectMethod: java.lang.reflect.Method,
-        val name: String
-    )
-
-    private val inputBridge: InputBridge = resolveInputBridge()
+class ShizukuInputUserService internal constructor(
+    private val inputBridge: Result<FrameworkInputBridge>
+) : IShizukuInputService.Stub() {
+    // Keep resolver failures observable through selfTest instead of losing the process before
+    // its binder can explain why initialization failed.
+    constructor() : this(runCatching { FrameworkInputBridge.resolve() })
 
     @Suppress("UNUSED_PARAMETER")
     constructor(context: Context) : this()
@@ -32,8 +30,13 @@ class ShizukuInputUserService() : IShizukuInputService.Stub() {
     override fun readSurfaceLayers(): String = com.inputmapper.platform.core.SurfaceFrameProbe.layers()
     override fun readSurfaceLatency(layer: String): String = com.inputmapper.platform.core.SurfaceFrameProbe.latency(layer)
 
-    override fun selfTest(): String =
-        "OK uid=${Process.myUid()} pid=${Process.myPid()} bridge=${inputBridge.name} sdk=${Build.VERSION.SDK_INT}"
+    override fun selfTest(): String = inputBridge.fold(
+        onSuccess = { bridge ->
+            "OK uid=${Process.myUid()} pid=${Process.myPid()} bridge=${bridge.name} " +
+                "sdk=${Build.VERSION.SDK_INT} mode=WAIT_FOR_RESULT(1) probe=BRIDGE_ONLY serviceVersion=${ShizukuInjector.USER_SERVICE_VERSION}"
+        },
+        onFailure = { error -> "ERROR BRIDGE_INIT sdk=${Build.VERSION.SDK_INT} ${failureDescription(error)}" }
+    )
 
     override fun injectTouch(
         action: Int,
@@ -79,12 +82,12 @@ class ShizukuInputUserService() : IShizukuInputService.Stub() {
                 0
             )
             try {
-                if (injectInputEvent(event)) "OK" else "ERROR INJECTION_REJECTED ${inputBridge.name}.injectInputEvent returned false"
+                injectInputEvent(event)
             } finally {
                 event.recycle()
             }
         } catch (t: Throwable) {
-            "ERROR ${t.javaClass.simpleName} ${t.message ?: "unknown"}"
+            "ERROR ${failureDescription(t)}"
         }
     }
 
@@ -112,58 +115,23 @@ class ShizukuInputUserService() : IShizukuInputService.Stub() {
                 0,
                 InputDevice.SOURCE_KEYBOARD
             )
-            if (injectInputEvent(event)) "OK" else "ERROR INJECTION_REJECTED ${inputBridge.name}.injectInputEvent returned false"
+            injectInputEvent(event)
         } catch (t: Throwable) {
-            "ERROR ${t.javaClass.simpleName} ${t.message ?: "unknown"}"
+            "ERROR ${failureDescription(t)}"
         }
     }
 
-    private fun injectInputEvent(event: InputEvent): Boolean {
-        val result = inputBridge.injectMethod.invoke(inputBridge.target, event, 0)
-        return result as? Boolean ?: false
+    private fun injectInputEvent(event: InputEvent): String {
+        val bridge = inputBridge.getOrThrow()
+        return if (bridge.inject(event)) "OK"
+        else "ERROR INJECTION_REJECTED ${bridge.name}.injectInputEvent WAIT_FOR_RESULT returned false; check focus, touch occlusion and InputDispatcher logs"
     }
+
+    private fun failureDescription(error: Throwable): String =
+        "${error.javaClass.simpleName}: ${error.message ?: "<no message>"}"
 
     override fun destroy() {
         System.exit(0)
     }
 
-    private fun resolveInputBridge(): InputBridge {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            resolveInputManagerGlobal()
-        } else {
-            resolveLegacyInputManager()
-        }
-    }
-
-    /**
-     * API 34+ framework contract. InputManagerGlobal.getInstance() resolves the input binder
-     * directly through ServiceManager and does not require ActivityThread.currentApplication().
-     */
-    private fun resolveInputManagerGlobal(): InputBridge {
-        val clazz = Class.forName("android.hardware.input.InputManagerGlobal")
-        val getInstance = clazz.getDeclaredMethod("getInstance").apply { isAccessible = true }
-        val instance = getInstance.invoke(null) ?: error("InputManagerGlobal.getInstance returned null")
-        val inject = clazz.getDeclaredMethod(
-            "injectInputEvent",
-            InputEvent::class.java,
-            Int::class.javaPrimitiveType
-        ).apply { isAccessible = true }
-        return InputBridge(instance, inject, "InputManagerGlobal")
-    }
-
-    /**
-     * Pre-Android-14 compatibility path. Older framework builds expose InputManager.getInstance()
-     * without the modern ActivityThread.currentApplication() dependency.
-     */
-    private fun resolveLegacyInputManager(): InputBridge {
-        val clazz = Class.forName("android.hardware.input.InputManager")
-        val getInstance = clazz.getDeclaredMethod("getInstance").apply { isAccessible = true }
-        val instance = getInstance.invoke(null) ?: error("InputManager.getInstance returned null")
-        val inject = clazz.getDeclaredMethod(
-            "injectInputEvent",
-            InputEvent::class.java,
-            Int::class.javaPrimitiveType
-        ).apply { isAccessible = true }
-        return InputBridge(instance, inject, "InputManager")
-    }
 }
