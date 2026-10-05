@@ -167,6 +167,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
+        MappingRuntimeBridge.disarm("Accessibility capture disconnected; mapper disarmed")
         val current = activeInjector
         activeInjector = null
         if (current != null) {

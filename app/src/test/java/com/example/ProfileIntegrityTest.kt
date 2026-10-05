@@ -48,4 +48,25 @@ class ProfileIntegrityTest {
         assertTrue(runCatching { ControlystRepository.deserializeJsonToConfig(text.replace("BUTTON","UNSUPPORTED")) }.isFailure)
         assertTrue(runCatching { ControlystRepository.deserializeJsonToConfig("{}") }.isFailure)
     }
+    @Test fun invalidGlobalSettingsAndAmbiguousAxisBindingsAreRejected() {
+        val base=config(MappingNode("a",.3f,.4f))
+        assertTrue(ProfileValidator.errors(base.copy(camera=CameraSettings(horizontalSensitivity=Float.NaN))).isNotEmpty())
+        assertTrue(ProfileValidator.errors(base.copy(crosshair=CrosshairConfig(colorHex="invalid"))).isNotEmpty())
+        assertTrue(ProfileValidator.errors(base.copy(buttons=listOf(base.buttons.first().copy(axisX=0,axisY=1)))).any { it.contains("cannot use stick axes") })
+        val stick=MappingNode("ls",.3f,.4f,type=NodeType.JOYSTICK_ZONE,boundKey="LS",inputKeyCode=96)
+        assertTrue(ProfileValidator.errors(config(stick)).any { it.contains("cannot use key/scan") })
+    }
+    @Test fun unsupportedLegacyOptionsArePreservedButCannotArmSilently() {
+        val base=config(MappingNode("a",.3f,.4f))
+        val legacy=base.copy(joystick=base.joystick.copy(sprintLockEnabled=true),antiRecoilEnabled=true,camera=base.camera.copy(mouseDpiScale=2f))
+        assertEquals(legacy,ControlystRepository.deserializeJsonToConfig(ControlystRepository.serializeConfigToJson(legacy)))
+        assertTrue(ProfileValidator.errors(legacy).isEmpty())
+        assertEquals(3,ProfileValidator.runtimeErrors(legacy).size)
+        assertFalse(com.example.service.MappingRuntimeBridge.arm(base.gamePackage,legacy))
+        assertFalse(com.example.service.MappingRuntimeBridge.state.value.armed)
+        assertTrue(com.example.service.MappingRuntimeBridge.state.value.error!!.contains("unsupported"))
+        assertTrue(com.example.service.MappingRuntimeBridge.arm(base.gamePackage,base))
+        com.example.service.MappingRuntimeBridge.disarm()
+    }
+
 }

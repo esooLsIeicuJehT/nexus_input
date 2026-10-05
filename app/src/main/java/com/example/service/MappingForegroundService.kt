@@ -136,14 +136,14 @@ class MappingForegroundService : Service() {
                     return@launch
                 }
 
-            val errors = com.example.input.ProfileValidator.errors(config, gamePkg, configId)
+            val errors = com.example.input.ProfileValidator.runtimeErrors(config, gamePkg, configId)
             if (errors.isNotEmpty()) {
                 failLoadedProfile("Profile validation failed: " + errors.joinToString("; "))
                 return@launch
             }
 
             currentCrosshairConfig.value = config.crosshair
-            MappingRuntimeBridge.arm(gamePkg, config)
+            if (!MappingRuntimeBridge.arm(gamePkg, config)) { failLoadedProfile(MappingRuntimeBridge.state.value.error ?: "Mapping rejected");return@launch }
 
             withContext(Dispatchers.Main) {
                 val manager = getSystemService(NotificationManager::class.java)

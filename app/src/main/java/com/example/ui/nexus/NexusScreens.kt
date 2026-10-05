@@ -478,6 +478,15 @@ fun NexusProfileDetailScreen(
             }
         }
 
+        if(config.joystick.sprintLockEnabled || config.antiRecoilEnabled || config.camera.mouseDpiScale != 1f) {
+            NexusPanel(Modifier.fillMaxWidth()) {
+                Text("Unsupported stored options",color=NexusCyan,fontWeight=FontWeight.Bold)
+                Text("Sprint lock, anti-recoil and mouse mapping are unavailable in this gamepad release. Disable these options to launch this profile.",color=TextSecondary)
+                OutlinedButton(onClick={viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(sprintLockEnabled=false),antiRecoilEnabled=false,camera=config.camera.copy(mouseDpiScale=1f)))}) {
+                    Text("Disable unsupported options")
+                }
+            }
+        }
         NexusPanel(Modifier.fillMaxWidth()) {
             Text("SAVED PROFILES",color=NexusCyan,fontWeight=FontWeight.Bold)
             allProfiles.filter { it.gamePackage==game?.packageName }.forEach { profile ->

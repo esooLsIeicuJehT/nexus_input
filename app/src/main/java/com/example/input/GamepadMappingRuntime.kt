@@ -20,6 +20,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sign
+import kotlin.math.pow
 
 /**
  * Serial controller-to-touch mapping engine used by the AccessibilityService.
@@ -38,6 +39,8 @@ class GamepadMappingRuntime(
     private val turboTasks = mutableMapOf<String, ScheduledFuture<*>>()
     private val digitalAxisState = mutableMapOf<String, Boolean>()
     private val inputOwners = mutableMapOf<String, MutableSet<String>>()
+    private val activeMacros = mutableSetOf<String>()
+    private val smoothedCamera = mutableMapOf<Int,Pair<Float,Float>>()
     private var motionTask: ScheduledFuture<*>? = null
     private var latestMotion: Triple<MotionSnapshot, MappingConfig, InputInjector>? = null
     @Volatile private var generation = 0L
@@ -147,7 +150,7 @@ class GamepadMappingRuntime(
                     if (released) activeSlots.remove(slot)
                     else { success = false; onError("Panic release failed for slot $slot") }
                 }
-                cameraPositions.clear(); digitalAxisState.clear(); inputOwners.clear()
+                cameraPositions.clear(); smoothedCamera.clear();activeMacros.clear(); digitalAxisState.clear(); inputOwners.clear()
             } finally { latch.countDown() }
         }
         val completed = runCatching { latch.await(timeoutMillis, TimeUnit.MILLISECONDS) }.getOrDefault(false)
@@ -274,6 +277,7 @@ class GamepadMappingRuntime(
             return
         }
         val slot = slotForNode(config, node) ?: return
+        if(!activeMacros.add(node.id)) { onError("Macro '${node.label.ifBlank { node.boundKey }}' is already running");return }
         var at = 0L
         node.macroActions.forEach { step ->
             at += step.delayMs.coerceAtLeast(0L)
@@ -283,6 +287,7 @@ class GamepadMappingRuntime(
                 at += step.durationMs.coerceAtLeast(1L)
             }
         }
+        schedule(at + 1L) { activeMacros.remove(node.id) }
     }
 
     private fun executeMacroStep(node: MappingNode, slot: Int, step: MacroStep, injector: InputInjector) {
@@ -375,11 +380,11 @@ class GamepadMappingRuntime(
     }
 
     private fun handleSticks(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
-        val size = screenSizeProvider() ?: return
+        val size = screenSizeProvider() ?: run { onError("Stick geometry is unavailable");return }
         val width = size.first.toFloat()
         val height = size.second.toFloat()
         val minDimension = min(width, height)
-        if (width <= 0f || height <= 0f) return
+        if (width <= 0f || height <= 0f) { onError("Invalid stick screen geometry");return }
 
         config.buttons.forEach { node ->
             if (node.type != NodeType.JOYSTICK_ZONE && node.type != NodeType.CAMERA_DRAG) return@forEach
@@ -414,9 +419,13 @@ class GamepadMappingRuntime(
                     if (injector.endTouch(slot)) activeSlots.remove(slot) else onError("Touch release failed for slot $slot")
                 }
                 cameraPositions.remove(slot)
+                smoothedCamera.remove(slot)
                 return@forEach
             }
 
+            val exponent=if(node.type==NodeType.JOYSTICK_ZONE) config.joystick.curveExponent else config.camera.accelerationCurve
+            fun response(value:Float)=sign(value)*abs(value).pow(exponent)
+            x=response(x);y=response(y)
             when (node.type) {
                 NodeType.JOYSTICK_ZONE -> {
                     if (activeSlots.add(slot) && !injector.beginTouch(slot, anchor.x, anchor.y)) {
@@ -439,8 +448,15 @@ class GamepadMappingRuntime(
                     }
                     val current = cameraPositions[slot] ?: (anchor.x to anchor.y)
                     val step = 22f * node.sensitivity
-                    var nextX = current.first + x * step
-                    var nextY = current.second + y * step
+                    val previous=smoothedCamera[slot] ?: (0f to 0f)
+                    val alpha=1f/config.camera.smoothingFrames
+                    val sx=previous.first+(x-previous.first)*alpha
+                    val sy=previous.second+(y-previous.second)*alpha
+                    smoothedCamera[slot]=sx to sy
+                    val deltaX=sx*step*config.camera.horizontalSensitivity
+                    val deltaY=sy*step*config.camera.verticalSensitivity
+                    var nextX = current.first + deltaX
+                    var nextY = current.second + deltaY
                     val outside = abs(nextX - anchor.x) > radius || abs(nextY - anchor.y) > radius
                     if (outside) {
                         if (!injector.endTouch(slot)) { onError("Camera release failed for slot $slot"); return@forEach }
@@ -450,8 +466,8 @@ class GamepadMappingRuntime(
                             onError("Camera touch reset failed")
                             return@forEach
                         }
-                        nextX = anchor.x + x * step
-                        nextY = anchor.y + y * step
+                        nextX = anchor.x + deltaX
+                        nextY = anchor.y + deltaY
                     }
                     nextX = nextX.coerceIn(0f, width - 1f)
                     nextY = nextY.coerceIn(0f, height - 1f)

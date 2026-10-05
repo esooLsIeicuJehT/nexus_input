@@ -250,7 +250,7 @@ class ControlystRepository(
                 preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
                 controllerProfileId = if (json.has("controllerProfileId") && !json.isNull("controllerProfileId")) json.getString("controllerProfileId") else null,
                 joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
-                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", true), joystick.optDouble("curveExponent", 1.0).toFloat()),
+                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", false), joystick.optDouble("curveExponent", 1.0).toFloat()),
                 camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),
                     camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
                 antiRecoilEnabled = json.optBoolean("antiRecoilEnabled", false), antiRecoilVerticalPull = json.optDouble("antiRecoilVerticalPull", 0.0).toFloat(),

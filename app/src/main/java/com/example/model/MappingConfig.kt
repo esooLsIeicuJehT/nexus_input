@@ -4,7 +4,7 @@ data class JoystickSettings(
     val innerDeadzone: Float = 0.15f,
     val outerDeadzone: Float = 0.95f,
     val runThresholdNorm: Float = 0.75f,
-    val sprintLockEnabled: Boolean = true,
+    val sprintLockEnabled: Boolean = false,
     val curveExponent: Float = 1.0f     // Linear 1.0, Exponential 1.4
 )
 

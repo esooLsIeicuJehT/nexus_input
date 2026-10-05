@@ -160,4 +160,35 @@ class RuntimeTest {
         runtime.shutdown(null)
     }
 
+    @Test fun joystickCurveAndCameraSensitivitySmoothingChangeInjectedCoordinates() {
+        fun firstMove(profile: MappingConfig,snapshot: GamepadMappingRuntime.MotionSnapshot): Pair<Float,Float> {
+            val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)});val backend=Recording()
+            try {
+                runtime.handleMotionSnapshot(snapshot,profile,backend)
+                val deadline=System.nanoTime()+1_000_000_000
+                while(backend.calls.none { it.first=="move" } && System.nanoTime()<deadline) Thread.sleep(5)
+                return backend.calls.first { it.first=="move" }.third
+            } finally { runtime.shutdown(backend) }
+        }
+        val ls=config(MappingNode("ls",.2f,.7f,.2f,NodeType.JOYSTICK_ZONE,"LS",deadzoneInner=0f,deadzoneOuter=1f))
+            .copy(joystick=JoystickSettings(curveExponent=2f))
+        assertEquals(224.8f,firstMove(ls,sample(lx=.5f)).first,.01f)
+        val rs=config(MappingNode("rs",.5f,.5f,.2f,NodeType.CAMERA_DRAG,"RS",deadzoneInner=0f,deadzoneOuter=1f))
+            .copy(camera=CameraSettings(2f,.5f,2f,2))
+        val position=firstMove(rs,sample(rx=.5f,ry=.5f))
+        assertEquals(505f,position.first,.01f);assertEquals(250.875f,position.second,.01f)
+    }
+    @Test fun aMacroCannotRetriggerWhileItsPreviousStepsArePending() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val profile=config(MappingNode("macro",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(500,"TAP"))))
+        try {
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),profile,backend)
+            runtime.awaitIdle()
+            assertTrue(errors.any { it.contains("already running") });assertTrue(backend.calls.isEmpty())
+            assertTrue(runtime.releaseAll(backend))
+        } finally { runtime.shutdown(null) }
+    }
+
 }
