@@ -130,7 +130,7 @@ fun CrosshairStudioScreen(
                 .border(1.5.dp, DarkSurfaceBorder, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-            // Simulated game target backdrop lines
+            // Reference grid for editing the actual configured reticle.
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val cx = size.width / 2f
                 val cy = size.height / 2f

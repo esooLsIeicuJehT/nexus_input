@@ -22,6 +22,15 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
 class ProfileWorkflowTest {
+    @Test fun missingRealStickSamplesEndCalibrationAndReportFailure() = withViewModel { vm,_ ->
+        var completions=0
+        vm.startStickCalibration { completions++ }
+        await { completions>0 }
+        assertEquals(1,completions)
+        assertFalse(vm.stickCalibrationState.value.isMeasured)
+        assertNotNull(vm.stickCalibrationState.value.error)
+        assertTrue(vm.snackMessage.value!!.contains("Stick calibration failed"))
+    }
     private fun await(predicate: () -> Boolean) {
         val deadline=System.nanoTime()+5_000_000_000
         while(!predicate() && System.nanoTime()<deadline) Thread.sleep(10)

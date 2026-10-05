@@ -16,5 +16,11 @@ class ArchitectureTest(unittest.TestCase):
                 self.assertTrue(boundary.violations(root),bad)
             path.write_text('val status="KernelSU available; /dev/uinput ready"\nval name="NEXUS INPUT gamepad mapper"')
             self.assertEqual([],boundary.violations(root))
+            path.write_text('text = "CONTROLYST"')
+            self.assertTrue(boundary.violations(root))
+            path.write_text('Text("Controlyst setup")')
+            self.assertTrue(boundary.violations(root))
+            path.write_text('val databaseName="controlyst_database"')
+            self.assertEqual([],boundary.violations(root))
     def test_current_apk_obeys_boundary(self):
         self.assertEqual([],boundary.violations(boundary.ROOT/'app/src/main'))

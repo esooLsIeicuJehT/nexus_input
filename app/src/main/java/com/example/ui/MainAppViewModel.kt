@@ -400,11 +400,11 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     fun startStickCalibration(onComplete: () -> Unit) {
         viewModelScope.launch {
-            calibrationManager.runStickCalibration { state ->
-                if (state.phase == "CALIBRATION COMPLETE") {
-                    onComplete()
+            try {
+                if(!calibrationManager.runStickCalibration {}) {
+                    showSnack("Stick calibration failed: ${stickCalibrationState.value.error ?: stickCalibrationState.value.phase}")
                 }
-            }
+            } finally { onComplete() }
         }
     }
 
@@ -551,11 +551,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun startStickCalibration() {
-        viewModelScope.launch {
-            calibrationManager.runStickCalibration { state ->
-                // state updated via calibrationManager flow
-            }
-        }
+        startStickCalibration {}
     }
 
     fun calibrateTriggerAndSave(left: Boolean) {

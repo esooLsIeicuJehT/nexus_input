@@ -148,7 +148,7 @@ fun ControlystLogoIcon(
 }
 
 /**
- * Centered Header Logo with Engineered Typography "CONTROLYST" matching final.jpeg
+ * Nexus header typography. Internal function names are retained for source compatibility.
  */
 @Composable
 fun ControlystLogoWithText(
@@ -165,7 +165,7 @@ fun ControlystLogoWithText(
         ControlystLogoIcon(size = iconSize, animated = false)
         Spacer(Modifier.width(10.dp))
         Text(
-            text = "CONTROLYST",
+            text = "NEXUS INPUT",
             color = Color.White,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 17.sp,

@@ -62,7 +62,7 @@ fun OnboardingScreen(
                         ControlystLogoIcon(size = 24.dp)
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "CONTROLYST",
+                            text = "NEXUS INPUT",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color.White,
@@ -203,7 +203,10 @@ fun OnboardingScreen(
                     onOverride = { viewModel.overrideControllerType(it) }
                 )
                 4 -> StepCalibrationWalkthrough(viewModel = viewModel)
-                5 -> StepMappingTutorial(viewModel = viewModel)
+                5 -> StepMappingTutorial(viewModel = viewModel) {
+                    onFinish()
+                    viewModel.selectTab("profiles")
+                }
             }
 
             if (showWebUiSheet) {
@@ -314,7 +317,7 @@ fun StepWelcome() {
         Spacer(Modifier.height(20.dp))
 
         Text(
-            text = "CONTROLYST",
+            text = "NEXUS INPUT",
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = FontWeight.ExtraBold,
                 color = Color.White,
@@ -753,7 +756,7 @@ fun StepPermissions(
 
         PermissionItemCard(
             title = "1. Accessibility Service",
-            subtitle = "Simulates touches for non-root game mapping.",
+            subtitle = "Dispatches Android tap and swipe gestures for supported non-root profiles.",
             tag = "Essential",
             onClick = { onOpenRationale("ACCESSIBILITY") }
         )
@@ -996,7 +999,7 @@ fun StepCalibrationWalkthrough(viewModel: MainAppViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Status: ${stickState.phase}",
+                    text = stickState.error ?: "Status: ${stickState.phase}",
                     color = CyberCyan,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp
@@ -1025,7 +1028,7 @@ fun StepCalibrationWalkthrough(viewModel: MainAppViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        if (isCalibrating) "Calibrating (Keep Centered)..." else "Start Auto Deadzone Test",
+                        if (isCalibrating) stickState.phase else "Start Auto Deadzone Test",
                         color = Color(0xFF00363D),
                         fontWeight = FontWeight.Bold
                     )
@@ -1046,11 +1049,16 @@ fun StepCalibrationWalkthrough(viewModel: MainAppViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Speed, contentDescription = null, tint = ElectricViolet)
                     Spacer(Modifier.width(10.dp))
-                    Text("Touch Latency Benchmark", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Backend Request Timing", fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (latencyResult.roundTripMs > 0) "Backend call: ${latencyResult.roundTripMs}ms (${latencyResult.grade})" else "Tap to time a backend call; touch latency is not measured",
+                    text = when {
+                        latencyResult.isTesting -> "Timing actual backend request"
+                        latencyResult.grade.startsWith("FAILED") -> latencyResult.grade
+                        latencyResult.grade != "NOT MEASURED" -> "Backend call: ${latencyResult.roundTripMs}ms (${latencyResult.grade})"
+                        else -> "Tap to time a backend call; touch latency is not measured"
+                    },
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
@@ -1066,7 +1074,7 @@ fun StepCalibrationWalkthrough(viewModel: MainAppViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = ElectricViolet)
                 ) {
-                    Text(if (isTestingLatency) "Benchmarking..." else "Benchmark Latency")
+                    Text(if (isTestingLatency) "Timing..." else "Time backend request")
                 }
             }
         }
@@ -1074,97 +1082,23 @@ fun StepCalibrationWalkthrough(viewModel: MainAppViewModel) {
 }
 
 @Composable
-fun StepMappingTutorial(viewModel: MainAppViewModel) {
-    val activeConfig by viewModel.activeConfig.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        Text(
-            text = "Mini-Tutorial: Visual Mapping",
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Nodes are normalized (0..1) so configs look identical on any phone, tablet, or foldable screen.",
-            style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
-        )
-
+fun StepMappingTutorial(viewModel: MainAppViewModel, onOpenProfiles: () -> Unit) {
+    val config by viewModel.activeConfig.collectAsState()
+    Column(Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())) {
+        Text("Create your game mappings", style=MaterialTheme.typography.titleLarge, color=TextPrimary)
+        Spacer(Modifier.height(12.dp))
+        Text("Choose an installed game in Profiles, import or capture its real screenshot, then place touch targets and bind physical controller inputs.",color=TextSecondary)
+        Spacer(Modifier.height(12.dp))
+        Text("Coordinates are saved as fractions of the screen. Review the actual game geometry and bindings after rotation or a HUD change.",color=TextSecondary)
         Spacer(Modifier.height(16.dp))
-
-        // Sample interactive preview mini-box
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF0F172A))
-                .border(1.5.dp, CyberCyan.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            // Simulated HUD background
-            Column(
-                modifier = Modifier.fillMaxSize().padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("SAMPLE GAME HUD [Delta Force Mobile]", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("19.5:9 Scaled", color = CyberCyan, fontSize = 11.sp)
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    // Left stick sample node
-                    Box(
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(CyberCyan.copy(alpha = 0.2f))
-                            .border(1.5.dp, CyberCyan, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("LS Move", color = CyberCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    // Right fire sample node
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(AccentRose.copy(alpha = 0.25f))
-                                .border(1.5.dp, AccentRose, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("RT Fire", color = AccentRose, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(AccentGreen.copy(alpha = 0.25f))
-                                .border(1.5.dp, AccentGreen, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("A Jump", color = AccentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-
+        if(config.gamePackage.isNotBlank()) {
+            Text("Selected profile: ${config.profileName}",color=CyberCyan)
+            Text("Game: ${config.gamePackage}",color=TextSecondary)
+            Text("Configured bindings: ${config.buttons.size}",color=TextSecondary)
+        } else Text("No game profile is selected yet.",color=TextSecondary)
         Spacer(Modifier.height(16.dp))
-
-        Text(
-            text = "You're all set! NEXUS INPUT has initialized your layout profile with ${activeConfig.buttons.size} preset buttons. You can edit them at any time in the Visual Mapper tab.",
-            color = TextSecondary,
-            fontSize = 13.sp,
-            lineHeight = 19.sp
-        )
+        Text("Mapping starts only when you explicitly launch a valid profile with a ready backend. Use panic stop if release or cleanup cannot be confirmed.",color=TextSecondary)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick=onOpenProfiles,modifier=Modifier.testTag("onboarding_open_profiles")) { Text("Open Profiles") }
     }
 }
