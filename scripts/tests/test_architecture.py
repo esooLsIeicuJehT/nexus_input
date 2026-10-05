@@ -22,5 +22,12 @@ class ArchitectureTest(unittest.TestCase):
             self.assertTrue(boundary.violations(root))
             path.write_text('val databaseName="controlyst_database"')
             self.assertEqual([],boundary.violations(root))
+            path=root/'build.gradle.kts'
+            for invalid in ['alias(libs.plugins.secrets)','implementation(libs.firebase.auth)','assets.directories.add(rootProject.file("kernelsu-module").absolutePath)']:
+                path.write_text(invalid)
+                self.assertTrue(boundary.violations(path))
+            path.write_text('val keyAlias="upload"')
+            self.assertEqual([],boundary.violations(path))
     def test_current_apk_obeys_boundary(self):
         self.assertEqual([],boundary.violations(boundary.ROOT/'app/src/main'))
+        self.assertEqual([],boundary.violations(boundary.ROOT/'app/build.gradle.kts'))
