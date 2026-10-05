@@ -23,13 +23,16 @@ require(signingEnvironment.values.none { it != null } || signingSupplied) {
   "Release signing is incomplete: provide KEYSTORE_PATH, STORE_PASSWORD and KEY_PASSWORD together."
 }
 require(!(unsignedRelease && signingSupplied)) { "unsignedRelease cannot be combined with signing credentials" }
-gradle.taskGraph.whenReady {
-  val releaseRequested = allTasks.any { it.project == project && it.name.endsWith("Release", ignoreCase = true) }
-  if (releaseRequested && !signingSupplied && !unsignedRelease) {
-    error("Release signing credentials are missing. For an explicitly UNSIGNED CI validation build, use -PunsignedRelease=true.")
-  }
-  if (releaseRequested && unsignedRelease) logger.lifecycle("UNSIGNED release validation: this artifact cannot upgrade an installed signed app.")
+val releaseArtifactRequested = gradle.startParameter.taskNames.any { path ->
+  val task = path.substringAfterLast(':')
+  task in setOf("build", "assemble", "bundle") ||
+      task.endsWith("Release", ignoreCase = true) &&
+      listOf("assemble", "package", "bundle", "sign", "validateSigning").any { task.startsWith(it) }
 }
+if (releaseArtifactRequested && !signingSupplied && !unsignedRelease) {
+  error("Release signing credentials are missing. For an explicitly UNSIGNED CI validation build, use -PunsignedRelease=true.")
+}
+if (releaseArtifactRequested && unsignedRelease) logger.lifecycle("UNSIGNED release validation: this artifact cannot upgrade an installed signed app.")
 
 android {
   namespace = "com.example"
@@ -125,7 +128,7 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 androidComponents {
   beforeVariants(selector().withBuildType("release")) { variant ->
-    variant.enableUnitTest = true
+    variant.hostTests.getValue(com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE).enable = true
   }
 }
 

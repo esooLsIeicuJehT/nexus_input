@@ -92,10 +92,6 @@ fun NexusHomeScreen(
     val context = LocalContext.current
     val games by viewModel.games.collectAsState()
     val selectedGame by viewModel.selectedGame.collectAsState()
-    val installed by viewModel.installedApps.collectAsState()
-    val loading by viewModel.appInventoryLoading.collectAsState()
-    var showApps by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
     val activeConfig by viewModel.activeConfig.collectAsState()
     val controller by viewModel.controllerProfile.collectAsState()
     val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
@@ -105,9 +101,10 @@ fun NexusHomeScreen(
     val activeGame = selectedGame ?: games.firstOrNull { it.packageName == activeConfig.gamePackage }
     val activeProbe = privilegeResults.firstOrNull { it.method == activePrivilege }
     val engineReady = activeProbe?.isDetected == true
+    val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
     val latencyLabel = when {
         latency.isTesting -> "Testing"
-        latency.roundTripMs > 0 -> "Legacy ${latency.roundTripMs} ms"
+        latency.roundTripMs > 0 -> "${latency.roundTripMs} ms call"
         else -> "Not measured"
     }
 
@@ -147,7 +144,7 @@ fun NexusHomeScreen(
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (engineReady) "ENGINE READY" else "ENGINE NEEDS SETUP",
+                        if (runtime.backendReady) "MAPPING BACKEND READY" else if(engineReady) "BACKEND AVAILABLE; MAPPING IDLE" else "BACKEND NEEDS SETUP",
                         color = if (engineReady) AccentGreen else AccentAmber,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -168,7 +165,7 @@ fun NexusHomeScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricCard(
                 icon = Icons.Default.Speed,
-                label = "Latency status",
+                label = "Backend call timing",
                 value = latencyLabel,
                 accent = if (latency.roundTripMs > 0) AccentAmber else NexusCyan,
                 modifier = Modifier.weight(1f)
@@ -319,6 +316,11 @@ fun NexusProfilesScreen(
     val context = LocalContext.current
     val games by viewModel.games.collectAsState()
     val selectedGame by viewModel.selectedGame.collectAsState()
+    val installed by viewModel.installedApps.collectAsState()
+    val loading by viewModel.appInventoryLoading.collectAsState()
+    var showApps by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation),
