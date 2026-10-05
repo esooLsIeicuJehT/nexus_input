@@ -7,6 +7,10 @@ on:
     branches: [main, feature/nexus-v1-finish]
   workflow_dispatch:
 
+concurrency:
+  group: android-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -34,7 +38,7 @@ jobs:
           python3 scripts/check_native_boundary.py
           python3 -m unittest discover -s scripts/tests -v
           node --test scripts/tests/webui.test.js
-          sh -n kernelsu-module/update.sh kernelsu-module/service.sh kernelsu-module/customize.sh
+          sh -n kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh
       - name: Debug and release regression tests, APK and AAB validation
         run: gradle --no-daemon --stacktrace -PunsignedRelease=true :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:lintDebug :app:lintRelease
       - name: Verify packaged identity and native libraries

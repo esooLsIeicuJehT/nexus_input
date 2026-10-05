@@ -1,91 +1,59 @@
-name: Publish KernelSU companion
+name: Stage one Nexus Android and KernelSU draft release
 
 on:
   workflow_dispatch:
+    inputs:
+      signed_run_id:
+        description: Successful signed-release run ID for this exact commit
+        required: true
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
-  publish:
+  stage-release:
     runs-on: ubuntu-latest
+    environment: android-release
     steps:
-      - name: Check out main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Read module version
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="$(sed -n 's/^version=//p' kernelsu-module/module.prop | head -n1)"
-          VERSION_CODE="$(sed -n 's/^versionCode=//p' kernelsu-module/module.prop | head -n1)"
-          test -n "$VERSION"
-          test -n "$VERSION_CODE"
-          TAG="ksu-v${VERSION}"
-          ZIP="NEXUS_INPUT-KernelSU-Companion-v${VERSION}.zip"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
-
-      - name: Build module ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          (
-            cd kernelsu-module
-            zip -qr "../dist/${{ steps.meta.outputs.zip }}" .
-          )
-          sha256sum "dist/${{ steps.meta.outputs.zip }}"
-
-      - name: Publish GitHub release asset
+      - uses: actions/checkout@v4
+      - name: Require successful signed artifacts from this commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+          SIGNED_RUN_ID: ${{ inputs.signed_run_id }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.meta.outputs.tag }}"
-          ZIP="dist/${{ steps.meta.outputs.zip }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ZIP" --clobber
-          else
-            gh release create "$TAG" "$ZIP" \
-              --title "NEXUS INPUT KernelSU ${{ steps.meta.outputs.version }}" \
-              --notes-file CHANGELOG.md
-          fi
-
-      - name: Update update.json
-        shell: bash
-        run: |
-          set -euo pipefail
-          SHA="$(sha256sum "dist/${{ steps.meta.outputs.zip }}" | awk '{print $1}')"
-          python3 - <<PY
-          import json
+          case "$SIGNED_RUN_ID" in ''|*[!0-9]*) echo '::error::Invalid signed run ID'; exit 1;; esac
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SIGNED_RUN_ID" > "$RUNNER_TEMP/signed-run.json"
+          python3 - <<'PY'
+          import json, os
           from pathlib import Path
-          data = {
-              "version": "${{ steps.meta.outputs.version }}",
-              "versionCode": int("${{ steps.meta.outputs.version_code }}"),
-              "zipUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/${{ steps.meta.outputs.zip }}",
-              "sha256": "$SHA",
-              "changelog": "https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md",
-          }
-          Path("update.json").write_text(json.dumps(data, indent=2) + "\n")
+          run = json.loads((Path(os.environ['RUNNER_TEMP'])/'signed-run.json').read_text())
+          assert run['head_sha'] == os.environ['GITHUB_SHA'], 'Signed artifacts must match this exact commit'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Signed workflow must pass'
+          assert run['path'] == '.github/workflows/android-signed-release.yml', 'An unsigned validation run is not a signing run'
           PY
-
-      - name: Commit update manifest
-        shell: bash
+          gh run download "$SIGNED_RUN_ID" --repo "$GITHUB_REPOSITORY" --name nexus-input-signed-v1 --dir release-assets
+      - name: Check shared version and stage a draft for device review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- update.json; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add update.json
-          git commit -m "Publish KernelSU companion ${{ steps.meta.outputs.version }}"
-          git push origin HEAD:main
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          version = dict(line.split('=',1) for line in Path('version.properties').read_text().splitlines() if '=' in line)
+          assets = Path('release-assets')
+          manifest = json.loads((assets/'dist/update.json').read_text())
+          assert manifest['version'] == version['versionName'] and manifest['versionCode'] == int(version['versionCode'])
+          archive = assets/'dist'/Path(manifest['zipUrl']).name
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == manifest['sha256'], 'Module digest mismatch'
+          apk = assets/'app/build/outputs/apk/release/app-release.apk'
+          aab = assets/'app/build/outputs/bundle/release/app-release.aab'
+          assert apk.is_file() and aab.is_file(), 'Signed APK/AAB assets are missing'
+          tag = 'v'+version['versionName']
+          notes = Path(os.environ['RUNNER_TEMP'])/'release-notes.md'
+          notes.write_text('NEXUS INPUT '+version['versionName']+' draft.\n\nSigned Android and KernelSU artifacts from commit '+os.environ['GITHUB_SHA']+'.\n\nHardware and Figma acceptance are not established by CI. Complete docs/DEVICE_TEST_CHECKLIST_V1.md and docs/RELEASE_V1.md before publication. The public updater manifest has not been changed.\n')
+          subprocess.run(['gh','release','create',tag,str(apk),str(aab),str(archive),str(assets/'dist/update.json'),str(assets/'dist/SHA256SUMS'),str(assets/'dist/ANDROID-SHA256SUMS'),'--draft','--target',os.environ['GITHUB_SHA'],'--title','NEXUS INPUT '+version['versionName'],'--notes-file',str(notes)],check=True)
+          PY
