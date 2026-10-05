@@ -193,13 +193,13 @@ class CalibrationManager(private val context: Context) {
 
             suspend fun gather(target: MutableList<Float>, duration: Long, phase: String) {
                 val start = SystemClock.uptimeMillis()
-                var lastEvent = ControllerInputMonitor.state.value.lastEventUptimeMs
+                var lastSequence = ControllerInputMonitor.state.value.observedEventSequence
                 withTimeoutOrNull(duration) {
                     ControllerInputMonitor.state.collect { sample ->
-                        if (sample.deviceId != device.id || sample.lastEventUptimeMs == lastEvent) return@collect
+                        if (sample.deviceId != device.id || sample.observedEventSequence == lastSequence) return@collect
                         val x = normalizedAxis(sample, axisX) ?: return@collect
                         val y = normalizedAxis(sample, axisY) ?: return@collect
-                        lastEvent = sample.lastEventUptimeMs
+                        lastSequence = sample.observedEventSequence
                         val radius = hypot(x, y)
                         if (!radius.isFinite()) return@collect
                         target += radius
@@ -261,12 +261,12 @@ class CalibrationManager(private val context: Context) {
 
             suspend fun gather(target: MutableList<Float>, phase: String) {
                 _triggerState.value = TriggerCalibrationState(phase = phase)
-                var lastEvent = ControllerInputMonitor.state.value.lastEventUptimeMs
+                var lastSequence = ControllerInputMonitor.state.value.observedEventSequence
                 withTimeoutOrNull(3000) {
                     ControllerInputMonitor.state.collect { sample ->
-                        if (sample.deviceId != device.id || sample.lastEventUptimeMs == lastEvent) return@collect
+                        if (sample.deviceId != device.id || sample.observedEventSequence == lastSequence) return@collect
                         val normalized = normalizedAxis(sample, axis) ?: return@collect
-                        lastEvent = sample.lastEventUptimeMs
+                        lastSequence = sample.observedEventSequence
                         val value = (normalized + 1f) / 2f
                         if (value.isFinite()) {
                             target += value
