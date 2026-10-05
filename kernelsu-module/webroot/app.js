@@ -5,7 +5,8 @@ const APK_COMPONENT = `${APK_PACKAGE}/com.example.MainActivity`;
 const MODULE_ID = 'gamepad.pro.root';
 const MODULE_DIR = `/data/adb/modules/${MODULE_ID}`;
 let githubUpdateAvailable = false;
-let rootExecTail = Promise.resolve();
+let rootExecActive = false;
+const rootExecQueue = [];
 
 function execRootNow(command) {
   return new Promise((resolve, reject) => {
@@ -38,10 +39,29 @@ function execRootNow(command) {
 }
 
 function execRoot(command) {
-  const run = () => execRootNow(command);
-  const request = rootExecTail.then(run, run);
-  rootExecTail = request.then(() => undefined, () => undefined);
-  return request;
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      rootExecActive = true;
+      execRootNow(command).then(
+        result => {
+          resolve(result);
+          finishRootCommand();
+        },
+        error => {
+          reject(error);
+          finishRootCommand();
+        }
+      );
+    };
+    if (rootExecActive) rootExecQueue.push(run);
+    else run();
+  });
+}
+
+function finishRootCommand() {
+  rootExecActive = false;
+  const next = rootExecQueue.shift();
+  if (next) next();
 }
 
 function state(id, text, kind) {
@@ -191,6 +211,7 @@ async function checkGithubUpdate() {
   try {
     const r = await execRoot(`${MODULE_DIR}/update.sh check`);
     const kv = parseKv(r.stdout);
+    document.getElementById('installedVersion').textContent = kv.CURRENT_VERSION || 'unavailable';
     document.getElementById('remoteVersion').textContent = kv.REMOTE_VERSION || 'unavailable';
     if (r.errno === 10 && kv.STATE === 'AVAILABLE') {
       githubUpdateAvailable = true;
@@ -241,9 +262,6 @@ document.getElementById('refresh').addEventListener('click', refresh);
 document.getElementById('launch').addEventListener('click', launch);
 document.getElementById('checkUpdate').addEventListener('click', checkGithubUpdate);
 document.getElementById('installUpdate').addEventListener('click', installGithubUpdate);
-
-readInstalledVersion();
-refresh();
 
 let cpuPolicies = [];
 let devfreqDevices = [];
@@ -351,4 +369,4 @@ document.getElementById('applyCpuFrequencies').addEventListener('click',() => ap
 document.getElementById('applyDevfreqGovernor').addEventListener('click',() => applyRootControl('devfreq-governor',['devfreqDevice','devfreqGovernor'].map(id => document.getElementById(id).value)));
 document.getElementById('applySwappiness').addEventListener('click',() => applyRootControl('swappiness',[document.getElementById('swappiness').value]));
 document.getElementById('readControlLog').addEventListener('click',readControlLog);
-state('controlStatus','Device capabilities are not scanned automatically. Tap “Read device capabilities” to query live root values.','');
+state('controlStatus','No root commands run automatically. Use Refresh diagnostics, Read device capabilities, or Check GitHub when needed.','');
