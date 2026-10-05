@@ -59,18 +59,19 @@ object LocalBackupManager {
     suspend fun validateAndInspectBackupZip(file: File): BackupMetadata? = withContext(Dispatchers.IO) {
         return@withContext try {
             ZipFile(file).use { zip ->
-                val metaEntry = zip.getEntry("metadata.json") ?: return@withContext null
+                val metaEntry = zip.getEntry("metadata.json") ?: error("Backup metadata is missing")
                 val content = zip.getInputStream(metaEntry).bufferedReader().use { it.readText() }
                 val json = JSONObject(content)
                 BackupMetadata(
-                    appVersion = json.optString("appVersion", "1.0.0"),
-                    backupSchemaVersion = json.optInt("backupSchemaVersion", 1),
-                    timestamp = json.optLong("timestamp", System.currentTimeMillis()),
-                    totalProfilesCount = json.optInt("totalProfilesCount", 0),
+                    appVersion = json.getString("appVersion"),
+                    backupSchemaVersion = json.getInt("backupSchemaVersion").also { require(it in 1..3) { "Unsupported backup schema" } },
+                    timestamp = json.getLong("timestamp"),
+                    totalProfilesCount = json.getInt("totalProfilesCount"),
                     deviceModel = json.optString("deviceModel", "Unknown")
                 )
             }
         } catch (e: Exception) {
+            android.util.Log.e("NexusBackup","Backup inspection failed: ${e.message}",e)
             null
         }
     }

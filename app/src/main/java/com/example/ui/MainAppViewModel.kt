@@ -42,6 +42,7 @@ import com.example.model.*
 import com.example.ai.vision.AiHudDetector
 import com.example.ai.ConfigDiffEngine
 import com.example.backup.LocalBackupManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -446,6 +447,28 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
                 if (state.phase == "CALIBRATION COMPLETE") {
                     onComplete()
                 }
+            }
+        }
+    }
+
+    fun exportBackup(context: Context) {
+        viewModelScope.launch {
+            try {
+                val entities=repository.allProfiles.first()
+                val configs=entities.map { entity ->
+                    val config=ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
+                    val errors=com.example.input.ProfileValidator.errors(config,entity.gamePackage,entity.id,false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") };config
+                }
+                val zip=LocalBackupManager.exportFullBackupZip(context,configs)
+                val uri=androidx.core.content.FileProvider.getUriForFile(context,"${context.packageName}.fileprovider",zip)
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type="application/zip";putExtra(Intent.EXTRA_STREAM,uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },"Save or share NEXUS INPUT backup"))
+                showSnack("Backup ZIP created with ${configs.size} saved profiles; choose where to save it.")
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Backup export failed: ${error.message}")
             }
         }
     }

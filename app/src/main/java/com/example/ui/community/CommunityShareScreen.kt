@@ -88,7 +88,7 @@ fun CommunityShareScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Community Config Repository",
+                text = "Local game profiles",
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
                 fontSize = 16.sp
@@ -97,7 +97,7 @@ fun CommunityShareScreen(
             // Local ZIP Backup
             TextButton(
                 onClick = {
-                    viewModel.showSnack("Exported all profiles to /Download/controlyst_backup.zip")
+                    viewModel.exportBackup(context)
                 }
             ) {
                 Icon(Icons.Default.Archive, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(16.dp))
@@ -166,8 +166,7 @@ fun CommunityShareScreen(
                                 onClick = {
                                     try {
                                         val parsed = ControlystRepository.deserializeJsonToConfig(profile.jsonBlob)
-                                        viewModel.updateActiveConfig(parsed)
-                                        viewModel.showSnack("Loaded profile: ${profile.profileName}")
+                                        viewModel.selectSavedProfile(profile)
                                     } catch (e: Exception) {
                                         viewModel.showSnack("Failed to parse config JSON")
                                     }
@@ -269,10 +268,13 @@ fun CommunityShareScreen(
                     onClick = {
                         try {
                             val parsed = ControlystRepository.deserializeJsonToConfig(importedJsonText)
-                            viewModel.updateActiveConfig(parsed)
-                            viewModel.showSnack("Imported '${parsed.profileName}' successfully!")
-                            showImportDialog = false
-                            importedJsonText = ""
+                            val errors=com.example.input.ProfileValidator.errors(parsed,requireBindings=false)
+                            require(errors.isEmpty()) { errors.joinToString("; ") }
+                            viewModel.updateActiveConfig(parsed) {
+                                viewModel.showSnack("Imported '${parsed.profileName}' into Room")
+                                showImportDialog = false
+                                importedJsonText = ""
+                            }
                         } catch (e: Exception) {
                             viewModel.showSnack("Invalid JSON: ${e.localizedMessage}")
                         }

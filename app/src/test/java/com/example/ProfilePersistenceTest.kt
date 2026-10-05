@@ -21,7 +21,7 @@ class ProfilePersistenceTest {
         val db=Room.inMemoryDatabaseBuilder(context,ControlystDatabase::class.java).build()
         val store=ProfilePersistence(db)
         val first=MappingConfig(id="first",profileName="First",gamePackage="com.test.game",buttons=listOf(MappingNode("a",.2f,.3f)))
-        store.save(first);store.save(first.copy(id="second",profileName="Second"))
+        store.save(first);assertEquals("com.test.game",db.gameDao().getGame("com.test.game")!!.displayName);store.save(first.copy(id="second",profileName="Second"))
         assertFalse(db.configProfileDao().getProfileById("first")!!.isDefault)
         assertTrue(db.configProfileDao().getProfileById("second")!!.isDefault)
         assertEquals("second",db.mapperStateDao().get()!!.activeProfileId)
@@ -30,6 +30,15 @@ class ProfilePersistenceTest {
         assertTrue(runCatching { store.load("first","com.wrong.game") }.isFailure)
         assertTrue(runCatching { store.load("missing","com.test.game") }.isFailure)
         db.close()
+    }
+    @Test fun invalidBackupMetadataCannotBecomeAValidBackup() = runBlocking {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val file=java.io.File(context.cacheDir,"invalid-backup.zip")
+        java.util.zip.ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("metadata.json"));zip.write("{}".toByteArray());zip.closeEntry()
+        }
+        assertNull(LocalBackupManager.validateAndInspectBackupZip(file))
+        file.delete();Unit
     }
     @Test fun exportedBackupPreservesFullCanonicalProfile() = runBlocking {
         val context=ApplicationProvider.getApplicationContext<Context>()

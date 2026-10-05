@@ -12,6 +12,7 @@ class ProfilePersistence(private val db: ControlystDatabase) {
         val errors = ProfileValidator.errors(config, requireBindings = false)
         require(errors.isEmpty()) { errors.joinToString("; ") }
         db.withTransaction {
+            if(db.gameDao().getGame(config.gamePackage)==null) db.gameDao().insertGame(com.example.data.entity.GameEntity(config.gamePackage,config.gameTitle.ifBlank { config.gamePackage }))
             db.configProfileDao().clearDefaults(config.gamePackage)
             db.configProfileDao().insertProfile(ConfigProfileEntity(config.id, config.gamePackage,
                 config.profileName, ControlystRepository.serializeConfigToJson(config), isDefault = true,

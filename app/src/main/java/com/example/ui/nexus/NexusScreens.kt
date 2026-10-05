@@ -175,8 +175,8 @@ fun NexusHomeScreen(
             )
             MetricCard(
                 icon = Icons.Default.Tune,
-                label = "Configured polling",
-                value = "${controller.pollingRateHz} Hz",
+                label = "Event capture",
+                value = if(com.example.input.ControllerInputMonitor.state.value.lastEventUptimeMs>0) "Observed" else "Waiting",
                 accent = NexusVioletLight,
                 modifier = Modifier.weight(1f)
             )
@@ -566,10 +566,8 @@ fun NexusDevicesScreen(
             }
             NexusPanel(Modifier.fillMaxWidth()) {
                 Text("INPUT CONFIGURATION", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-                DeviceSetting("Configured polling rate", "${controller.pollingRateHz} Hz")
                 DeviceSetting("Inner deadzone", "${(controller.stickInnerDeadzone * 100).toInt()}%")
                 DeviceSetting("Outer deadzone", "${(controller.stickOuterDeadzone * 100).toInt()}%")
-                DeviceSetting("Gyro aiming", if (controller.gyroAimingEnabled) "Enabled" else "Disabled")
             }
         } else {
             NexusPanel(Modifier.fillMaxWidth()) {
@@ -681,6 +679,7 @@ fun NexusSystemScreen(
         SectionTitle("Tools", "System controls")
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
+        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("community") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }
         SystemAction("Onboarding", "Run setup and permission checks again", Icons.Default.HelpOutline) { viewModel.restartOnboarding() }
     }
