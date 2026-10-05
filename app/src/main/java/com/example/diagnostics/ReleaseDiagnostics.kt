@@ -53,6 +53,11 @@ object ReleaseDiagnostics {
             .put("backends",JSONArray().apply { probes.forEach { probe ->
                 put(JSONObject().put("method",probe.method.name).put("state",probe.state.name).put("detail",probe.statusDetail))
             } }).put("inputDevices",devices)
+            .put("frameOverlay",JSONObject().put("enabled",com.example.frames.FrameMonitor.settings.value.enabled)
+                .put("layer",com.example.frames.FrameMonitor.state.value.layer ?: JSONObject.NULL)
+                .put("status",com.example.frames.FrameMonitor.state.value.status)
+                .put("error",com.example.frames.FrameMonitor.state.value.error ?: JSONObject.NULL)
+                .put("presentedFps",com.example.frames.FrameMonitor.state.value.stats?.fps ?: JSONObject.NULL))
             .put("lastControllerEventUptimeMs",ControllerInputMonitor.state.value.lastEventUptimeMs).toString(2)
     }
 }

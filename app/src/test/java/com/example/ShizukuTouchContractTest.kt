@@ -24,6 +24,8 @@ class ShizukuTouchContractTest {
         }
         override fun injectKey(keyCode:Int,action:Int,downTime:Long,eventTime:Long,metaState:Int,repeatCount:Int)="ERROR unused fixture operation"
         override fun selfTest()="ERROR fixture is not a privileged service"
+        override fun readSurfaceLayers()="ERROR fixture has no frame source"
+        override fun readSurfaceLatency(layer:String)="ERROR fixture has no frame source"
         override fun destroy()=Unit
     }
     private fun client(receiver:Receiver)=ShizukuInjector(ApplicationProvider.getApplicationContext<Context>()).also {

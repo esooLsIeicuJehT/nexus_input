@@ -7,5 +7,6 @@ class ControlystApp : Application() {
     override fun onCreate() {
         super.onCreate()
         NexusRuntimeContext.initialize(this)
+        com.example.frames.FrameMonitor.initialize(this)
     }
 }

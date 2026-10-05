@@ -303,6 +303,8 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun currentFrameSource(): InputInjector? = activeInjector
+
     fun emergencyRelease(onComplete: (Boolean) -> Unit) {
         val injector = activeInjector
         activeInjector = null

@@ -689,6 +689,7 @@ fun NexusSystemScreen(
 
         SectionTitle("Tools", "System controls")
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
+        SystemAction("Frame overlay", "Presented FPS and measured frame intervals", Icons.Default.Speed) { onNavigate("fps") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
         SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("profile_files") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }

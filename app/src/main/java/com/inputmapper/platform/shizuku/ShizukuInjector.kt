@@ -49,7 +49,7 @@ class ShizukuInjector(
         )
             .processNameSuffix("mapper_input")
             .tag("input-injector-v2")
-            .version(2)
+            .version(3)
             .daemon(false)
 
         val localConnection = object : ServiceConnection {
@@ -219,6 +219,9 @@ class ShizukuInjector(
     }
 
     private fun notReady() = InjectionResult.Failure(InjectionErrorCode.NOT_READY, "Shizuku injector is not connected")
+
+    fun readSurfaceLayers(): Result<String> = runCatching { (remote ?: error("Shizuku frame service is not connected")).readSurfaceLayers() }
+    fun readSurfaceLatency(layer:String): Result<String> = runCatching { (remote ?: error("Shizuku frame service is not connected")).readSurfaceLatency(layer) }
 
     override fun cleanup(): InjectionResult {
         val failures=mutableListOf<String>()

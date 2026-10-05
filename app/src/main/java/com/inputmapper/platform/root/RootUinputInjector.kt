@@ -220,6 +220,9 @@ internal class RootUinputInjector(
         callRemote("publish runtime state") { remote.publishState(state) }
     }
 
+    fun readSurfaceLayers(): Result<String> = runCatching { (service ?: error("Root frame service is not connected")).readSurfaceLayers() }
+    fun readSurfaceLatency(layer:String): Result<String> = runCatching { (service ?: error("Root frame service is not connected")).readSurfaceLatency(layer) }
+
     override fun cleanup(): InjectionResult = synchronized(lock) {
         val remote = service
         val destroyResult = if (remote == null) {

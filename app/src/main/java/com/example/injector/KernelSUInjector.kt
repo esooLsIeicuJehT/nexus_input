@@ -26,7 +26,7 @@ class KernelSUInjector(
 
     private val appContext = context.applicationContext
     private val lock = Any()
-    private var runtime: RuntimeKernelSUInjector? = null
+    @Volatile private var runtime: RuntimeKernelSUInjector? = null
     private var runtimeWidth = 0
     private var runtimeHeight = 0
 
@@ -79,6 +79,9 @@ class KernelSUInjector(
         val injector = runtime ?: return@synchronized false
         result("touch end", injector.endTouch(pointerId))
     }
+
+    override fun readSurfaceLayers(): Result<String> = runtime?.readSurfaceLayers() ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+    override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer) ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
 
     override fun cleanup() = synchronized(lock) {
         runtime?.cleanup()?.let { check(result("cleanup", it)) { "KernelSUInjector cleanup was rejected; inspect backend logs" } }

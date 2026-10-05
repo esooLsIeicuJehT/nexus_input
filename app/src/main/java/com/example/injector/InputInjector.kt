@@ -27,6 +27,9 @@ interface InputInjector {
 
     fun endTouch(pointerId: Int): Boolean = false
 
+    fun readSurfaceLayers(): Result<String> = Result.failure(UnsupportedOperationException("$method cannot read game frame timestamps"))
+    fun readSurfaceLatency(layer: String): Result<String> = Result.failure(UnsupportedOperationException("$method cannot read game frame timestamps"))
+
     fun releaseAll() {
         cleanup()
     }

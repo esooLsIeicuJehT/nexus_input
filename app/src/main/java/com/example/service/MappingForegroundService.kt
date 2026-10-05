@@ -69,6 +69,7 @@ class MappingForegroundService : Service() {
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
     private var loadJob: Job? = null
     private var inGameOverlay: InGameMapperOverlay? = null
+    private var frameOverlay: FrameTimeOverlay? = null
     private var crosshairOverlayManager: CrosshairOverlayManager? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -109,6 +110,7 @@ class MappingForegroundService : Service() {
     private fun startMapping(gamePkg: String, configId: String) {
         stopMapping(clearNotification = false)
 
+        frameOverlay=FrameTimeOverlay(this).apply { start() }
         _isServiceActive.value = true
         _activeGamePackage.value = gamePkg
         _isOverlayVisible.value = true
@@ -198,6 +200,7 @@ class MappingForegroundService : Service() {
         _activeGamePackage.value = null
         loadJob?.cancel()
         loadJob = null
+        frameOverlay?.hide();frameOverlay=null
         inGameOverlay?.hide()
         inGameOverlay = null
         MappingRuntimeBridge.disarm(MappingRuntimeBridge.state.value.error)

@@ -155,7 +155,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun selectTab(tab: String) {
-        if(tab !in setOf("home","library","profiles","profile_detail","mapper","devices","system","crosshair","calibration","profile_files","root_webui","macro","safety")) {
+        if(tab !in setOf("home","library","profiles","profile_detail","mapper","devices","system","fps","crosshair","calibration","profile_files","root_webui","macro","safety")) {
             showSnack("Screen unavailable: $tab")
             return
         }
