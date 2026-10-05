@@ -20,6 +20,8 @@ import com.example.injector.InputInjector
 import com.example.injector.InputInjectorFactory
 import com.example.injector.PrivilegeDetector
 import com.example.input.ControllerInputMonitor
+import com.example.input.ControllerSessionDevices
+import com.example.injector.PrivilegeBackendSelector
 import com.example.input.GamepadMappingRuntime
 import com.example.model.PrivilegeMethod
 import kotlinx.coroutines.CoroutineScope
@@ -38,7 +40,8 @@ class ControlystAccessibilityService : AccessibilityService() {
         screenSizeProvider = ::screenSize,
         onError = { message ->
             Log.e(TAG, message)
-            MappingRuntimeBridge.reportError(message)
+            MappingRuntimeBridge.disarm(message)
+            teardownInjectorAsync()
         }
     )
 
@@ -48,9 +51,22 @@ class ControlystAccessibilityService : AccessibilityService() {
     @Volatile
     private var runtimePreparing = false
 
+    private val capturedDevices = ControllerSessionDevices()
+
+    private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = Unit
+        override fun onInputDeviceChanged(deviceId: Int) = Unit
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            val used=capturedDevices.remove(deviceId)
+            ControllerInputMonitor.onDeviceRemoved(deviceId)
+            if(used && MappingRuntimeBridge.state.value.armed) PanicKillSwitch.triggerPanic(this@ControlystAccessibilityService,"Controller disconnected")
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         currentInstance = this
+        getSystemService(android.hardware.input.InputManager::class.java).registerInputDeviceListener(inputListener,mainHandler)
 
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.flags = info.flags or
@@ -118,7 +134,9 @@ class ControlystAccessibilityService : AccessibilityService() {
             return false
         }
 
-        return mappingRuntime.handleKeyEvent(event, config, injector)
+        val handled = mappingRuntime.handleKeyEvent(event, config, injector)
+        if (handled) capturedDevices.record(event.deviceId)
+        return handled
     }
 
     override fun onMotionEvent(event: MotionEvent) {
@@ -132,6 +150,7 @@ class ControlystAccessibilityService : AccessibilityService() {
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
             return
         }
+        capturedDevices.record(event.deviceId)
         mappingRuntime.handleMotionEvent(event, config, injector)
     }
 
@@ -142,14 +161,16 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "NEXUS accessibility service interrupted")
+        MappingRuntimeBridge.disarm("Accessibility capture interrupted; mapper disarmed")
+        teardownInjectorAsync()
     }
 
     override fun onDestroy() {
+        getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
         val current = activeInjector
         activeInjector = null
         if (current != null) {
-            mappingRuntime.releaseAll(current)
-            runCatching { current.cleanup() }
+            cleanupRuntime(current)
         }
         mappingRuntime.shutdown(null)
         backendExecutor.shutdownNow()
@@ -167,19 +188,21 @@ class ControlystAccessibilityService : AccessibilityService() {
                 val config = MappingRuntimeBridge.config.value
                 if (!expectedState.armed || !expectedState.targetForeground || config == null) return@execute
 
+                if (Build.VERSION.SDK_INT < 34 && config.buttons.any { it.type in setOf(com.example.model.NodeType.JOYSTICK_ZONE,com.example.model.NodeType.CAMERA_DRAG) }) {
+                    MappingRuntimeBridge.reportError("Android 14 or newer is required for global stick motion capture. Button-only profiles can use older Android versions.")
+                    return@execute
+                }
                 val probes = PrivilegeDetector(this).probeAll()
                 val requiresPersistent = mappingRuntime.requiresPersistentTouch(config)
-                val order = listOf(
-                    PrivilegeMethod.KERNELSU,
-                    PrivilegeMethod.SHIZUKU,
-                    PrivilegeMethod.MAGISK,
-                    PrivilegeMethod.ACCESSIBILITY
-                )
+                val order = PrivilegeBackendSelector.order(config.preferredBackend)
 
                 val failures = mutableListOf<String>()
                 for (method in order) {
                     val probe = probes.firstOrNull { it.method == method } ?: continue
-                    if (!probe.isDetected) continue
+                    if (!probe.isDetected || method == PrivilegeMethod.APATCH) {
+                        failures += "$method unavailable: ${probe.state}"
+                        continue
+                    }
                     if (method == PrivilegeMethod.ACCESSIBILITY && requiresPersistent) {
                         failures += "Accessibility cannot satisfy persistent-touch requirements"
                         continue
@@ -192,24 +215,26 @@ class ControlystAccessibilityService : AccessibilityService() {
                         continue
                     }
 
-                    if (!candidate.prepare()) {
+                    val prepared = try { candidate.prepare() } catch(error: Exception) {
+                        failures += "$method prepare threw: ${error.javaClass.simpleName}: ${error.message}"
+                        false
+                    }
+                    if (!prepared) {
                         failures += "$method prepare failed"
-                        runCatching { candidate.cleanup() }
+                        if (!cleanupCandidate(candidate)) return@execute
                         continue
                     }
 
                     val liveState = MappingRuntimeBridge.state.value
-                    if (!liveState.armed || !liveState.targetForeground || liveState.configId != expectedState.configId) {
-                        runCatching { candidate.cleanup() }
+                    if (!liveState.armed || !liveState.targetForeground || liveState.sessionId != expectedState.sessionId) {
+                        cleanupCandidate(candidate)
                         return@execute
                     }
 
-                    activeInjector?.let { previous ->
-                        mappingRuntime.releaseAll(previous)
-                        runCatching { previous.cleanup() }
-                    }
+                    activeInjector?.let(::cleanupRuntime)
                     activeInjector = candidate
-                    MappingRuntimeBridge.setBackend(method, true, null)
+                    MappingRuntimeBridge.setBackend(method, true, null,
+                        failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" })
                     Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}")
                     return@execute
                 }
@@ -222,9 +247,31 @@ class ControlystAccessibilityService : AccessibilityService() {
                 }
                 Log.e(TAG, detail)
                 MappingRuntimeBridge.reportError(detail)
+            } catch(error: Exception) {
+                Log.e(TAG,"Backend preparation failed",error)
+                MappingRuntimeBridge.reportError("Backend preparation failed: ${error.javaClass.simpleName}: ${error.message}")
             } finally {
                 runtimePreparing = false
             }
+        }
+    }
+
+    private fun cleanupCandidate(injector: InputInjector): Boolean = try {
+        injector.cleanup()
+        true
+    } catch(error: Exception) {
+        Log.e(TAG,"Backend cleanup failed",error)
+        MappingRuntimeBridge.disarm("Backend cleanup failed: ${error.message}")
+        false
+    }
+
+    private fun cleanupRuntime(injector: InputInjector) {
+        capturedDevices.clear()
+        val released=mappingRuntime.releaseAll(injector)
+        if(!released) MappingRuntimeBridge.reportError("Backend contact release could not be confirmed")
+        runCatching { injector.cleanup() }.onFailure {
+            Log.e(TAG,"Backend cleanup failed",it)
+            MappingRuntimeBridge.reportError("Backend cleanup failed: ${it.message}")
         }
     }
 
@@ -233,8 +280,7 @@ class ControlystAccessibilityService : AccessibilityService() {
         val current = activeInjector ?: return
         activeInjector = null
         backendExecutor.execute {
-            mappingRuntime.releaseAll(current)
-            runCatching { current.cleanup() }
+            cleanupRuntime(current)
         }
     }
 
@@ -248,13 +294,57 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
         backendExecutor.execute {
             if (current != null) {
-                mappingRuntime.releaseAll(current)
-                runCatching { current.cleanup() }
+                cleanupRuntime(current)
             }
             runtimePreparing = false
             val state = MappingRuntimeBridge.state.value
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
         }
+    }
+
+    fun emergencyRelease(onComplete: (Boolean) -> Unit) {
+        val injector = activeInjector
+        activeInjector = null
+        MappingRuntimeBridge.disarm("Emergency stop requested")
+        if (backendExecutor.isShutdown) { onComplete(injector == null); return }
+        backendExecutor.execute {
+            var released = true
+            if (injector != null) {
+                released = mappingRuntime.releaseAll(injector)
+                runCatching { injector.cleanup() }.onFailure {
+                    Log.e(TAG, "Backend cleanup failed during panic", it)
+                    released = false
+                }
+            }
+            onComplete(released)
+        }
+    }
+
+    fun captureScreenshot(onResult: (Result<android.graphics.Bitmap>) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30) {
+            onResult(Result.failure(IllegalStateException("Screenshot capture requires Android 11 or later; import an image instead.")))
+            return
+        }
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(result: ScreenshotResult) {
+                        val buffer = result.hardwareBuffer
+                        val bitmap = runCatching {
+                            val hardware = android.graphics.Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                                ?: error("Screenshot buffer could not be decoded")
+                            try { hardware.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                                ?: error("Screenshot copy failed") } finally { hardware.recycle() }
+                        }
+                        buffer.close()
+                        onResult(bitmap)
+                    }
+                    override fun onFailure(errorCode: Int) {
+                        Log.e(TAG, "Screenshot capture failed: code=$errorCode (secure windows cannot be captured)")
+                        onResult(Result.failure(IllegalStateException("Android rejected screenshot capture (code=$errorCode); protected content cannot be captured.")))
+                    }
+                })
+        } catch (error: Exception) { onResult(Result.failure(error)) }
     }
 
     fun performTap(x: Float, y: Float, durationMs: Long = 50L): Boolean {

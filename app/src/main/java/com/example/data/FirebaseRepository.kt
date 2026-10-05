@@ -34,6 +34,10 @@ class FirebaseRepository(private val context: Context) {
         }
     }
 
+    companion object {
+        internal fun isValidOAuthClientId(value: String): Boolean = value.matches(Regex("[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com")) && !value.contains("placeholder")
+    }
+
     val currentUser: com.google.firebase.auth.FirebaseUser?
         get() = try { auth?.currentUser } catch (e: Exception) { null }
 
@@ -53,8 +57,11 @@ class FirebaseRepository(private val context: Context) {
     }
 
     suspend fun signInWithGoogleCredential(
-        webClientId: String = "393750783022-placeholder.apps.googleusercontent.com"
+        activity: android.app.Activity
     ): Result<com.google.firebase.auth.FirebaseUser> {
+        val configuredId = activity.resources.getIdentifier("default_web_client_id", "string", activity.packageName)
+        val webClientId = if (configuredId != 0) activity.getString(configuredId) else ""
+        if (!isValidOAuthClientId(webClientId)) return Result.failure(IllegalStateException("Google OAuth is not configured: add this app's Firebase google-services.json with a Web client ID."))
         val firebaseAuth = auth ?: return Result.failure(Exception("Firebase Auth is not initialized."))
         return try {
             val credentialManager = CredentialManager.create(context)
@@ -68,7 +75,7 @@ class FirebaseRepository(private val context: Context) {
                 .addCredentialOption(googleIdOption)
                 .build()
 
-            val result = credentialManager.getCredential(context, request)
+            val result = credentialManager.getCredential(activity, request)
             val credential = result.credential
             
             if (credential is androidx.credentials.CustomCredential &&

@@ -14,6 +14,8 @@ mkdir -p "$STATE_DIR" "$TMP_DIR" || {
 }
 chmod 0700 "$STATE_DIR" "$TMP_DIR" 2>/dev/null || true
 
+. "$MODDIR/update-lib.sh" || { echo "STATE=ERROR";echo "MESSAGE=Updater verification library is missing";exit 1; }
+
 CURRENT_CODE=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" | head -n 1)
 CURRENT_VERSION=$(sed -n 's/^version=//p' "$MODDIR/module.prop" | head -n 1)
 [ -n "$CURRENT_CODE" ] || {
@@ -33,30 +35,6 @@ find_busybox() {
     return 1
 }
 
-fetch_file() {
-    url=$1
-    dest=$2
-    rm -f "$dest"
-
-    BB=$(find_busybox 2>/dev/null || true)
-    if [ -n "$BB" ]; then
-        "$BB" wget -q -O "$dest" "$url" && [ -s "$dest" ] && return 0
-    fi
-
-    CURL=$(command -v curl 2>/dev/null || true)
-    if [ -n "$CURL" ]; then
-        "$CURL" -fL --connect-timeout 15 --max-time 120 -o "$dest" "$url" \
-            && [ -s "$dest" ] && return 0
-    fi
-
-    WGET=$(command -v wget 2>/dev/null || true)
-    if [ -n "$WGET" ]; then
-        "$WGET" -q -O "$dest" "$url" && [ -s "$dest" ] && return 0
-    fi
-
-    return 1
-}
-
 json_string() {
     key=$1
     sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$TMP_JSON" | head -n 1
@@ -64,7 +42,7 @@ json_string() {
 
 json_number() {
     key=$1
-    sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$TMP_JSON" | head -n 1
+    sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\)[[:space:]]*[,}].*/\1/p" "$TMP_JSON" | head -n 1
 }
 
 write_status() {
@@ -93,7 +71,7 @@ check_update() {
     SHA256=$(json_string sha256)
     CHANGELOG=$(json_string changelog)
 
-    if [ -z "$REMOTE_VERSION" ] || [ -z "$REMOTE_CODE" ] || [ -z "$ZIP_URL" ]; then
+    if ! validate_update "$REMOTE_VERSION" "$REMOTE_CODE" "$ZIP_URL" "$SHA256"; then
         write_status "state=error" "message=Malformed update.json"
         echo "STATE=ERROR"
         echo "MESSAGE=Malformed update.json"
@@ -127,27 +105,6 @@ find_ksud() {
         return 0
     done
     return 1
-}
-
-verify_sha256() {
-    expected=$1
-    file=$2
-    [ -n "$expected" ] || return 0
-
-    BB=$(find_busybox 2>/dev/null || true)
-    if [ -n "$BB" ] && "$BB" --list 2>/dev/null | grep -qx sha256sum; then
-        actual=$("$BB" sha256sum "$file" | awk '{print $1}')
-    elif command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "$file" | awk '{print $1}')
-    else
-        echo "ERROR=No SHA-256 tool is available"
-        return 2
-    fi
-
-    [ "$actual" = "$expected" ] || {
-        echo "ERROR=SHA256 mismatch expected=$expected actual=$actual"
-        return 1
-    }
 }
 
 install_update() {

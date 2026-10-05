@@ -12,21 +12,23 @@ object PrivilegeBackendSelector {
         PrivilegeMethod.KERNELSU,
         PrivilegeMethod.SHIZUKU,
         PrivilegeMethod.MAGISK,
-        PrivilegeMethod.APATCH,
         PrivilegeMethod.ACCESSIBILITY
     )
+
+    fun order(forced: PrivilegeMethod? = null): List<PrivilegeMethod> = forced?.let { listOf(it) } ?: priority
 
     fun choose(
         results: List<PrivilegeProbeResult>,
         forced: PrivilegeMethod? = null
     ): PrivilegeProbeResult? {
+        if (forced == PrivilegeMethod.APATCH) return null
         if (forced != null) {
             return results.firstOrNull {
                 it.method == forced && it.state == PrivilegeAvailabilityState.AVAILABLE
             }
         }
 
-        return priority.asSequence()
+        return order().asSequence()
             .mapNotNull { method -> results.firstOrNull { it.method == method } }
             .firstOrNull { it.state == PrivilegeAvailabilityState.AVAILABLE }
     }

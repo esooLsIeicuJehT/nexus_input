@@ -14,6 +14,7 @@ import com.example.model.CrosshairConfig
 import com.example.model.MappingConfig
 import com.example.model.MappingNode
 import com.example.model.NodeType
+import com.example.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -58,87 +59,6 @@ class ControlystRepository(
     }
 
     /**
-     * Seeds initial database with popular tactical games and verified community profiles
-     */
-    suspend fun prepopulateDefaultsIfEmpty() = withContext(Dispatchers.IO) {
-        val initialGames = listOf(
-            GameEntity(
-                packageName = "com.proxima.dfm",
-                displayName = "Delta Force Mobile",
-                iconUri = "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=150",
-                isGameTag = true,
-                antiCheatSeverity = AntiCheatSeverity.HIGH_ALERT,
-                antiCheatNotes = "Tencent ACE anti-cheat active. Shizuku or Accessibility mode strongly advised over raw su.",
-                playTimeMinutes = 480,
-                lastPlayedTimestamp = System.currentTimeMillis() - 3600000
-            ),
-            GameEntity(
-                packageName = "com.activision.callofduty.warzone",
-                displayName = "Warzone Mobile",
-                iconUri = "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=150",
-                isGameTag = true,
-                antiCheatSeverity = AntiCheatSeverity.MODERATE,
-                antiCheatNotes = "Ricochet Mobile telemetry check. Standard controller mapping recommended.",
-                playTimeMinutes = 320,
-                lastPlayedTimestamp = System.currentTimeMillis() - 14400000
-            ),
-            GameEntity(
-                packageName = "com.miHoYo.GenshinImpact",
-                displayName = "Genshin Impact",
-                iconUri = "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=150",
-                isGameTag = true,
-                antiCheatSeverity = AntiCheatSeverity.SAFE,
-                antiCheatNotes = "Safe for touch mapping overlays.",
-                playTimeMinutes = 610,
-                lastPlayedTimestamp = System.currentTimeMillis() - 86400000
-            ),
-            GameEntity(
-                packageName = "com.tencent.ig",
-                displayName = "PUBG Mobile",
-                iconUri = "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=150",
-                isGameTag = true,
-                antiCheatSeverity = AntiCheatSeverity.HIGH_ALERT,
-                antiCheatNotes = "Strict memory scanning. Use Accessibility injection only.",
-                playTimeMinutes = 140,
-                lastPlayedTimestamp = System.currentTimeMillis() - 172800000
-            )
-        )
-
-        gameDao.insertGames(initialGames)
-
-        // Seed default profiles
-        val dfmProfile = createSampleDfmConfig()
-        profileDao.insertProfile(
-            ConfigProfileEntity(
-                id = "dfm_pro_ranked",
-                gamePackage = "com.proxima.dfm",
-                profileName = "Ranked Tactical (Stadia/Xbox Fixed)",
-                jsonBlob = serializeConfigToJson(dfmProfile),
-                isDefault = true,
-                author = "Controlyst Master",
-                isOfficialVerified = true,
-                rating = 4.9f,
-                downloads = 14820
-            )
-        )
-
-        val warzoneProfile = createSampleWarzoneConfig()
-        profileDao.insertProfile(
-            ConfigProfileEntity(
-                id = "wzm_speed_aim",
-                gamePackage = "com.activision.callofduty.warzone",
-                profileName = "Fast ADS & Slide Cancel",
-                jsonBlob = serializeConfigToJson(warzoneProfile),
-                isDefault = true,
-                author = "ApexAim",
-                isOfficialVerified = true,
-                rating = 4.8f,
-                downloads = 9340
-            )
-        )
-    }
-
-    /**
      * Scans installed launchable apps on the device
      */
     fun scanInstalledApps(): List<GameEntity> {
@@ -154,19 +74,15 @@ class ControlystRepository(
             // Exclude Controlyst itself
             if (pkg == context.packageName) continue
             val appName = info.loadLabel(pm).toString()
-            val isLikelyGame = appName.contains("game", ignoreCase = true) ||
-                    pkg.contains("game", ignoreCase = true) ||
-                    pkg.contains("mobile", ignoreCase = true) ||
-                    pkg.contains("unity", ignoreCase = true)
-
+            val isGame = android.os.Build.VERSION.SDK_INT >= 26 &&
+                info.activityInfo.applicationInfo.category == android.content.pm.ApplicationInfo.CATEGORY_GAME
             list.add(
                 GameEntity(
                     packageName = pkg,
                     displayName = appName,
                     iconUri = "",
-                    isGameTag = isLikelyGame,
-                    antiCheatSeverity = if (isLikelyGame) AntiCheatSeverity.MODERATE else AntiCheatSeverity.SAFE,
-                    antiCheatNotes = if (isLikelyGame) "App categorized as interactive game" else "Standard Android application"
+                    isGameTag = isGame,
+                    antiCheatNotes = "Game compatibility has not been assessed"
                 )
             )
         }
@@ -174,70 +90,6 @@ class ControlystRepository(
     }
 
     companion object {
-        fun createSampleDfmConfig(): MappingConfig {
-            return MappingConfig(
-                schemaVersion = 2,
-                id = "dfm_pro_ranked",
-                profileName = "Ranked Tactical (Stadia/Xbox Fixed)",
-                gamePackage = "com.proxima.dfm",
-                gameTitle = "Delta Force Mobile",
-                controllerType = ControllerType.XBOX,
-                buttons = listOf(
-                    MappingNode("b_fire", 0.85f, 0.72f, 0.06f, NodeType.BUTTON, "RT", "Fire"),
-                    MappingNode("b_ads", 0.82f, 0.42f, 0.055f, NodeType.BUTTON, "LT", "ADS Aim"),
-                    MappingNode("b_jump", 0.92f, 0.60f, 0.05f, NodeType.BUTTON, "A", "Jump / Vault"),
-                    MappingNode("b_crouch", 0.88f, 0.85f, 0.05f, NodeType.BUTTON, "B", "Crouch / Slide"),
-                    MappingNode("b_reload", 0.74f, 0.76f, 0.05f, NodeType.BUTTON, "X", "Reload"),
-                    MappingNode("b_weapon_swap", 0.70f, 0.90f, 0.05f, NodeType.BUTTON, "Y", "Switch Gun"),
-                    MappingNode("b_tactical", 0.68f, 0.38f, 0.05f, NodeType.BUTTON, "LB", "Skill"),
-                    MappingNode("b_lethal", 0.76f, 0.32f, 0.05f, NodeType.BUTTON, "RB", "Grenade"),
-                    MappingNode("joy_move", 0.18f, 0.72f, 0.12f, NodeType.JOYSTICK_ZONE, "LS", "Move WASD"),
-                    MappingNode("cam_aim", 0.70f, 0.50f, 0.20f, NodeType.CAMERA_DRAG, "RS", "Aim Look")
-                ),
-                crosshair = CrosshairConfig(
-                    isEnabled = true,
-                    sizeDp = 22f,
-                    thicknessDp = 2.5f,
-                    gapDp = 5f,
-                    colorHex = "#00F0FF"
-                ),
-                author = "Controlyst Master",
-                isOfficialVerified = true,
-                rating = 4.9f,
-                downloadCount = 14820
-            )
-        }
-
-        fun createSampleWarzoneConfig(): MappingConfig {
-            return MappingConfig(
-                schemaVersion = 2,
-                id = "wzm_speed_aim",
-                profileName = "Fast ADS & Slide Cancel",
-                gamePackage = "com.activision.callofduty.warzone",
-                gameTitle = "Warzone Mobile",
-                controllerType = ControllerType.PLAYSTATION,
-                buttons = listOf(
-                    MappingNode("w_fire", 0.86f, 0.70f, 0.06f, NodeType.BUTTON, "R2", "Fire"),
-                    MappingNode("w_aim", 0.80f, 0.40f, 0.055f, NodeType.BUTTON, "L2", "ADS"),
-                    MappingNode("w_jump", 0.91f, 0.58f, 0.05f, NodeType.BUTTON, "CROSS", "Jump"),
-                    MappingNode("w_slide", 0.88f, 0.82f, 0.05f, NodeType.BUTTON, "CIRCLE", "Slide Cancel"),
-                    MappingNode("w_armor", 0.65f, 0.88f, 0.05f, NodeType.BUTTON, "TRIANGLE", "Plates"),
-                    MappingNode("w_joy", 0.18f, 0.70f, 0.12f, NodeType.JOYSTICK_ZONE, "L3", "Sprint / Move")
-                ),
-                crosshair = CrosshairConfig(
-                    isEnabled = true,
-                    sizeDp = 18f,
-                    thicknessDp = 2f,
-                    gapDp = 3f,
-                    colorHex = "#10B981"
-                ),
-                author = "ApexAim",
-                isOfficialVerified = true,
-                rating = 4.8f,
-                downloadCount = 9340
-            )
-        }
-
         fun serializeConfigToJson(config: MappingConfig): String {
             val json = JSONObject()
             json.put("schemaVersion", config.schemaVersion)
@@ -247,6 +99,20 @@ class ControlystRepository(
             json.put("gameTitle", config.gameTitle)
             json.put("controllerType", config.controllerType.name)
             json.put("targetAspectRatio", config.targetAspectRatio)
+            json.put("preferredBackend", config.preferredBackend?.name ?: JSONObject.NULL)
+            json.put("controllerProfileId", config.controllerProfileId ?: JSONObject.NULL)
+            json.put("joystick", JSONObject().apply {
+                put("innerDeadzone", config.joystick.innerDeadzone); put("outerDeadzone", config.joystick.outerDeadzone)
+                put("runThresholdNorm", config.joystick.runThresholdNorm); put("sprintLockEnabled", config.joystick.sprintLockEnabled)
+                put("curveExponent", config.joystick.curveExponent)
+            })
+            json.put("camera", JSONObject().apply {
+                put("horizontalSensitivity", config.camera.horizontalSensitivity); put("verticalSensitivity", config.camera.verticalSensitivity)
+                put("accelerationCurve", config.camera.accelerationCurve); put("smoothingFrames", config.camera.smoothingFrames)
+                put("invertY", config.camera.invertY); put("mouseDpiScale", config.camera.mouseDpiScale)
+            })
+            json.put("antiRecoilEnabled", config.antiRecoilEnabled); json.put("antiRecoilVerticalPull", config.antiRecoilVerticalPull)
+            json.put("tags", JSONArray(config.tags))
 
             val buttonsArray = JSONArray()
             for (node in config.buttons) {
@@ -262,6 +128,18 @@ class ControlystRepository(
                 nodeObj.put("deadzoneInner", node.deadzoneInner)
                 nodeObj.put("deadzoneOuter", node.deadzoneOuter)
                 nodeObj.put("sensitivity", node.sensitivity)
+                nodeObj.put("buttonBehavior", node.buttonBehavior.name)
+                nodeObj.put("inputKeyCode", node.inputKeyCode ?: JSONObject.NULL)
+                nodeObj.put("inputScanCode", node.inputScanCode ?: JSONObject.NULL)
+                nodeObj.put("touchSlot", node.touchSlot ?: JSONObject.NULL)
+                nodeObj.put("axisX", node.axisX ?: JSONObject.NULL); nodeObj.put("axisY", node.axisY ?: JSONObject.NULL)
+                nodeObj.put("invertY", node.invertY)
+                nodeObj.put("triggerPressThreshold", node.triggerPressThreshold)
+                nodeObj.put("triggerReleaseThreshold", node.triggerReleaseThreshold)
+                nodeObj.put("macroActions", JSONArray().apply { node.macroActions.forEach { step ->
+                    put(JSONObject().apply { put("delayMs", step.delayMs); put("durationMs", step.durationMs)
+                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm) })
+                } })
                 buttonsArray.put(nodeObj)
             }
             json.put("buttons", buttonsArray)
@@ -273,6 +151,11 @@ class ControlystRepository(
             crosshairObj.put("thicknessDp", config.crosshair.thicknessDp)
             crosshairObj.put("gapDp", config.crosshair.gapDp)
             crosshairObj.put("colorHex", config.crosshair.colorHex)
+            crosshairObj.put("opacity", config.crosshair.opacity)
+            crosshairObj.put("outlineEnabled", config.crosshair.outlineEnabled)
+            crosshairObj.put("outlineColorHex", config.crosshair.outlineColorHex)
+            crosshairObj.put("outlineThicknessDp", config.crosshair.outlineThicknessDp)
+            crosshairObj.put("currentSpreadMultiplier", config.crosshair.currentSpreadMultiplier)
             crosshairObj.put("offsetX", config.crosshair.offsetX)
             crosshairObj.put("offsetY", config.crosshair.offsetY)
             crosshairObj.put("dynamicSpread", config.crosshair.dynamicSpread)
@@ -290,16 +173,12 @@ class ControlystRepository(
         fun deserializeJsonToConfig(jsonStr: String): MappingConfig {
             val json = JSONObject(jsonStr)
             val schemaVersion = json.optInt("schemaVersion", 1)
-            val id = json.optString("id", "profile_${System.currentTimeMillis()}")
+            val id = json.getString("id")
             val name = json.optString("profileName", "Imported Profile")
-            val pkg = json.optString("gamePackage", "unknown.game")
+            val pkg = json.getString("gamePackage")
             val title = json.optString("gameTitle", "")
             val ctrlTypeStr = json.optString("controllerType", "XBOX")
-            val ctrlType = try {
-                ControllerType.valueOf(ctrlTypeStr)
-            } catch (e: Exception) {
-                ControllerType.XBOX
-            }
+            val ctrlType = ControllerType.valueOf(ctrlTypeStr)
             val targetAspect = json.optString("targetAspectRatio", "19.5:9")
 
             val buttons = mutableListOf<MappingNode>()
@@ -308,16 +187,13 @@ class ControlystRepository(
                 for (i in 0 until buttonsArray.length()) {
                     val nodeObj = buttonsArray.getJSONObject(i)
                     val typeStr = nodeObj.optString("type", "BUTTON")
-                    val type = try {
-                        NodeType.valueOf(typeStr)
-                    } catch (e: Exception) {
-                        NodeType.BUTTON
-                    }
+                    val type = NodeType.valueOf(typeStr)
+                    fun optionalInt(key: String): Int? = if (nodeObj.has(key) && !nodeObj.isNull(key)) nodeObj.getInt(key) else null
                     buttons.add(
                         MappingNode(
-                            id = nodeObj.optString("id", "node_$i"),
-                            xNorm = nodeObj.optDouble("xNorm", 0.5).toFloat(),
-                            yNorm = nodeObj.optDouble("yNorm", 0.5).toFloat(),
+                            id = nodeObj.getString("id"),
+                            xNorm = nodeObj.getDouble("xNorm").toFloat(),
+                            yNorm = nodeObj.getDouble("yNorm").toFloat(),
                             radiusNorm = nodeObj.optDouble("radiusNorm", 0.05).toFloat(),
                             type = type,
                             boundKey = nodeObj.optString("boundKey", "A"),
@@ -325,7 +201,20 @@ class ControlystRepository(
                             turboHz = nodeObj.optInt("turboHz", 10),
                             deadzoneInner = nodeObj.optDouble("deadzoneInner", 0.15).toFloat(),
                             deadzoneOuter = nodeObj.optDouble("deadzoneOuter", 0.95).toFloat(),
-                            sensitivity = nodeObj.optDouble("sensitivity", 1.0).toFloat()
+                            sensitivity = nodeObj.optDouble("sensitivity", 1.0).toFloat(),
+                            buttonBehavior = ButtonBehavior.valueOf(nodeObj.optString("buttonBehavior",
+                                if (nodeObj.optString("boundKey").uppercase() in setOf("LT","RT","L2","R2")) "HOLD" else "TAP")),
+                            inputKeyCode = optionalInt("inputKeyCode"), inputScanCode = optionalInt("inputScanCode"),
+                            touchSlot = optionalInt("touchSlot"), axisX = optionalInt("axisX"), axisY = optionalInt("axisY"),
+                            invertY = nodeObj.optBoolean("invertY", false),
+                            triggerPressThreshold = nodeObj.optDouble("triggerPressThreshold", .55).toFloat(),
+                            triggerReleaseThreshold = nodeObj.optDouble("triggerReleaseThreshold", .35).toFloat(),
+                            macroActions = nodeObj.optJSONArray("macroActions")?.let { array ->
+                                (0 until array.length()).map { index -> array.getJSONObject(index).let { step ->
+                                    MacroStep(step.getLong("delayMs"), step.getString("actionType"),
+                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"))
+                                } }
+                            } ?: emptyList()
                         )
                     )
                 }
@@ -334,11 +223,7 @@ class ControlystRepository(
             val crosshairObj = json.optJSONObject("crosshair")
             val crosshair = if (crosshairObj != null) {
                 val shapeStr = crosshairObj.optString("shape", "CLASSIC_CROSS")
-                val shape = try {
-                    com.example.model.CrosshairShape.valueOf(shapeStr)
-                } catch (e: Exception) {
-                    com.example.model.CrosshairShape.CLASSIC_CROSS
-                }
+                val shape = com.example.model.CrosshairShape.valueOf(shapeStr)
                 CrosshairConfig(
                     isEnabled = crosshairObj.optBoolean("isEnabled", false),
                     shape = shape,
@@ -346,6 +231,11 @@ class ControlystRepository(
                     thicknessDp = crosshairObj.optDouble("thicknessDp", 2.5).toFloat(),
                     gapDp = crosshairObj.optDouble("gapDp", 4.0).toFloat(),
                     colorHex = crosshairObj.optString("colorHex", "#00F0FF"),
+                    opacity = crosshairObj.optDouble("opacity", .9).toFloat(),
+                    outlineEnabled = crosshairObj.optBoolean("outlineEnabled", true),
+                    outlineColorHex = crosshairObj.optString("outlineColorHex", "#000000"),
+                    outlineThicknessDp = crosshairObj.optDouble("outlineThicknessDp", 1.0).toFloat(),
+                    currentSpreadMultiplier = crosshairObj.optDouble("currentSpreadMultiplier", 1.0).toFloat(),
                     offsetX = crosshairObj.optDouble("offsetX", 0.0).toFloat(),
                     offsetY = crosshairObj.optDouble("offsetY", 0.0).toFloat(),
                     dynamicSpread = crosshairObj.optBoolean("dynamicSpread", true)
@@ -354,7 +244,17 @@ class ControlystRepository(
                 CrosshairConfig()
             }
 
+            val joystick = json.optJSONObject("joystick") ?: JSONObject()
+            val camera = json.optJSONObject("camera") ?: JSONObject()
             return MappingConfig(
+                preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
+                controllerProfileId = if (json.has("controllerProfileId") && !json.isNull("controllerProfileId")) json.getString("controllerProfileId") else null,
+                joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
+                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", true), joystick.optDouble("curveExponent", 1.0).toFloat()),
+                camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),
+                    camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
+                antiRecoilEnabled = json.optBoolean("antiRecoilEnabled", false), antiRecoilVerticalPull = json.optDouble("antiRecoilVerticalPull", 0.0).toFloat(),
+                tags = json.optJSONArray("tags")?.let { array -> (0 until array.length()).map { array.getString(it) } } ?: emptyList(),
                 schemaVersion = schemaVersion,
                 id = id,
                 profileName = name,
@@ -366,7 +266,7 @@ class ControlystRepository(
                 crosshair = crosshair,
                 author = json.optString("author", "Community"),
                 isOfficialVerified = json.optBoolean("isOfficialVerified", false),
-                rating = json.optDouble("rating", 4.5).toFloat(),
+                rating = json.optDouble("rating", 0.0).toFloat(),
                 downloadCount = json.optInt("downloadCount", 0),
                 lastUpdated = json.optLong("lastUpdated", System.currentTimeMillis())
             )

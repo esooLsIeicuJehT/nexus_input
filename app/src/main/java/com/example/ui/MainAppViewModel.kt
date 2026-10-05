@@ -1,9 +1,14 @@
 package com.example.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
@@ -28,8 +33,6 @@ import com.example.model.MappingConfig
 import com.example.model.MappingNode
 import com.example.model.NodeType
 import com.example.model.PrivilegeMethod
-import com.example.monetization.MonetizationManager
-import com.example.monetization.MonetizationState
 import com.example.service.MappingForegroundService
 import com.example.service.ShizukuPairingManager
 import com.example.service.ShizukuPairingState
@@ -37,10 +40,9 @@ import com.example.service.PanicKillSwitch
 import com.example.module.KernelSuModuleManager
 import com.example.model.*
 import com.example.ai.vision.AiHudDetector
-import com.example.ai.AiMappingAssistant
 import com.example.ai.ConfigDiffEngine
 import com.example.backup.LocalBackupManager
-import com.example.performance.drivers.PerformanceDriverManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,10 +53,11 @@ import kotlinx.coroutines.launch
 class MainAppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = ControlystDatabase.getDatabase(application)
+    private val profilePersistence = com.example.data.ProfilePersistence(db)
+    private val saveMutex = kotlinx.coroutines.sync.Mutex()
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
     val privilegeDetector = PrivilegeDetector(application)
     val calibrationManager = CalibrationManager(application)
-    val monetizationManager = MonetizationManager(application)
     val firebaseRepository = com.example.data.FirebaseRepository(application)
 
     private val _authState = MutableStateFlow(firebaseRepository.currentUser)
@@ -64,17 +67,11 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     private val _aiHudCandidates = MutableStateFlow<List<AiHudCandidate>>(emptyList())
     val aiHudCandidates: StateFlow<List<AiHudCandidate>> = _aiHudCandidates.asStateFlow()
 
-    private val _aiMappingSuggestion = MutableStateFlow<AiMappingSuggestion?>(null)
-    val aiMappingSuggestion: StateFlow<AiMappingSuggestion?> = _aiMappingSuggestion.asStateFlow()
-
     private val _diffResult = MutableStateFlow<ConfigDiffResult?>(null)
     val diffResult: StateFlow<ConfigDiffResult?> = _diffResult.asStateFlow()
 
-    val performanceMode = PerformanceDriverManager.currentMode
-    val hardwareTelemetry = PerformanceDriverManager.telemetry
 
     init {
-        PerformanceDriverManager.initialize()
         viewModelScope.launch {
             firebaseRepository.authStateFlow().collect { user ->
                 _authState.value = user
@@ -82,9 +79,9 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun signInWithGoogle() {
+    fun signInWithGoogle(activity: android.app.Activity) {
         viewModelScope.launch {
-            val result = firebaseRepository.signInWithGoogleCredential()
+            val result = firebaseRepository.signInWithGoogleCredential(activity)
             result.onSuccess { user ->
                 showSnack("Signed in as ${user.email ?: user.displayName}")
             }.onFailure { err ->
@@ -137,7 +134,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedGame = MutableStateFlow<GameEntity?>(null)
     val selectedGame: StateFlow<GameEntity?> = _selectedGame.asStateFlow()
 
-    private val _activeConfig = MutableStateFlow(ControlystRepository.createSampleDfmConfig())
+    private val _activeConfig = MutableStateFlow(MappingConfig(id = "new_profile", profileName = "Choose a game", gamePackage = ""))
     val activeConfig: StateFlow<MappingConfig> = _activeConfig.asStateFlow()
 
     // Calibration States
@@ -146,7 +143,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     val touchLatencyResult: StateFlow<TouchLatencyResult> = calibrationManager.latencyResult
 
     // Monetization State
-    val monetizationState: StateFlow<MonetizationState> = monetizationManager.state
 
     // Active Injector
     var currentInjector: InputInjector = InputInjectorFactory.createInjector(PrivilegeMethod.ACCESSIBILITY)
@@ -166,9 +162,42 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            repository.prepopulateDefaultsIfEmpty()
+            val migration = withContext(Dispatchers.IO) {
+                com.example.data.LegacyProfileMigration.migrate(getApplication(), db)
+            }
+            if (migration.errors.isNotEmpty()) showSnack(migration.errors.joinToString("\n"))
+            else if (migration.imported > 0) showSnack("Migrated ${migration.imported} legacy profiles into Room; original source retained.")
+            val savedState = db.mapperStateDao().get()
+            val restored = savedState?.activeProfileId?.let { db.configProfileDao().getProfileById(it) }
+            if (restored != null) {
+                try {
+                    val config = ControlystRepository.deserializeJsonToConfig(restored.jsonBlob)
+                    val errors = com.example.input.ProfileValidator.errors(config, restored.gamePackage, restored.id, false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") }
+                    _activeConfig.value = config
+                    _selectedGame.value = db.gameDao().getGame(config.gamePackage)
+                    if (savedState.mappingEnabled) showSnack("Saved mapping-enabled preference restored. Launch the game to explicitly arm mapping after permissions are checked.")
+                } catch (error: Exception) {
+                    showSnack("Saved profile restore failed: ${error.message}")
+                }
+            }
             refreshPrivileges()
             detectController()
+        }
+    }
+
+    private val _diagnostics = MutableStateFlow<String?>(null)
+    val diagnostics = _diagnostics.asStateFlow()
+    fun runSelfCheck() {
+        viewModelScope.launch {
+            try {
+                _diagnostics.value = withContext(Dispatchers.IO) { com.example.diagnostics.ReleaseDiagnostics.collect(getApplication()) }
+                showSnack("Device observations collected. Injection still requires the device test checklist.")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _diagnostics.value = "Self-check failed: ${error.message}"
+                showSnack(_diagnostics.value!!)
+            }
         }
     }
 
@@ -177,6 +206,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun showSnack(msg: String) {
+        Log.i("NexusUI", msg)
         _snackMessage.value = msg
     }
 
@@ -195,6 +225,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun overridePrivilegeMethod(method: PrivilegeMethod) {
+        updateActiveConfig(_activeConfig.value.copy(preferredBackend = method))
         _activePrivilegeMethod.value = method
         currentInjector = InputInjectorFactory.createInjector(method)
         showSnack("Switched injector to: ${method.title}")
@@ -214,69 +245,113 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         showSnack("Layout mapped to: ${type.displayName}")
     }
 
-    fun selectGame(game: GameEntity) {
-        _selectedGame.value = game
+    private val _installedApps = MutableStateFlow<List<GameEntity>>(emptyList())
+    val installedApps = _installedApps.asStateFlow()
+    private val _appInventoryLoading = MutableStateFlow(false)
+    val appInventoryLoading = _appInventoryLoading.asStateFlow()
+    fun refreshInstalledApps() {
         viewModelScope.launch {
-            // Find default config for this game
-            val list = db.configProfileDao().getProfileById("${game.packageName}_default")
-            if (list != null) {
-                _activeConfig.value = ControlystRepository.deserializeJsonToConfig(list.jsonBlob)
-            } else {
-                // Generate base template config
-                _activeConfig.value = ControlystRepository.createSampleDfmConfig().copy(
-                    id = "${game.packageName}_config",
-                    profileName = "${game.displayName} Layout",
-                    gamePackage = game.packageName,
-                    gameTitle = game.displayName
-                )
+            _appInventoryLoading.value = true
+            try { _installedApps.value = withContext(Dispatchers.IO) { repository.scanInstalledApps().distinctBy { it.packageName }.sortedBy { it.displayName.lowercase() } } }
+            catch(error: Exception) { if(error is kotlinx.coroutines.CancellationException) throw error;showSnack("Installed app query failed: ${error.message}") }
+            finally { _appInventoryLoading.value = false }
+        }
+    }
+    private var selectionJob: kotlinx.coroutines.Job? = null
+    fun selectGame(game: GameEntity) {
+        selectionJob?.cancel()
+        _selectedGame.value = game
+        _activeConfig.value = MappingConfig(id="${game.packageName}_default",profileName="${game.displayName} Layout",gamePackage=game.packageName,gameTitle=game.displayName)
+        selectionJob = viewModelScope.launch {
+            try {
+                val saved = db.configProfileDao().getDefaultForGame(game.packageName)
+                if(saved != null) {
+                    val config = ControlystRepository.deserializeJsonToConfig(saved.jsonBlob)
+                    val errors = com.example.input.ProfileValidator.errors(config, game.packageName, saved.id, false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") }
+                    _activeConfig.value = config
+                }
+            } catch(error: Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile load failed: ${error.message}")
             }
+        }
+    }
+    fun selectSavedProfile(entity: ConfigProfileEntity) {
+        selectionJob?.cancel()
+        selectionJob=viewModelScope.launch {
+            try {
+                val config=ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
+                val errors=com.example.input.ProfileValidator.errors(config,entity.gamePackage,entity.id,false)
+                require(errors.isEmpty()) { errors.joinToString("; ") }
+                _activeConfig.value=config
+                _selectedGame.value=db.gameDao().getGame(config.gamePackage)
+                profilePersistence.save(config)
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile selection failed: ${error.message}")
+            }
+        }
+    }
+    fun createProfile(name: String) {
+        val game=_selectedGame.value ?: run { showSnack("Choose a game before creating a profile");return }
+        if(name.isBlank()) { showSnack("Profile name is required");return }
+        updateActiveConfig(MappingConfig(id=java.util.UUID.randomUUID().toString(),profileName=name.trim(),gamePackage=game.packageName,gameTitle=game.displayName)) {
+            showSnack("Profile created. Add physical input bindings in Mapper.")
         }
     }
 
     fun launchGameWithMapping(game: GameEntity, context: Context) {
         viewModelScope.launch {
-            // Start foreground mapping service
-            val serviceIntent = Intent(context, MappingForegroundService::class.java).apply {
-                action = MappingForegroundService.ACTION_START_MAPPING
-                putExtra(MappingForegroundService.EXTRA_GAME_PACKAGE, game.packageName)
-                putExtra(MappingForegroundService.EXTRA_CONFIG_ID, _activeConfig.value.id)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
-
-            // Launch target application
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(game.packageName)
-            if (launchIntent != null) {
+            try {
+                selectionJob?.join()
+                val launchIntent = context.packageManager.getLaunchIntentForPackage(game.packageName)
+                    ?: error("${game.displayName} is not installed or has no launch activity")
+                require(com.example.service.ControlystAccessibilityService.isServiceRunning()) {
+                    "Enable the NEXUS INPUT accessibility service before launching with mapping"
+                }
+                val config = if (_activeConfig.value.gamePackage == game.packageName) _activeConfig.value else {
+                    val saved = db.configProfileDao().getDefaultForGame(game.packageName)
+                        ?: error("Save a profile for ${game.displayName} before launching")
+                    ControlystRepository.deserializeJsonToConfig(saved.jsonBlob)
+                }
+                val errors = com.example.input.ProfileValidator.errors(config, game.packageName)
+                require(errors.isEmpty()) { errors.joinToString("; ") }
+                saveMutex.lock()
+                try { profilePersistence.save(config) } finally { saveMutex.unlock() }
+                val serviceIntent = Intent(context, MappingForegroundService::class.java).apply {
+                    action = MappingForegroundService.ACTION_START_MAPPING
+                    putExtra(MappingForegroundService.EXTRA_GAME_PACKAGE, game.packageName)
+                    putExtra(MappingForegroundService.EXTRA_CONFIG_ID, config.id)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(serviceIntent)
+                else context.startService(serviceIntent)
+                _selectedGame.value = game
+                _activeConfig.value = config
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
-                showSnack("Launched ${game.displayName} with Controlyst HUD!")
-            } else {
-                showSnack("Target app ${game.displayName} ready. Controlyst HUD started.")
+                showSnack("Launch requested for ${game.displayName}. Backend readiness appears in the mapping status.")
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                com.example.service.MappingRuntimeBridge.reportError("Launch failed: ${error.message}")
+                showSnack("Launch failed: ${error.message}")
             }
         }
     }
 
-    fun updateActiveConfig(updated: MappingConfig) {
+    fun updateActiveConfig(updated: MappingConfig, onSaved: () -> Unit = {}) {
+        val errors = com.example.input.ProfileValidator.errors(updated, requireBindings = false)
+        if (errors.isNotEmpty()) { showSnack("Profile rejected: " + errors.joinToString("; ")); return }
         _activeConfig.value = updated
         viewModelScope.launch {
-            val json = ControlystRepository.serializeConfigToJson(updated)
-            repository.insertProfile(
-                ConfigProfileEntity(
-                    id = updated.id,
-                    gamePackage = updated.gamePackage,
-                    profileName = updated.profileName,
-                    jsonBlob = json,
-                    isDefault = true,
-                    updatedAt = System.currentTimeMillis(),
-                    author = updated.author,
-                    isOfficialVerified = updated.isOfficialVerified,
-                    rating = updated.rating,
-                    downloads = updated.downloadCount
-                )
-            )
+            saveMutex.lock()
+            try {
+                profilePersistence.save(updated)
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile save failed: ${error.message}")
+            } finally { saveMutex.unlock() }
         }
     }
 
@@ -303,33 +378,66 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         updateActiveConfig(_activeConfig.value.copy(buttons = list))
     }
 
-    /**
-     * Heuristic Auto-detection of HUD elements from screenshot
-     */
-    fun runAutoDetectHud() {
-        val suggestedNodes = listOf(
-            MappingNode("hud_fire_auto", 0.86f, 0.72f, 0.06f, NodeType.BUTTON, "RT", "Fire [Auto]"),
-            MappingNode("hud_ads_auto", 0.82f, 0.44f, 0.055f, NodeType.BUTTON, "LT", "ADS [Auto]"),
-            MappingNode("hud_jump_auto", 0.92f, 0.60f, 0.05f, NodeType.BUTTON, "A", "Jump [Auto]"),
-            MappingNode("hud_crouch_auto", 0.88f, 0.86f, 0.05f, NodeType.BUTTON, "B", "Crouch [Auto]"),
-            MappingNode("hud_reload_auto", 0.76f, 0.74f, 0.05f, NodeType.BUTTON, "X", "Reload [Auto]"),
-            MappingNode("hud_joy_auto", 0.18f, 0.72f, 0.12f, NodeType.JOYSTICK_ZONE, "LS", "WASD [Auto]"),
-            MappingNode("hud_cam_auto", 0.70f, 0.48f, 0.20f, NodeType.CAMERA_DRAG, "RS", "Aim Look [Auto]")
-        )
-        val combined = _activeConfig.value.buttons.toMutableList()
-        suggestedNodes.forEach { candidate ->
-            if (combined.none { it.id == candidate.id }) {
-                combined.add(candidate)
+    private val _screenshot = MutableStateFlow<Bitmap?>(null)
+    val screenshot: StateFlow<Bitmap?> = _screenshot.asStateFlow()
+
+    fun importScreenshot(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected document is not a readable image" }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888
+                    }
+                    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Image decode failed")
+                }
+            }
+            result.onSuccess { bitmap ->
+                _screenshot.value = bitmap
+                _aiHudCandidates.value = emptyList()
+                showSnack("Screenshot imported: ${bitmap.width} × ${bitmap.height}. Review coordinates before saving.")
+            }.onFailure {
+                _screenshot.value = null
+                _aiHudCandidates.value = emptyList()
+                showSnack("Screenshot import failed: ${it.message}")
             }
         }
-        updateActiveConfig(_activeConfig.value.copy(buttons = combined))
-        showSnack("Auto-detected 7 HUD touch controls!")
     }
+
+    fun captureScreenshot() {
+        val service = com.example.service.ControlystAccessibilityService.getInstance()
+        if (service == null) { showSnack("Enable NEXUS INPUT accessibility service to capture; importing remains available."); return }
+        service.captureScreenshot { result ->
+            result.onSuccess { _screenshot.value = it; _aiHudCandidates.value = emptyList(); showSnack("Screenshot captured. Review before mapping.") }
+                .onFailure { _screenshot.value = null; _aiHudCandidates.value = emptyList(); showSnack("Capture failed: ${it.message}") }
+        }
+    }
+
+    fun assignHudCandidateInput(id: String, input: String) {
+        _aiHudCandidates.value = _aiHudCandidates.value.map {
+            if (it.id == id) it.copy(recommendedKey = input.trim().uppercase()) else it
+        }
+    }
+
+    fun runAutoDetectHud() = runAiHudScan()
 
     fun addGame(game: GameEntity) {
         viewModelScope.launch {
-            repository.insertGame(game)
-            showSnack("Added ${game.displayName} to library")
+            try {
+                require(getApplication<Application>().packageManager.getLaunchIntentForPackage(game.packageName) != null) { "Application is no longer installed or launchable" }
+                repository.insertGame(game)
+                selectGame(game)
+                showSnack("Added ${game.displayName} to library")
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Add game failed: ${error.message}")
+            }
         }
     }
 
@@ -339,6 +447,28 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
                 if (state.phase == "CALIBRATION COMPLETE") {
                     onComplete()
                 }
+            }
+        }
+    }
+
+    fun exportBackup(context: Context) {
+        viewModelScope.launch {
+            try {
+                val entities=repository.allProfiles.first()
+                val configs=entities.map { entity ->
+                    val config=ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
+                    val errors=com.example.input.ProfileValidator.errors(config,entity.gamePackage,entity.id,false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") };config
+                }
+                val zip=LocalBackupManager.exportFullBackupZip(context,configs)
+                val uri=androidx.core.content.FileProvider.getUriForFile(context,"${context.packageName}.fileprovider",zip)
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type="application/zip";putExtra(Intent.EXTRA_STREAM,uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },"Save or share NEXUS INPUT backup"))
+                showSnack("Backup ZIP created with ${configs.size} saved profiles; choose where to save it.")
+            } catch(error:Exception) {
+                if(error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Backup export failed: ${error.message}")
             }
         }
     }
@@ -381,26 +511,32 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun triggerPanicKillSwitch() {
-        val count = PanicKillSwitch.trigger(getApplication(), currentInjector)
-        showSnack("PANIC KILL-SWITCH: Released $count active inputs & reset axes!")
+        PanicKillSwitch.trigger(getApplication(), currentInjector)
+        showSnack("Emergency stop requested; release status is shown in System diagnostics.")
     }
 
     fun runAiHudScan() {
+        val bitmap = _screenshot.value
         viewModelScope.launch {
-            val candidates = AiHudDetector.detectHudElements(null)
-            _aiHudCandidates.value = candidates
-            showSnack("AI Vision found ${candidates.size} HUD candidates! Review & confirm.")
+            val detection = withContext(Dispatchers.Default) { AiHudDetector.detect(bitmap) }
+            if(bitmap !== _screenshot.value) { showSnack("Screenshot changed during detection; run the scan again");return@launch }
+            _aiHudCandidates.value = detection.candidates
+            showSnack(detection.error ?: "Found ${detection.candidates.size} contrast regions. Assign each input; action semantics are not detected.")
         }
     }
 
     fun confirmAiHudCandidates(candidates: List<AiHudCandidate>) {
+        if (candidates.any { it.recommendedKey.isBlank() }) {
+            showSnack("Assign a controller input to every selected contrast region first.")
+            return
+        }
         val newNodes = candidates.map { c ->
             MappingNode(
                 id = c.id,
                 xNorm = c.xNorm,
                 yNorm = c.yNorm,
                 radiusNorm = 0.055f,
-                type = if (c.recommendedKey == "LS" || c.recommendedKey == "RS") NodeType.JOYSTICK_ZONE else NodeType.BUTTON,
+                type = when (c.recommendedKey) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> NodeType.BUTTON },
                 boundKey = c.recommendedKey,
                 label = c.predictedAction
             )
@@ -419,31 +555,11 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         _aiHudCandidates.value = emptyList()
     }
 
-    fun runAiAssistant() {
-        viewModelScope.launch {
-            val suggestion = AiMappingAssistant.suggestMapping(
-                _activeConfig.value.gameTitle,
-                _controllerProfile.value.type,
-                _activeConfig.value
-            )
-            _aiMappingSuggestion.value = suggestion
-        }
-    }
-
-    fun applyAiAssistantSuggestion() {
-        val s = _aiMappingSuggestion.value ?: return
-        updateActiveConfig(_activeConfig.value.copy(buttons = s.nodes))
-        _aiMappingSuggestion.value = null
-        showSnack("Applied AI Recommended Mapping with ${s.estimatedLatencyMs}ms latency!")
-    }
-
-    fun dismissAiAssistant() {
-        _aiMappingSuggestion.value = null
-    }
-
     fun runConfigDiff() {
         viewModelScope.launch {
-            val freshCandidates = AiHudDetector.detectHudElements(null)
+            val detection = AiHudDetector.detect(_screenshot.value)
+            if (detection.error != null) { showSnack(detection.error); return@launch }
+            val freshCandidates = detection.candidates
             val diffList = ConfigDiffEngine.calculateDiff(_activeConfig.value, freshCandidates)
             val result = ConfigDiffResult(
                 unchangedCount = diffList.count { it.status == DiffStatus.UNCHANGED },
@@ -469,17 +585,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         _diffResult.value = null
     }
 
-    fun setPerformanceProfile(mode: PerformanceMode) {
-        val results = PerformanceDriverManager.setPerformanceMode(mode)
-        val passed = results.count { it.isSuccess }
-        showSnack("Performance Mode: ${mode.displayName} ($passed/${results.size} sysfs nodes applied)")
-    }
-
-    fun restoreStockPerformance() {
-        PerformanceDriverManager.restoreStock()
-        showSnack("Stock hardware snapshot restored.")
-    }
-
     fun completeOnboarding() {
         _onboardingStep.value = -1
     }
@@ -496,14 +601,30 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun calibrateTriggerAndSave(left: Boolean) {
+        viewModelScope.launch {
+            if(!calibrationManager.runTriggerCalibration(left)) {
+                showSnack("Trigger calibration failed: ${triggerCalibrationState.value.error ?: triggerCalibrationState.value.phase}");return@launch
+            }
+            val measured=triggerCalibrationState.value
+            val key=if(left) "LT" else "RT"
+            val targets=_activeConfig.value.buttons.filter { com.example.input.ControllerBindingAliases.canonical(it.boundKey)==key }
+            if(targets.isEmpty()) { showSnack("Trigger measured; add a $key binding before saving its thresholds");return@launch }
+            updateActiveConfig(_activeConfig.value.copy(buttons=_activeConfig.value.buttons.map { node ->
+                if(node in targets) node.copy(triggerPressThreshold=measured.pressThreshold,triggerReleaseThreshold=measured.releaseThreshold) else node
+            })) { showSnack("Measured $key thresholds saved to Room") }
+        }
+    }
+
     fun saveCalibrationToRoom(innerDZ: Float, outerDZ: Float) {
         val currentCfg = _activeConfig.value
         val updatedJoystick = currentCfg.joystick.copy(
             innerDeadzone = innerDZ,
             outerDeadzone = outerDZ
         )
-        val updatedCfg = currentCfg.copy(joystick = updatedJoystick)
-        updateActiveConfig(updatedCfg)
-        showSnack("Calibration saved to Room database successfully!")
+        val updatedCfg = currentCfg.copy(joystick = updatedJoystick, buttons = currentCfg.buttons.map {
+            if (it.type == NodeType.JOYSTICK_ZONE) it.copy(deadzoneInner = innerDZ, deadzoneOuter = outerDZ) else it
+        })
+        updateActiveConfig(updatedCfg) { showSnack("Calibration saved to Room database successfully!") }
     }
 }

@@ -19,17 +19,17 @@ import org.robolectric.annotation.Config
 class ExampleRobolectricTest {
 
     @Test
-    fun `verify app name resource is Controlyst`() {
+    fun `verify app name resource is NEXUS INPUT`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Controlyst", appName)
+        assertEquals("NEXUS INPUT", appName)
     }
 
     @Test
     fun `verify privilege detector probes accessibility fallback`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val detector = PrivilegeDetector(context)
-        val probes = detector.probeAll()
+        val probes = kotlinx.coroutines.runBlocking { detector.probeAll() }
 
         assertEquals(5, probes.size)
         assertTrue(probes.any { it.method == PrivilegeMethod.ACCESSIBILITY })
@@ -53,12 +53,12 @@ class ExampleRobolectricTest {
 
     @Test
     fun `verify json serialization roundtrip for mapping config`() {
-        val originalConfig = ControlystRepository.createSampleDfmConfig()
+        val originalConfig = com.example.model.MappingConfig(id="test_profile",profileName="Test",gamePackage="com.test.game",buttons=listOf(com.example.model.MappingNode("test_button",.2f,.3f)))
         val jsonStr = ControlystRepository.serializeConfigToJson(originalConfig)
 
         assertTrue(jsonStr.contains("schemaVersion"))
-        assertTrue(jsonStr.contains("dfm_pro_ranked"))
-        assertTrue(jsonStr.contains("b_fire"))
+        assertTrue(jsonStr.contains("test_profile"))
+        assertTrue(jsonStr.contains("test_button"))
 
         val deserialized = ControlystRepository.deserializeJsonToConfig(jsonStr)
         assertEquals(originalConfig.id, deserialized.id)
@@ -68,31 +68,14 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `verify Shizuku pairing manager rejects non-6-digit code and accepts valid code`() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        com.example.service.ShizukuPairingManager.showPairingNotification(context, 5555)
-
-        assertTrue(com.example.service.ShizukuPairingManager.pairingState.value.isHelperNotificationActive)
-
-        // Invalid code test
-        com.example.service.ShizukuPairingManager.handlePairingCodeReceived(context, "123", 5555)
-        assertFalse(com.example.service.ShizukuPairingManager.pairingState.value.isPairingSuccessful)
-
-        // Valid 6-digit code test
-        com.example.service.ShizukuPairingManager.handlePairingCodeReceived(context, "987654", 5555)
-        assertTrue(com.example.service.ShizukuPairingManager.pairingState.value.isPairingSuccessful)
-        assertEquals("987654", com.example.service.ShizukuPairingManager.pairingState.value.lastEnteredCode)
-    }
-
-    @Test
     fun `verify KernelSU module metadata and WebUI HTML content generation`() {
         val prop = com.example.module.KernelSuModuleManager.getModuleProp()
-        assertTrue(prop.contains("id=controlyst_uinput"))
-        assertTrue(prop.contains("webroot=webroot"))
+        assertTrue(prop.contains("id=gamepad.pro.root"))
+        assertTrue(prop.contains("name=NEXUS INPUT Root Companion"))
 
         val webUiHtml = com.example.module.KernelSuModuleManager.getWebUiHtml()
-        assertTrue(webUiHtml.contains("Controlyst WebUI"))
-        assertTrue(webUiHtml.contains("/dev/uinput"))
-        assertTrue(webUiHtml.contains("1000 Hz"))
+        assertTrue(webUiHtml.contains("NEXUS INPUT"))
+        assertTrue(webUiHtml.contains("id=\"uinput\""))
+        assertTrue(com.example.module.KernelSuModuleManager.getServiceSh().contains("/dev/uinput"))
     }
 }

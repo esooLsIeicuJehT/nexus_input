@@ -13,7 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -101,9 +101,10 @@ fun NexusHomeScreen(
     val activeGame = selectedGame ?: games.firstOrNull { it.packageName == activeConfig.gamePackage }
     val activeProbe = privilegeResults.firstOrNull { it.method == activePrivilege }
     val engineReady = activeProbe?.isDetected == true
+    val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
     val latencyLabel = when {
         latency.isTesting -> "Testing"
-        latency.roundTripMs > 0 -> "Legacy ${latency.roundTripMs} ms"
+        latency.roundTripMs > 0 -> "${latency.roundTripMs} ms call"
         else -> "Not measured"
     }
 
@@ -143,7 +144,7 @@ fun NexusHomeScreen(
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (engineReady) "ENGINE READY" else "ENGINE NEEDS SETUP",
+                        if (runtime.backendReady) "MAPPING BACKEND READY" else if(engineReady) "BACKEND AVAILABLE; MAPPING IDLE" else "BACKEND NEEDS SETUP",
                         color = if (engineReady) AccentGreen else AccentAmber,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -164,15 +165,15 @@ fun NexusHomeScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricCard(
                 icon = Icons.Default.Speed,
-                label = "Latency status",
+                label = "Backend call timing",
                 value = latencyLabel,
                 accent = if (latency.roundTripMs > 0) AccentAmber else NexusCyan,
                 modifier = Modifier.weight(1f)
             )
             MetricCard(
                 icon = Icons.Default.Tune,
-                label = "Configured polling",
-                value = "${controller.pollingRateHz} Hz",
+                label = "Event capture",
+                value = if(com.example.input.ControllerInputMonitor.state.value.lastEventUptimeMs>0) "Observed" else "Waiting",
                 accent = NexusVioletLight,
                 modifier = Modifier.weight(1f)
             )
@@ -315,13 +316,23 @@ fun NexusProfilesScreen(
     val context = LocalContext.current
     val games by viewModel.games.collectAsState()
     val selectedGame by viewModel.selectedGame.collectAsState()
+    val installed by viewModel.installedApps.collectAsState()
+    val loading by viewModel.appInventoryLoading.collectAsState()
+    var showApps by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { SectionTitle("Profiles", "Game library") }
+        item {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                SectionTitle("Profiles", "Game library")
+                Button(onClick={showApps=true;viewModel.refreshInstalledApps()}) { Text("Add game") }
+            }
+        }
 
         if (games.isEmpty()) {
             item {
@@ -353,6 +364,21 @@ fun NexusProfilesScreen(
         }
         item { Spacer(Modifier.height(16.dp)) }
     }
+    if(showApps) AlertDialog(onDismissRequest={showApps=false},title={Text("Choose an installed app")},text={
+        Column {
+            OutlinedTextField(query,{query=it},label={Text("Search name or package")})
+            if(loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            LazyColumn(Modifier.heightIn(max=360.dp)) {
+                items(installed.filter { it.displayName.contains(query,true) || it.packageName.contains(query,true) },key={it.packageName}) { app ->
+                    TextButton(onClick={viewModel.addGame(app);showApps=false}) {
+                        Column { Text(app.displayName);Text(app.packageName,style=MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+            if(!loading && installed.isEmpty()) Text("Android returned no launchable apps. Check package visibility and logs.")
+        }
+    },confirmButton={TextButton(onClick={showApps=false}) { Text("Close") }})
+
 }
 
 @Composable
@@ -406,6 +432,9 @@ fun NexusProfileDetailScreen(
     val context = LocalContext.current
     val game by viewModel.selectedGame.collectAsState()
     val config by viewModel.activeConfig.collectAsState()
+    val allProfiles by viewModel.profiles.collectAsState()
+    var showCreate by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
@@ -450,6 +479,13 @@ fun NexusProfileDetailScreen(
         }
 
         NexusPanel(Modifier.fillMaxWidth()) {
+            Text("SAVED PROFILES",color=NexusCyan,fontWeight=FontWeight.Bold)
+            allProfiles.filter { it.gamePackage==game?.packageName }.forEach { profile ->
+                TextButton(onClick={viewModel.selectSavedProfile(profile)}) { Text(if(profile.id==config.id) "${profile.profileName} · selected" else profile.profileName) }
+            }
+            OutlinedButton(onClick={showCreate=true},enabled=game!=null) { Text("New profile") }
+        }
+        NexusPanel(Modifier.fillMaxWidth()) {
             Text("LAYOUT MODE", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             Text(config.profileName, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("Target aspect ratio ${config.targetAspectRatio}", color = TextSecondary, fontSize = 10.sp)
@@ -473,6 +509,10 @@ fun NexusProfileDetailScreen(
             }
         }
     }
+    if(showCreate) AlertDialog(onDismissRequest={showCreate=false},title={Text("New game profile")},text={OutlinedTextField(newName,{newName=it},label={Text("Profile name")})},
+        confirmButton={TextButton(onClick={viewModel.createProfile(newName);showCreate=false;newName=""},enabled=newName.isNotBlank()) { Text("Create") }},
+        dismissButton={TextButton(onClick={showCreate=false}) { Text("Cancel") }})
+
 }
 
 @Composable
@@ -528,10 +568,8 @@ fun NexusDevicesScreen(
             }
             NexusPanel(Modifier.fillMaxWidth()) {
                 Text("INPUT CONFIGURATION", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
-                DeviceSetting("Configured polling rate", "${controller.pollingRateHz} Hz")
                 DeviceSetting("Inner deadzone", "${(controller.stickInnerDeadzone * 100).toInt()}%")
                 DeviceSetting("Outer deadzone", "${(controller.stickOuterDeadzone * 100).toInt()}%")
-                DeviceSetting("Gyro aiming", if (controller.gyroAimingEnabled) "Enabled" else "Disabled")
             }
         } else {
             NexusPanel(Modifier.fillMaxWidth()) {
@@ -548,7 +586,7 @@ fun NexusDevicesScreen(
             Text("Open calibration tools")
         }
         Text(
-            "Calibration currently contains a legacy simulated path and is not treated as hardware-verified data by the Nexus dashboard.",
+            "Calibration consumes real Android motion events. Missing events or insufficient travel produce a visible failure.",
             color = AccentAmber,
             fontSize = 9.sp
         )
@@ -570,6 +608,10 @@ fun NexusSystemScreen(
 ) {
     val activePrivilege by viewModel.activePrivilegeMethod.collectAsState()
     val probes by viewModel.privilegeResults.collectAsState()
+    val runtime by com.example.service.MappingRuntimeBridge.state.collectAsState()
+    val panic by com.example.service.PanicKillSwitch.state.collectAsState()
+    val diagnostics by viewModel.diagnostics.collectAsState()
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
@@ -578,7 +620,7 @@ fun NexusSystemScreen(
         SectionTitle("System", "Engine & integrations")
 
         NexusPanel(Modifier.fillMaxWidth()) {
-            Text("ACTIVE INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+            Text("REQUESTED INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
             Text(activePrivilege.title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
             Text(activePrivilege.badgeLabel, color = TextSecondary, fontSize = 10.sp)
             Spacer(Modifier.height(10.dp))
@@ -586,6 +628,31 @@ fun NexusSystemScreen(
                 Icon(Icons.Default.Refresh, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("Re-check backends")
+            }
+        }
+
+        NexusPanel(Modifier.fillMaxWidth()) {
+            Text("MAPPING STATUS", color = NexusCyan, fontWeight = FontWeight.Bold)
+            Text(if (runtime.backendReady) "Backend ready: ${runtime.backend}" else if (runtime.armed) "Armed; backend not ready" else "Disarmed", color = TextPrimary)
+            Text("Target in foreground: ${runtime.targetForeground}", color = TextSecondary)
+            runtime.notice?.let { Text(it, color = AccentAmber) }
+            runtime.error?.let { Text(it, color = AccentRose) }
+            if (panic.isKilled) {
+                Text(if (panic.releaseConfirmed) "Panic: backend acknowledged release" else "Panic: release not confirmed", color = AccentAmber)
+                panic.error?.let { Text(it, color = AccentRose) }
+            }
+        }
+        NexusPanel(Modifier.fillMaxWidth()) {
+            Text("RELEASE SELF-CHECK", color = NexusCyan, fontWeight = FontWeight.Bold)
+            Text("Reads device, permission, storage and backend observations. No test touches are injected.", color = TextSecondary)
+            Button(onClick = viewModel::runSelfCheck) { Text("Collect diagnostics") }
+            diagnostics?.let { report ->
+                OutlinedButton(onClick = {
+                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NEXUS INPUT diagnostics",report))
+                    viewModel.showSnack("Diagnostics copied")
+                }) { Text("Copy report") }
+                Text(report, color = TextSecondary, fontSize = 9.sp)
             }
         }
 
@@ -614,6 +681,7 @@ fun NexusSystemScreen(
         SectionTitle("Tools", "System controls")
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
+        SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("community") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }
         SystemAction("Onboarding", "Run setup and permission checks again", Icons.Default.HelpOutline) { viewModel.restartOnboarding() }
     }

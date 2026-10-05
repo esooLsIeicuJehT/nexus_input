@@ -13,13 +13,22 @@ function execRoot(command) {
       return;
     }
     const callback = `nx_exec_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    window[callback] = (errno, stdout, stderr) => {
+    const timer = setTimeout(() => {
       delete window[callback];
-      resolve({ errno, stdout, stderr });
+      reject(new Error('KernelSU shell request timed out after 180 seconds'));
+    }, 180000);
+    window[callback] = (errno, stdout, stderr) => {
+      clearTimeout(timer);
+      delete window[callback];
+      const code = Number(errno);
+      if (!Number.isInteger(code)) { reject(new Error('KernelSU returned an invalid exit status')); return; }
+      resolve({ errno: code, stdout: String(stdout || ''), stderr: String(stderr || '') });
     };
     try {
-      window.ksu.exec(command, callback);
+      // KernelSU's WebUI bridge requires command, serialized options, and callback name.
+      window.ksu.exec(command, '{}', callback);
     } catch (error) {
+      clearTimeout(timer);
       delete window[callback];
       reject(error);
     }
@@ -53,7 +62,7 @@ async function refresh() {
 
   const cmd = String.raw`
 PACKAGE=${APK_PACKAGE}
-if pm path "$PACKAGE" >/dev/null 2>&1; then echo "APK=installed"; else echo "APK=missing"; fi
+if pm path "$PACKAGE" 2>/dev/null | grep -q '^package:/'; then echo "APK=installed"; else echo "APK=missing"; fi
 if [ -e /dev/uinput ]; then echo "UINPUT=$(ls -lZ /dev/uinput 2>&1)"; else echo "UINPUT=missing"; fi
 if [ -e /dev/uhid ]; then echo "UHID=$(ls -lZ /dev/uhid 2>&1)"; else echo "UHID=missing"; fi
 echo "SELINUX=$(getenforce 2>/dev/null || echo unknown)"
@@ -94,7 +103,8 @@ echo 'BOOT_STATUS_END'
     const result = await execRoot(cmd);
     log.textContent = `exit=${result.errno}\n${result.stderr || result.stdout}`;
     if (result.errno !== 0) {
-      state('apk', 'diagnostic failed', 'bad');
+      ['apk','uinput','uhid','selinux','processes'].forEach(id => state(id, 'diagnostic failed', 'bad'));
+      ['runtimeStatus','devices','moduleConfig','bootStatus'].forEach(id => state(id, 'Unavailable: diagnostic failed', 'bad'));
       return;
     }
 
@@ -117,7 +127,7 @@ echo 'BOOT_STATUS_END'
     document.getElementById('bootStatus').textContent = section(lines, 'BOOT_STATUS_BEGIN', 'BOOT_STATUS_END');
   } catch (error) {
     log.textContent = String(error);
-    state('apk', 'WebUI API error', 'bad');
+    ['apk','uinput','uhid','selinux','processes','runtimeStatus','devices','moduleConfig','bootStatus'].forEach(id => state(id, 'Unavailable: WebUI API error', 'bad'));
   } finally {
     setBusy(refreshButton, false, 'Refreshing…');
   }
@@ -151,9 +161,11 @@ function parseKv(text) {
 async function readInstalledVersion() {
   try {
     const r = await execRoot(`sed -n 's/^version=//p' ${MODULE_DIR}/module.prop | head -n 1`);
-    document.getElementById('installedVersion').textContent = r.stdout.trim() || 'unknown';
+    if (r.errno !== 0 || !r.stdout.trim()) throw new Error(r.stderr || `Module version read failed (exit ${r.errno})`);
+    document.getElementById('installedVersion').textContent = r.stdout.trim();
   } catch (error) {
-    document.getElementById('installedVersion').textContent = 'unavailable';
+    document.getElementById('installedVersion').textContent = `Unavailable: ${error.message}`;
+    log.textContent = String(error);
   }
 }
 
@@ -170,11 +182,11 @@ async function checkGithubUpdate() {
     const r = await execRoot(`${MODULE_DIR}/update.sh check`);
     const kv = parseKv(r.stdout);
     document.getElementById('remoteVersion').textContent = kv.REMOTE_VERSION || 'unavailable';
-    if (kv.STATE === 'AVAILABLE') {
+    if (r.errno === 10 && kv.STATE === 'AVAILABLE') {
       githubUpdateAvailable = true;
       install.disabled = false;
       status.textContent = `Update ${kv.REMOTE_VERSION} is available. The ZIP will be SHA-256 verified before KernelSU stages it.`;
-    } else if (kv.STATE === 'UP_TO_DATE') {
+    } else if (r.errno === 0 && kv.STATE === 'UP_TO_DATE') {
       status.textContent = 'NEXUS INPUT KernelSU Companion is up to date.';
     } else {
       status.textContent = kv.MESSAGE || r.stderr || r.stdout || `Update check failed (exit ${r.errno})`;
@@ -198,7 +210,7 @@ async function installGithubUpdate() {
   try {
     const r = await execRoot(`${MODULE_DIR}/update.sh install`);
     const kv = parseKv(r.stdout);
-    if (kv.STATE === 'INSTALLED_PENDING_REBOOT') {
+    if (r.errno === 0 && kv.STATE === 'INSTALLED_PENDING_REBOOT') {
       githubUpdateAvailable = false;
       status.textContent = kv.MESSAGE || 'Update staged. Reboot to activate it.';
     } else {

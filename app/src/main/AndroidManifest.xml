@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <queries>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="com.rifsxd.ksunext" />
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
 

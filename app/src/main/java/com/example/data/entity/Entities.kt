@@ -12,7 +12,7 @@ data class GameEntity(
     val iconUri: String = "",
     val isGameTag: Boolean = true,
     val antiCheatSeverity: AntiCheatSeverity = AntiCheatSeverity.SAFE,
-    val antiCheatNotes: String = "No aggressive injection anti-cheat detected",
+    val antiCheatNotes: String = "Game compatibility has not been assessed",
     val playTimeMinutes: Long = 0,
     val lastPlayedTimestamp: Long = 0
 )
@@ -26,10 +26,10 @@ data class ConfigProfileEntity(
     val jsonBlob: String,
     val isDefault: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
-    val author: String = "Controlyst Community",
+    val author: String = "Local user",
     val isOfficialVerified: Boolean = false,
-    val rating: Float = 4.8f,
-    val downloads: Int = 120
+    val rating: Float = 0f,
+    val downloads: Int = 0
 )
 
 @Entity(tableName = "macros")
@@ -41,3 +41,9 @@ data class MacroEntity(
     val triggerKey: String,
     val stepsJson: String
 )
+
+@Entity(tableName = "profile_migrations")
+data class ProfileMigrationEntity(@PrimaryKey val sourceKey: String, val checksum: String, val importedAt: Long)
+
+@Entity(tableName = "mapper_state")
+data class MapperStateEntity(@PrimaryKey val id: Int = 1, val activeProfileId: String?, val mappingEnabled: Boolean)

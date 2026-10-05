@@ -1,17 +1,10 @@
 package com.example.service
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.example.R
 import com.example.injector.InputInjector
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 data class PanicState(
@@ -19,93 +12,43 @@ data class PanicState(
     val lastTriggerTime: Long = 0L,
     val triggerSource: String = "Idle",
     val activeMacrosStoppedCount: Int = 0,
-    val heldVirtualButtonsReleased: Int = 0
+    val heldVirtualButtonsReleased: Int = 0,
+    val releaseConfirmed: Boolean = false,
+    val error: String? = null
 )
 
 object PanicKillSwitch {
-    const val CHANNEL_ID = "controlyst_panic_killswitch"
-    const val NOTIFICATION_ID = 9999
-    const val ACTION_EMERGENCY_KILL = "com.example.action.EMERGENCY_KILL_SWITCH"
-
     private val _state = MutableStateFlow(PanicState())
-    val state: StateFlow<PanicState> = _state.asStateFlow()
-
+    val state = _state.asStateFlow()
     private var onPanicTriggeredListener: (() -> Unit)? = null
-
-    fun setPanicListener(listener: () -> Unit) {
-        onPanicTriggeredListener = listener
-    }
-
+    fun setPanicListener(listener: () -> Unit) { onPanicTriggeredListener = listener }
+    @Suppress("UNUSED_PARAMETER")
     fun trigger(context: Context, injector: InputInjector? = null): Int {
-        injector?.releaseAll()
-        triggerPanic(context, "Quick Trigger")
-        return 4
+        triggerPanic(context)
+        // A synchronous UI call cannot know an asynchronous release count.
+        return 0
     }
-
     fun triggerPanic(context: Context, source: String = "Manual UI Button") {
-        Log.w("PanicKillSwitch", "EMERGENCY PANIC KILL SWITCH ACTIVATED via $source!")
-
-        // 1. Release all held uinput virtual keys and touch points
-        releaseHeldVirtualButtons()
-
-        // 2. Stop running mapping service / macros
-        val stopIntent = Intent(context, MappingForegroundService::class.java).apply {
-            action = MappingForegroundService.ACTION_STOP_MAPPING
+        _state.value = PanicState(true, System.currentTimeMillis(), source)
+        val service = ControlystAccessibilityService.getInstance()
+        if (service != null) service.emergencyRelease { released ->
+            _state.value = _state.value.copy(releaseConfirmed = released,
+                error = if (released) null else "Contact release or backend cleanup failed; inspect Android logs and backend state.")
+            Log.w("NexusPanic", "Emergency release completed; backend acknowledgement=$released")
+        } else {
+            MappingRuntimeBridge.disarm("Emergency stop requested")
+            _state.value = _state.value.copy(error = "Capture service unavailable; release could not be confirmed.")
+            Log.e("NexusPanic", "Cannot confirm release without capture service")
         }
         try {
-            context.startService(stopIntent)
-        } catch (e: Exception) {
-            // Ignore
+            context.startService(Intent(context, MappingForegroundService::class.java).apply {
+                action = MappingForegroundService.ACTION_STOP_MAPPING
+            })
+        } catch (error: Exception) {
+            _state.value = _state.value.copy(error = "Foreground service stop failed: ${error.message}")
+            Log.e("NexusPanic", "Foreground stop failed", error)
         }
-
-        // 3. Notify listener to dismiss overlays
-        onPanicTriggeredListener?.invoke()
-
-        _state.value = PanicState(
-            isKilled = true,
-            lastTriggerTime = System.currentTimeMillis(),
-            triggerSource = source,
-            activeMacrosStoppedCount = 2,
-            heldVirtualButtonsReleased = 4
-        )
-
-        // Show confirmation toast / notification
-        showPanicNotification(context)
+        runCatching { onPanicTriggeredListener?.invoke() }.onFailure { Log.e("NexusPanic", "Overlay close failed", it) }
     }
-
-    fun resetPanic() {
-        _state.value = PanicState(isKilled = false, triggerSource = "Reset to normal")
-    }
-
-    private fun releaseHeldVirtualButtons() {
-        // Send release signal through uinput dev node or root shell
-        try {
-            Runtime.getRuntime().exec(arrayOf("sh", "-c", "echo 'RELEASE_ALL' > /dev/controlyst/cmd 2>/dev/null || true"))
-        } catch (e: Exception) {
-            // Safe fallback
-        }
-    }
-
-    fun showPanicNotification(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Controlyst Emergency Kill-Switch",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("⚠ Mapping Suspended (Kill-Switch)")
-            .setContentText("All virtual controller inputs, macros, and overlays terminated.")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setAutoCancel(true)
-            .build()
-
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, notification)
-    }
+    fun resetPanic() { _state.value = PanicState() }
 }

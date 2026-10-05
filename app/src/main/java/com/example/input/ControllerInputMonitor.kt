@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 data class ControllerLiveState(
     val connectedEventSource: String? = null,
+    val deviceId: Int? = null,
     val axes: Map<String, Float> = emptyMap(),
     val pressedButtons: Set<String> = emptySet(),
     val lastEventUptimeMs: Long = 0L
@@ -51,6 +52,7 @@ object ControllerInputMonitor {
 
         _state.value = _state.value.copy(
             connectedEventSource = device?.name,
+            deviceId = device?.id,
             axes = axes,
             lastEventUptimeMs = event.eventTime
         )
@@ -69,9 +71,14 @@ object ControllerInputMonitor {
 
         _state.value = _state.value.copy(
             connectedEventSource = event.device?.name,
+            deviceId = event.device?.id,
             pressedButtons = updated,
             lastEventUptimeMs = event.eventTime
         )
+    }
+
+    fun onDeviceRemoved(id: Int) {
+        if(_state.value.deviceId==id) _state.value=ControllerLiveState()
     }
 
     private fun isControllerSource(source: Int): Boolean {
@@ -80,4 +87,12 @@ object ControllerInputMonitor {
         val dpad = source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
         return gamepad || joystick || dpad
     }
+}
+
+/** Independent of tester UI state so activity/service listener order cannot hide a disconnect. */
+internal class ControllerSessionDevices {
+    private val captured = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    fun record(deviceId: Int) { captured.add(deviceId) }
+    fun remove(deviceId: Int): Boolean = captured.remove(deviceId)
+    fun clear() = captured.clear()
 }

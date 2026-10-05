@@ -71,7 +71,7 @@ fun CalibrationScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
-                    Text("Auto-detect layout with zero Stadia/Xbox mismatch", color = CyberCyan, fontSize = 11.sp)
+                    Text(controllerProfile.deviceName ?: "No controller connected", color = CyberCyan, fontSize = 11.sp)
                 }
 
                 IconButton(onClick = { viewModel.detectController() }) {
@@ -133,7 +133,7 @@ fun CalibrationScreen(
                     }
 
                     Text(
-                        text = stickState.phase,
+                        text = stickState.error ?: stickState.phase,
                         color = CyberCyan,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -178,14 +178,14 @@ fun CalibrationScreen(
                         if (isCalibratingStick) return@Button
                         isCalibratingStick = true
                         coroutineScope.launch {
-                            viewModel.calibrationManager.runStickCalibration {
+                            try { viewModel.calibrationManager.runStickCalibration {
                                 if (it.phase == "CALIBRATION COMPLETE") {
                                     isCalibratingStick = false
                                 }
-                            }
+                            } } finally { isCalibratingStick = false }
                         }
                     },
-                    enabled = !isCalibratingStick,
+                    enabled = !isCalibratingStick && controllerProfile.connected,
                     colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -206,6 +206,7 @@ fun CalibrationScreen(
                             stickState.computedOuterDeadzone
                         )
                     },
+                    enabled = stickState.isMeasured,
                     colors = ButtonDefaults.buttonColors(containerColor = ControlystViolet),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -238,20 +239,21 @@ fun CalibrationScreen(
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
+                Text(triggerState.phase + " • ${triggerState.currentPull}" + (triggerState.error?.let { " • $it" } ?: ""), color = TextSecondary)
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { viewModel.showSnack("Left Trigger (LT) calibrated to 100% hair-trigger") },
+                        onClick = { viewModel.calibrateTriggerAndSave(true) },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
                         Text("Calibrate LT")
                     }
                     OutlinedButton(
-                        onClick = { viewModel.showSnack("Right Trigger (RT) calibrated to 100% hair-trigger") },
+                        onClick = { viewModel.calibrateTriggerAndSave(false) },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
@@ -274,14 +276,14 @@ fun CalibrationScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Bolt, contentDescription = null, tint = ElectricViolet)
                     Spacer(Modifier.width(10.dp))
-                    Text("Touch Latency Benchmark", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Backend call timing", fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (latencyResult.roundTripMs > 0)
-                        "Benchmark Score: ${latencyResult.roundTripMs} ms • ${latencyResult.grade}"
+                        "Backend call: ${latencyResult.roundTripMs} ms • ${latencyResult.grade}"
                     else
-                        "Measures frame-to-touch dispatch latency of your active injection backend.",
+                        latencyResult.grade + ". Includes backend preparation; does not measure screen presentation.",
                     color = if (latencyResult.roundTripMs > 0) CyberCyan else TextSecondary,
                     fontSize = 13.sp,
                     fontWeight = if (latencyResult.roundTripMs > 0) FontWeight.Bold else FontWeight.Normal
@@ -300,7 +302,7 @@ fun CalibrationScreen(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isTestingLatency) "Benchmarking Latency..." else "Run Touch Benchmark", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (isTestingLatency) "Timing request..." else "Time backend call", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -322,7 +324,7 @@ fun CalibrationScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Current Device Ratio: ${activeConfig.targetAspectRatio}. All normalized nodes (0..1) automatically adapt across 16:9, 19.5:9, 20:9, foldables, and tablets.",
+                    "Profile target ratio: ${activeConfig.targetAspectRatio}. All normalized nodes (0..1) automatically adapt across 16:9, 19.5:9, 20:9, foldables, and tablets.",
                     color = TextSecondary,
                     fontSize = 13.sp
                 )

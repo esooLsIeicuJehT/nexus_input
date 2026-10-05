@@ -18,12 +18,14 @@ data class CameraSettings(
 )
 
 data class MappingConfig(
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val id: String,
     val profileName: String,
     val gamePackage: String,
     val gameTitle: String = "",
     val controllerType: ControllerType = ControllerType.XBOX,
+    val preferredBackend: PrivilegeMethod? = null,
+    val controllerProfileId: String? = null,
     val targetAspectRatio: String = "19.5:9", // "16:9", "19.5:9", "20:9", "4:3"
     val joystick: JoystickSettings = JoystickSettings(),
     val camera: CameraSettings = CameraSettings(),
@@ -32,9 +34,9 @@ data class MappingConfig(
     val antiRecoilEnabled: Boolean = false,
     val antiRecoilVerticalPull: Float = 0.0f,
     val tags: List<String> = emptyList(),
-    val author: String = "Controlyst Community",
+    val author: String = "Local user",
     val isOfficialVerified: Boolean = false,
     val downloadCount: Int = 0,
-    val rating: Float = 4.8f,
+    val rating: Float = 0f,
     val lastUpdated: Long = System.currentTimeMillis()
 )

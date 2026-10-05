@@ -7,6 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
+import kotlinx.coroutines.*
+import java.util.concurrent.TimeUnit
 import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
 import com.example.MainActivity
@@ -124,64 +127,70 @@ object ShizukuPairingManager {
         manager.notify(NOTIFICATION_ID, notification)
     }
 
-    fun handlePairingCodeReceived(context: Context, code: String, port: Int) {
-        val cleanCode = code.trim().filter { it.isDigit() }
-        if (cleanCode.length != 6) {
-            updateNotificationStatus(
-                context,
-                title = "Invalid Code",
-                message = "The code '$code' is not 6 digits. Please re-enter the 6 digits from Developer Options.",
-                isSuccess = false
-            )
-            _pairingState.value = _pairingState.value.copy(
-                statusMessage = "Invalid code: must be 6 digits. Received: $cleanCode"
-            )
-            return
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun handlePairingCodeReceived(context: Context, code: String, port: Int): Job = scope.launch {
+        val cleanCode = code.trim()
+        val outcome = when {
+            !cleanCode.matches(Regex("[0-9]{6}")) -> PairingOutcome(false, "Pairing code must contain exactly six ASCII digits.")
+            port !in 1..65535 -> PairingOutcome(false, "Pairing port must be between 1 and 65535.")
+            Build.VERSION.SDK_INT < 30 -> PairingOutcome(false, "Wireless ADB pairing requires Android 11 or later.")
+            else -> executeAdbPair(cleanCode, port)
         }
-
-        // Execute pairing sequence (ADB pair localhost:port code)
-        val success = executeAdbPair(cleanCode, port)
-
         _pairingState.value = _pairingState.value.copy(
-            isPairingSuccessful = success,
-            lastEnteredCode = cleanCode,
-            statusMessage = if (success) "Successfully paired with Shizuku on port $port!" else "Pairing failed. Check port and code."
+            isPairingSuccessful = outcome.success,
+            lastEnteredCode = null,
+            isHelperNotificationActive = false,
+            statusMessage = outcome.message
         )
-
-        // Update notification with success state
-        val openAppIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val openAppPending = PendingIntent.getActivity(
-            context,
-            104,
-            openAppIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("✓ Shizuku Paired Successfully!")
-            .setContentText("Code $cleanCode verified on port $port. Shizuku is now authorized!")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setOngoing(false)
-            .setContentIntent(openAppPending)
-            .addAction(android.R.drawable.ic_menu_view, "Open Controlyst", openAppPending)
-            .build()
-
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, notification)
+        if (!outcome.success) Log.e("NexusPairing", outcome.message)
+        updateNotificationStatus(context,
+            if (outcome.success) "ADB device paired" else "ADB pairing failed",
+            outcome.message, outcome.success)
     }
 
-    private fun executeAdbPair(code: String, port: Int): Boolean {
-        return try {
-            // Attempt to invoke adb pair localhost:port code via local socket/shell if available
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "adb pair localhost:$port $code || echo 'simulated_success'"))
-            process.waitFor()
-            true
-        } catch (e: Exception) {
-            true // Fallback to simulated success for emulator/testing
+    internal data class PairingOutcome(val success: Boolean, val message: String)
+
+    internal fun evaluateAdbPair(exitCode: Int, output: String): PairingOutcome {
+        val confirmed = exitCode == 0 && output.lineSequence().any {
+            it.trim().startsWith("Successfully paired to ")
+        }
+        return if (confirmed) PairingOutcome(true,
+            "ADB pairing confirmed. Start Shizuku in its manager, then grant NEXUS INPUT permission. Pairing does not authorize this app.")
+        else PairingOutcome(false, "ADB pairing was not confirmed (exit $exitCode). Use Shizuku's wireless debugging pairing in its manager.")
+    }
+
+    private suspend fun executeAdbPair(code: String, port: Int): PairingOutcome = coroutineScope {
+        var process: Process? = null
+        try {
+            // An actual adb executable is required; Android does not bundle adb.
+            // Send the secret code through stdin, never a shell command or log.
+            val child = ProcessBuilder("adb", "pair", "localhost:$port")
+                .redirectErrorStream(true).start()
+            process = child
+            val output = async(Dispatchers.IO) {
+                child.inputStream.bufferedReader().use { reader ->
+                    val text = StringBuilder()
+                    val buffer = CharArray(1024)
+                    while (true) {
+                        val count = reader.read(buffer)
+                        if (count < 0) break
+                        if (text.length < 16384) text.append(buffer, 0, minOf(count, 16384 - text.length))
+                    }
+                    text.toString()
+                }
+            }
+            child.outputStream.bufferedWriter().use { it.write(code + "\n") }
+            if (!child.waitFor(8, TimeUnit.SECONDS)) {
+                child.destroyForcibly()
+                output.cancel()
+                PairingOutcome(false, "ADB pairing timed out. Pair using the Shizuku manager.")
+            } else evaluateAdbPair(child.exitValue(), output.await())
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            PairingOutcome(false, "ADB pairing unavailable: ${error.javaClass.simpleName}. Pair using the Shizuku manager.")
+        } finally {
+            process?.destroy()
         }
     }
 

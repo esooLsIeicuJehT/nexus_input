@@ -28,13 +28,13 @@ object LocalBackupManager {
         configs: List<MappingConfig>
     ): File = withContext(Dispatchers.IO) {
         val backupDir = File(context.cacheDir, "backups").apply { mkdirs() }
-        val backupZip = File(backupDir, "controlyst_backup_${System.currentTimeMillis()}.zip")
+        val backupZip = File(backupDir, "nexus_backup_${System.currentTimeMillis()}.zip")
         if (backupZip.exists()) backupZip.delete()
 
         ZipOutputStream(BufferedOutputStream(FileOutputStream(backupZip))).use { zos ->
             // 1. metadata.json
             val metaJson = JSONObject().apply {
-                put("appVersion", "1.0.0")
+                put("appVersion", com.example.BuildConfig.VERSION_NAME)
                 put("backupSchemaVersion", 3)
                 put("timestamp", System.currentTimeMillis())
                 put("totalProfilesCount", configs.size)
@@ -45,90 +45,10 @@ object LocalBackupManager {
 
             // 2. profiles/ with complete MappingConfig payload
             configs.forEach { cfg ->
-                val cfgJson = JSONObject().apply {
-                    put("schemaVersion", cfg.schemaVersion)
-                    put("id", cfg.id)
-                    put("profileName", cfg.profileName)
-                    put("gamePackage", cfg.gamePackage)
-                    put("gameTitle", cfg.gameTitle)
-                    put("controllerType", cfg.controllerType.name)
-                    put("targetAspectRatio", cfg.targetAspectRatio)
-                    put("antiRecoilEnabled", cfg.antiRecoilEnabled)
-                    put("antiRecoilVerticalPull", cfg.antiRecoilVerticalPull)
-                    put("author", cfg.author)
-                    put("isOfficialVerified", cfg.isOfficialVerified)
-                    put("downloadCount", cfg.downloadCount)
-                    put("rating", cfg.rating)
-                    put("lastUpdated", cfg.lastUpdated)
-
-                    // Joystick settings
-                    put("joystick", JSONObject().apply {
-                        put("innerDeadzone", cfg.joystick.innerDeadzone)
-                        put("outerDeadzone", cfg.joystick.outerDeadzone)
-                        put("runThresholdNorm", cfg.joystick.runThresholdNorm)
-                        put("sprintLockEnabled", cfg.joystick.sprintLockEnabled)
-                        put("curveExponent", cfg.joystick.curveExponent)
-                    })
-
-                    // Camera settings
-                    put("camera", JSONObject().apply {
-                        put("horizontalSensitivity", cfg.camera.horizontalSensitivity)
-                        put("verticalSensitivity", cfg.camera.verticalSensitivity)
-                        put("accelerationCurve", cfg.camera.accelerationCurve)
-                        put("smoothingFrames", cfg.camera.smoothingFrames)
-                        put("invertY", cfg.camera.invertY)
-                        put("mouseDpiScale", cfg.camera.mouseDpiScale)
-                    })
-
-                    // Buttons and nodes array
-                    val nodesArray = JSONArray()
-                    cfg.buttons.forEach { node ->
-                        val nodeObj = JSONObject().apply {
-                            put("id", node.id)
-                            put("xNorm", node.xNorm)
-                            put("yNorm", node.yNorm)
-                            put("radiusNorm", node.radiusNorm)
-                            put("type", node.type.name)
-                            put("boundKey", node.boundKey)
-                            put("label", node.label)
-                            put("turboHz", node.turboHz)
-                            put("deadzoneInner", node.deadzoneInner)
-                            put("deadzoneOuter", node.deadzoneOuter)
-                            put("sensitivity", node.sensitivity)
-
-                            val macroArray = JSONArray()
-                            node.macroActions.forEach { step ->
-                                macroArray.put(JSONObject().apply {
-                                    put("delayMs", step.delayMs)
-                                    put("actionType", step.actionType)
-                                    put("xNorm", step.xNorm)
-                                    put("yNorm", step.yNorm)
-                                    put("durationMs", step.durationMs)
-                                })
-                            }
-                            put("macroActions", macroArray)
-                        }
-                        nodesArray.put(nodeObj)
-                    }
-                    put("buttons", nodesArray)
-
-                    // Crosshair config
-                    put("crosshair", JSONObject().apply {
-                        put("isEnabled", cfg.crosshair.isEnabled)
-                        put("shape", cfg.crosshair.shape.name)
-                        put("sizeDp", cfg.crosshair.sizeDp)
-                        put("thicknessDp", cfg.crosshair.thicknessDp)
-                        put("gapDp", cfg.crosshair.gapDp)
-                        put("colorHex", cfg.crosshair.colorHex)
-                        put("opacity", cfg.crosshair.opacity)
-                        put("outlineEnabled", cfg.crosshair.outlineEnabled)
-                        put("outlineColorHex", cfg.crosshair.outlineColorHex)
-                        put("outlineThicknessDp", cfg.crosshair.outlineThicknessDp)
-                        put("offsetX", cfg.crosshair.offsetX)
-                        put("offsetY", cfg.crosshair.offsetY)
-                        put("dynamicSpread", cfg.crosshair.dynamicSpread)
-                    })
-                }
+                val errors = com.example.input.ProfileValidator.errors(cfg, requireBindings = false)
+                require(errors.isEmpty()) { errors.joinToString("; ") }
+                require(cfg.id.matches(Regex("[A-Za-z0-9_.-]+"))) { "Unsafe profile ID for ZIP export" }
+                val cfgJson = JSONObject(com.example.data.ControlystRepository.serializeConfigToJson(cfg))
                 writeStringToZip(zos, "profiles/${cfg.id}.json", cfgJson.toString(2))
             }
         }
@@ -139,18 +59,19 @@ object LocalBackupManager {
     suspend fun validateAndInspectBackupZip(file: File): BackupMetadata? = withContext(Dispatchers.IO) {
         return@withContext try {
             ZipFile(file).use { zip ->
-                val metaEntry = zip.getEntry("metadata.json") ?: return@withContext null
+                val metaEntry = zip.getEntry("metadata.json") ?: error("Backup metadata is missing")
                 val content = zip.getInputStream(metaEntry).bufferedReader().use { it.readText() }
                 val json = JSONObject(content)
                 BackupMetadata(
-                    appVersion = json.optString("appVersion", "1.0.0"),
-                    backupSchemaVersion = json.optInt("backupSchemaVersion", 1),
-                    timestamp = json.optLong("timestamp", System.currentTimeMillis()),
-                    totalProfilesCount = json.optInt("totalProfilesCount", 0),
+                    appVersion = json.getString("appVersion"),
+                    backupSchemaVersion = json.getInt("backupSchemaVersion").also { require(it in 1..3) { "Unsupported backup schema" } },
+                    timestamp = json.getLong("timestamp"),
+                    totalProfilesCount = json.getInt("totalProfilesCount"),
                     deviceModel = json.optString("deviceModel", "Unknown")
                 )
             }
         } catch (e: Exception) {
+            android.util.Log.e("NexusBackup","Backup inspection failed: ${e.message}",e)
             null
         }
     }

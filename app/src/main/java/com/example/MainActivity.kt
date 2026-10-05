@@ -27,18 +27,30 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainAppViewModel by viewModels()
 
+    private val inputListener=object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId:Int) { viewModel.detectController() }
+        override fun onInputDeviceChanged(deviceId:Int) { viewModel.detectController() }
+        override fun onInputDeviceRemoved(deviceId:Int) { ControllerInputMonitor.onDeviceRemoved(deviceId);viewModel.detectController() }
+    }
+    private fun testingInput(source:Int)=viewModel.currentTab.value in setOf("devices","calibration") &&
+        (source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
+            source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK ||
+            source and android.view.InputDevice.SOURCE_DPAD == android.view.InputDevice.SOURCE_DPAD)
+
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         ControllerInputMonitor.onMotionEvent(event)
-        return super.dispatchGenericMotionEvent(event)
+        viewModel.calibrationManager.onMotionEvent(event)
+        return if(testingInput(event.source)) true else super.dispatchGenericMotionEvent(event)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         ControllerInputMonitor.onKeyEvent(event)
-        return super.dispatchKeyEvent(event)
+        return if(testingInput(event.source)) true else super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        getSystemService(android.hardware.input.InputManager::class.java).registerInputDeviceListener(inputListener,android.os.Handler(android.os.Looper.getMainLooper()))
         enableEdgeToEdge()
 
         setContent {
@@ -75,12 +87,18 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         snackbarHostState = snackbarHostState,
                         onPanicKill = {
-                            MappingForegroundService.triggerPanicKill(this@MainActivity)
-                            viewModel.showSnack("Panic kill executed. Mapping halted.")
+                            com.example.service.PanicKillSwitch.triggerPanic(this@MainActivity)
+                            viewModel.showSnack("Emergency stop requested; inspect release status in System.")
                         }
                     )
                 }
             }
         }
     }
+
+    override fun onDestroy() {
+        getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
+        super.onDestroy()
+    }
+
 }

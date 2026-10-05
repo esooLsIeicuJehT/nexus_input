@@ -1,58 +1,76 @@
-name: Android debug build
+name: Android v1 debug and release validation
 
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
+    branches: [main, feature/nexus-v1-finish]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  assemble-debug:
+  android-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK command-line tools
-        uses: android-actions/setup-android@v4
+      - uses: android-actions/setup-android@v4
         with:
           packages: ''
           log-accepted-android-sdk-licenses: 'false'
-
-      - name: Install Android platform and native toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-36" \
-            "ndk;27.0.12077973" \
-            "cmake;3.22.1"
-
-      - name: Set up Gradle 9.3.1
-        uses: gradle/actions/setup-gradle@v4
+      - name: Install Android and native toolchain
+        run: sdkmanager "platform-tools" "platforms;android-36" "ndk;27.0.12077973" "cmake;3.22.1"
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
-
-      - name: Assemble debug APK
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
-
+      - name: Check native boundary and module packaging tests
+        run: |
+          python3 scripts/check_native_boundary.py
+          python3 -m unittest discover -s scripts/tests -v
+          node --test scripts/tests/webui.test.js
+          sh -n kernelsu-module/update.sh kernelsu-module/service.sh kernelsu-module/customize.sh
+      - name: Debug and release regression tests, APK and AAB validation
+        run: gradle --no-daemon --stacktrace -PunsignedRelease=true :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:lintDebug :app:lintRelease
+      - name: Verify packaged identity and native libraries
+        run: python3 scripts/verify_android_artifacts.py
+      - name: Package canonical KernelSU ZIP
+        run: python3 scripts/package_release.py
       - name: Upload debug APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-input-debug
+          name: nexus-input-debug-v1
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+      - name: Upload explicitly unsigned release validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-input-UNSIGNED-release-validation-v1
+          path: |
+            app/build/outputs/apk/release/*unsigned.apk
+            app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload KernelSU ZIP and staged updater manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-input-kernelsu-v1
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload test reports, lint and Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-test-reports
+          path: |
+            app/build/test-results/
+            app/build/reports/
+            app/schemas/
+          if-no-files-found: warn

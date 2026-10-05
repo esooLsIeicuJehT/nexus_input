@@ -66,8 +66,9 @@ class MappingForegroundService : Service() {
     }
 
     private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Default)
-    private var exitWatcherJob: Job? = null
+    private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
+    private var loadJob: Job? = null
+    private var inGameOverlay: InGameMapperOverlay? = null
     private var crosshairOverlayManager: CrosshairOverlayManager? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -94,6 +95,7 @@ class MappingForegroundService : Service() {
             }
             ACTION_PANIC_KILL -> {
                 _isOverlayVisible.value = false
+                PanicKillSwitch.triggerPanic(this,"Notification panic")
                 stopMapping()
                 stopSelf()
             }
@@ -113,7 +115,7 @@ class MappingForegroundService : Service() {
 
         startForeground(NOTIFICATION_ID, buildNotification(gamePkg, "Loading mapping profile…"))
 
-        serviceScope.launch(Dispatchers.IO) {
+        loadJob = serviceScope.launch(Dispatchers.IO) {
             val db = ControlystDatabase.getDatabase(applicationContext)
             val entity = runCatching { db.configProfileDao().getProfileById(configId) }
                 .getOrElse { error ->
@@ -134,10 +136,9 @@ class MappingForegroundService : Service() {
                     return@launch
                 }
 
-            if (config.gamePackage.isNotBlank() && config.gamePackage != gamePkg) {
-                failLoadedProfile(
-                    "Profile '${config.profileName}' targets ${config.gamePackage}, not $gamePkg"
-                )
+            val errors = com.example.input.ProfileValidator.errors(config, gamePkg, configId)
+            if (errors.isNotEmpty()) {
+                failLoadedProfile("Profile validation failed: " + errors.joinToString("; "))
                 return@launch
             }
 
@@ -152,36 +153,22 @@ class MappingForegroundService : Service() {
                 )
 
                 if (android.provider.Settings.canDrawOverlays(this@MappingForegroundService)) {
+                    inGameOverlay?.hide()
+                    inGameOverlay = InGameMapperOverlay(this@MappingForegroundService).apply { show() }
                     crosshairOverlayManager?.hideOverlay()
                     crosshairOverlayManager = CrosshairOverlayManager(this@MappingForegroundService).apply {
                         showOverlay(currentCrosshairConfig)
                     }
+                } else {
+                    MappingRuntimeBridge.reportError("Mapping armed without floating controls: overlay permission is missing. Stop is available in the notification.")
                 }
             }
-
-            startExitWatcher(gamePkg)
         }
     }
 
-    private fun startExitWatcher(gamePkg: String) {
-        exitWatcherJob?.cancel()
-        exitWatcherJob = serviceScope.launch {
-            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            while (_isServiceActive.value) {
-                delay(4_000)
-                val processes = runCatching { am?.runningAppProcesses }.getOrNull().orEmpty()
-                if (processes.isEmpty()) continue
-                val isRunning = processes.any {
-                    it.processName == gamePkg || it.pkgList?.contains(gamePkg) == true
-                }
-                if (!isRunning) {
-                    Log.i(TAG, "Target process $gamePkg is no longer visible; stopping mapper")
-                    stopMapping()
-                    stopSelf()
-                    break
-                }
-            }
-        }
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        inGameOverlay?.onConfigurationChanged(newConfig)
     }
 
     private suspend fun failLoadedProfile(message: String) {
@@ -209,9 +196,11 @@ class MappingForegroundService : Service() {
     private fun stopMapping(clearNotification: Boolean = true) {
         _isServiceActive.value = false
         _activeGamePackage.value = null
-        exitWatcherJob?.cancel()
-        exitWatcherJob = null
-        MappingRuntimeBridge.disarm()
+        loadJob?.cancel()
+        loadJob = null
+        inGameOverlay?.hide()
+        inGameOverlay = null
+        MappingRuntimeBridge.disarm(MappingRuntimeBridge.state.value.error)
         crosshairOverlayManager?.hideOverlay()
         crosshairOverlayManager = null
         if (clearNotification) {

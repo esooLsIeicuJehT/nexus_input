@@ -3,6 +3,12 @@ package com.example.calibration
 import android.content.Context
 import android.os.SystemClock
 import android.view.InputDevice
+import android.view.MotionEvent
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlin.math.hypot
 import com.example.injector.InputInjector
 import com.example.model.ControllerProfile
 import com.example.model.ControllerType
@@ -14,27 +20,33 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 data class StickCalibrationState(
-    val phase: String = "REST",
+    val phase: String = "NOT CALIBRATED",
     val restSamples: List<Float> = emptyList(),
     val maxSamples: List<Float> = emptyList(),
-    val computedInnerDeadzone: Float = 0.12f,
-    val computedOuterDeadzone: Float = 0.98f,
+    val computedInnerDeadzone: Float = 0f,
+    val computedOuterDeadzone: Float = 0f,
     val currentX: Float = 0f,
     val currentY: Float = 0f,
-    val progressPercent: Float = 0f
+    val progressPercent: Float = 0f,
+    val isMeasured: Boolean = false,
+    val error: String? = null
 )
 
 data class TriggerCalibrationState(
-    val phase: String = "REST",
+    val phase: String = "NOT CALIBRATED",
     val restValue: Float = 0f,
-    val maxPullValue: Float = 1.0f,
+    val maxPullValue: Float = 0f,
     val currentPull: Float = 0f,
-    val progressPercent: Float = 0f
+    val progressPercent: Float = 0f,
+    val isMeasured: Boolean = false,
+    val error: String? = null,
+    val pressThreshold: Float = .55f,
+    val releaseThreshold: Float = .35f
 )
 
 data class TouchLatencyResult(
     val roundTripMs: Long = 0,
-    val grade: String = "EXCELLENT",
+    val grade: String = "NOT MEASURED",
     val isTesting: Boolean = false
 )
 
@@ -116,68 +128,154 @@ class CalibrationManager(private val context: Context) {
         )
     }
 
-    /**
-     * Legacy calibration path. This currently does not consume raw MotionEvent
-     * samples from the Activity, so its values MUST NOT be presented as measured
-     * hardware data in Nexus Input UI. Live-device calibration will replace this
-     * path when raw event sampling is wired end-to-end.
-     */
-    suspend fun runStickCalibration(
-        onUpdate: (StickCalibrationState) -> Unit
-    ) = withContext(Dispatchers.Default) {
-        for (i in 1..20) {
-            delay(100)
-            val simulatedNoise = (0.01f + (Math.random().toFloat() * 0.04f))
-            val progress = i / 40f
-            _stickState.value = _stickState.value.copy(
-                phase = "REST (Legacy simulation; raw input sampling not wired)",
-                currentX = simulatedNoise,
-                currentY = -simulatedNoise,
-                progressPercent = progress
-            )
-            onUpdate(_stickState.value)
-        }
+    private data class Sample(val deviceId: Int, val axes: Map<Int, Float>)
+    private val samples = MutableSharedFlow<Sample>(extraBufferCapacity = 256)
+    private val calibrationLock = Mutex()
 
-        for (i in 21..40) {
-            delay(100)
-            val maxRadius = 0.94f + (Math.random().toFloat() * 0.05f)
-            val progress = i / 40f
-            _stickState.value = _stickState.value.copy(
-                phase = "MAX EXTENSION (Legacy simulation; raw input sampling not wired)",
-                currentX = maxRadius * 0.707f,
-                currentY = maxRadius * 0.707f,
-                progressPercent = progress
-            )
-            onUpdate(_stickState.value)
-        }
-
-        _stickState.value = _stickState.value.copy(
-            phase = "LEGACY CALIBRATION COMPLETE — NOT HARDWARE VERIFIED",
-            computedInnerDeadzone = 0.08f,
-            computedOuterDeadzone = 0.98f,
-            progressPercent = 1.0f
-        )
-        onUpdate(_stickState.value)
+    fun onMotionEvent(event: MotionEvent) {
+        val device = event.device ?: return
+        if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return
+        val axes = device.motionRanges.filter { it.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK }
+            .associate { range ->
+                val raw = event.getAxisValue(range.axis)
+                val span = range.max - range.min
+                range.axis to if (span > 0f && raw.isFinite()) ((raw - range.min) / span * 2f - 1f).coerceIn(-1f, 1f) else Float.NaN
+            }
+        samples.tryEmit(Sample(device.id, axes))
     }
 
-    /**
-     * Legacy latency helper. The elapsed value includes an artificial delay and is
-     * not a frame-present or device-to-photon measurement. Nexus UI does not label
-     * it as real input latency.
-     */
-    suspend fun measureTouchLatency(injector: InputInjector): TouchLatencyResult = withContext(Dispatchers.Default) {
+    internal fun computeDeadzones(rest: List<Float>, extension: List<Float>): Pair<Float, Float> {
+        require(rest.size >= 5 && extension.size >= 5) { "At least five real samples are required in each phase" }
+        require((rest + extension).all { it.isFinite() && it in 0f..1.5f }) { "Invalid Android axis sample" }
+        val inner = (rest.max() + .02f).coerceAtMost(.4f)
+        val outer = extension.max().coerceAtMost(1f)
+        require(rest.max() < .4f) { "Keep the stick centered during the rest phase" }
+        require(outer > inner + .2f) { "Fully rotate the stick during extension sampling" }
+        return inner to outer
+    }
+
+    suspend fun runStickCalibration(
+        axisX: Int = MotionEvent.AXIS_X,
+        axisY: Int = MotionEvent.AXIS_Y,
+        onUpdate: (StickCalibrationState) -> Unit
+    ): Boolean = withContext(Dispatchers.Default) {
+        if (!calibrationLock.tryLock()) {
+            _stickState.value = _stickState.value.copy(error = "Another controller calibration is already running")
+            onUpdate(_stickState.value)
+            return@withContext false
+        }
+        try {
+            val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
+                it.getMotionRange(axisX, InputDevice.SOURCE_JOYSTICK) != null &&
+                    it.getMotionRange(axisY, InputDevice.SOURCE_JOYSTICK) != null
+            } ?: error("No connected controller exposes the requested stick axes")
+            _stickState.value = StickCalibrationState(phase = "REST: center stick; move slightly and release")
+            onUpdate(_stickState.value)
+            val rest = mutableListOf<Float>()
+            val extension = mutableListOf<Float>()
+            suspend fun gather(target: MutableList<Float>, duration: Long, phase: String) {
+                val start = SystemClock.uptimeMillis()
+                withTimeoutOrNull(duration) {
+                    samples.collect { sample ->
+                        if (sample.deviceId != device.id) return@collect
+                        val x = sample.axes[axisX] ?: return@collect
+                        val y = sample.axes[axisY] ?: return@collect
+                        val radius = hypot(x, y)
+                        if (!radius.isFinite()) return@collect
+                        target += radius
+                        _stickState.value = _stickState.value.copy(phase = phase, currentX = x, currentY = y,
+                            progressPercent = ((SystemClock.uptimeMillis() - start).toFloat() / duration).coerceIn(0f, 1f))
+                        onUpdate(_stickState.value)
+                    }
+                }
+            }
+            gather(rest, 2500, "REST: center stick; move slightly and release")
+            _stickState.value = _stickState.value.copy(phase = "EXTENSION: rotate stick to its full edge")
+            onUpdate(_stickState.value)
+            gather(extension, 4000, "EXTENSION: rotate stick to its full edge")
+            val (inner, outer) = computeDeadzones(rest, extension)
+            require(InputDevice.getDevice(device.id)?.descriptor == device.descriptor) { "Controller disconnected or changed" }
+            _stickState.value = _stickState.value.copy(phase = "CALIBRATION COMPLETE", restSamples = rest,
+                maxSamples = extension, computedInnerDeadzone = inner, computedOuterDeadzone = outer,
+                progressPercent = 1f, isMeasured = true, error = null)
+            onUpdate(_stickState.value)
+            true
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            _stickState.value = StickCalibrationState(phase = "CALIBRATION FAILED", error = error.message)
+            android.util.Log.e("NexusCalibration", "Calibration failed", error)
+            onUpdate(_stickState.value)
+            false
+        } finally { calibrationLock.unlock() }
+    }
+
+    suspend fun runTriggerCalibration(left: Boolean): Boolean = withContext(Dispatchers.Default) {
+        if (!calibrationLock.tryLock()) {
+            _triggerState.value = _triggerState.value.copy(error = "Another controller calibration is already running")
+            return@withContext false
+        }
+        try {
+            val preferred = if (left) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_RTRIGGER
+            val alternate = if (left) MotionEvent.AXIS_BRAKE else MotionEvent.AXIS_GAS
+            val device = InputDevice.getDeviceIds().map { InputDevice.getDevice(it) }.filterNotNull().firstOrNull {
+                it.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null || it.getMotionRange(alternate,InputDevice.SOURCE_JOYSTICK) != null
+            } ?: error("No controller exposes this analog trigger")
+            val axis = if (device.getMotionRange(preferred,InputDevice.SOURCE_JOYSTICK) != null) preferred else alternate
+            val rest = mutableListOf<Float>(); val pull = mutableListOf<Float>()
+            suspend fun gather(target: MutableList<Float>, phase: String) {
+                _triggerState.value = TriggerCalibrationState(phase = phase)
+                withTimeoutOrNull(3000) { samples.collect { sample ->
+                    if (sample.deviceId != device.id) return@collect
+                    val value = sample.axes[axis]?.let { (it + 1f) / 2f } ?: return@collect
+                    if (value.isFinite()) { target += value; _triggerState.value = _triggerState.value.copy(currentPull = value) }
+                } }
+            }
+            gather(rest, "REST: release trigger, press slightly then release")
+            gather(pull, "PULL: repeatedly pull trigger fully")
+            val (press,release) = computeTriggerThresholds(rest,pull)
+            require(InputDevice.getDevice(device.id)?.descriptor == device.descriptor) { "Controller disconnected or changed" }
+            _triggerState.value = TriggerCalibrationState("CALIBRATION COMPLETE",rest.max(),pull.max(),pull.last(),1f,true,null,press,release)
+            true
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            _triggerState.value = TriggerCalibrationState(phase = "CALIBRATION FAILED",error=error.message)
+            android.util.Log.e("NexusCalibration", "Trigger calibration failed", error)
+            false
+        } finally { calibrationLock.unlock() }
+    }
+
+    internal fun computeTriggerThresholds(rest: List<Float>, pull: List<Float>): Pair<Float,Float> {
+        require(rest.size>=3 && pull.size>=3) { "Insufficient real trigger events" }
+        require((rest+pull).all { it.isFinite() && it in 0f..1f }) { "Invalid Android trigger sample" }
+        val minimum=rest.max();val maximum=pull.max()
+        require(minimum<.4f && maximum-minimum>.5f) { "Release the trigger during rest and fully pull it during sampling" }
+        val travel=maximum-minimum
+        return minimum+travel*.55f to minimum+travel*.35f
+    }
+
+    // Measures the synchronous backend API call only; never device-to-photon latency.
+    suspend fun measureTouchLatency(injector: InputInjector): TouchLatencyResult = withContext(Dispatchers.IO) {
         _latencyResult.value = TouchLatencyResult(isTesting = true)
-        val startTime = SystemClock.uptimeMillis()
-
-        injector.injectTap(5f, 5f)
-        delay(35)
-
-        val elapsed = (SystemClock.uptimeMillis() - startTime).coerceAtLeast(6L)
-        val result = TouchLatencyResult(
-            roundTripMs = elapsed,
-            grade = "LEGACY TIMING — NOT HARDWARE VERIFIED",
-            isTesting = false
-        )
+        val start = SystemClock.elapsedRealtimeNanos()
+        var ownsBackend = false
+        var result: TouchLatencyResult
+        try {
+            check(!com.example.service.MappingRuntimeBridge.state.value.armed) { "Stop mapping before timing a separate backend call" }
+            ownsBackend = true
+            check(injector.prepare()) { "Backend not ready" }
+            check(injector.injectTap(5f, 5f)) { "Backend rejected injection" }
+            result = TouchLatencyResult((SystemClock.elapsedRealtimeNanos() - start) / 1_000_000,
+                "BACKEND CALL DURATION; NOT TOUCH LATENCY")
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            android.util.Log.e("NexusCalibration", "Injection timing failed", error)
+            result = TouchLatencyResult(grade = "FAILED: ${error.message}")
+        } finally {
+            if (ownsBackend) try { injector.cleanup() } catch(error: Exception) {
+                android.util.Log.e("NexusCalibration", "Timing backend cleanup failed", error)
+                result = TouchLatencyResult(grade = "FAILED: backend cleanup: ${error.message}")
+            }
+        }
         _latencyResult.value = result
         result
     }

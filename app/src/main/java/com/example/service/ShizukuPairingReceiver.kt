@@ -14,7 +14,9 @@ class ShizukuPairingReceiver : BroadcastReceiver() {
                 val port = intent.getIntExtra("port", 5555)
 
                 if (!code.isNullOrBlank()) {
-                    ShizukuPairingManager.handlePairingCodeReceived(context, code, port)
+                    val pending = goAsync()
+                    ShizukuPairingManager.handlePairingCodeReceived(context.applicationContext, code, port)
+                        .invokeOnCompletion { pending.finish() }
                 }
             }
             ShizukuPairingManager.ACTION_STOP_PAIRING_HELPER -> {

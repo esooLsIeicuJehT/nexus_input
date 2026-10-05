@@ -16,3 +16,9 @@
 local.properties
 .env
 debug.keystore
+
+/app/build
+/dist
+**/__pycache__/
+*.jks
+*.keystore
