@@ -9,7 +9,6 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.*
-import java.util.concurrent.TimeUnit
 import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
 import com.example.MainActivity
@@ -181,8 +180,8 @@ object ShizukuPairingManager {
                 }
             }
             child.outputStream.bufferedWriter().use { it.write(code + "\n") }
-            if (!child.waitFor(8, TimeUnit.SECONDS)) {
-                child.destroyForcibly()
+            if (!com.example.injector.ProcessWait.await(child,8000)) {
+                child.destroy()
                 output.cancel()
                 PairingOutcome(false, "ADB pairing timed out. Pair using the Shizuku manager.")
             } else evaluateAdbPair(child.exitValue(), output.await())

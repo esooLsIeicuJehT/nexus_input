@@ -43,6 +43,9 @@ class MainActivity : ComponentActivity() {
         return if(testingInput(event.source)) true else super.dispatchGenericMotionEvent(event)
     }
 
+    // Android Activity's public input callback must forward unconsumed events to ComponentActivity.
+    // AndroidX annotates its implementation as library-restricted; the framework override remains public.
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         ControllerInputMonitor.onKeyEvent(event)
         return if(testingInput(event.source)) true else super.dispatchKeyEvent(event)

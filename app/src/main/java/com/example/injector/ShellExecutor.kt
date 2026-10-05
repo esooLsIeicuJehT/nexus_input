@@ -32,11 +32,7 @@ class ProcessShellExecutor : ShellExecutor {
             outThread.start()
             errThread.start()
 
-            val deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
-            var finished=false
-            while(System.nanoTime()<deadline) {
-                try { process.exitValue();finished=true;break } catch(_:IllegalThreadStateException) { Thread.sleep(10) }
-            }
+            val finished=ProcessWait.await(process,timeoutMillis)
             if (!finished) process.destroy()
 
             outThread.join(500)
@@ -82,5 +78,17 @@ class ProcessShellExecutor : ShellExecutor {
             } catch(failure:Throwable) { error="Command output read failed: ${failure.javaClass.simpleName}: ${failure.message}" }
             finally { text=output.toString() }
         }
+    }
+}
+
+/** API-24-compatible bounded process wait, shared by diagnostics and actual ADB pairing. */
+object ProcessWait {
+    fun await(process: Process,timeoutMillis: Long): Boolean {
+        require(timeoutMillis>0) { "Process timeout must be positive" }
+        val deadline=System.nanoTime()+TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        while(System.nanoTime()<deadline) {
+            try { process.exitValue();return true } catch(_:IllegalThreadStateException) { Thread.sleep(10) }
+        }
+        return false
     }
 }

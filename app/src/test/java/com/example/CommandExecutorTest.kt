@@ -17,4 +17,10 @@ class CommandExecutorTest {
         val timeout=ProcessShellExecutor().run(listOf("/bin/sh","-c","exec sleep 3"),30)
         assertTrue(timeout.timedOut);assertNull(timeout.exitCode);assertFalse(timeout.succeeded)
     }
+    @Test fun sharedPairingWaitObservesActualCompletionAndRejectsInvalidTimeout() {
+        val child=ProcessBuilder("/bin/sh","-c","exit 7").start()
+        assertTrue(com.example.injector.ProcessWait.await(child,1000));assertEquals(7,child.exitValue())
+        assertTrue(runCatching { com.example.injector.ProcessWait.await(child,0) }.isFailure)
+    }
+
 }
