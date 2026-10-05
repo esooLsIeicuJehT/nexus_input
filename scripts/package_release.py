@@ -6,8 +6,10 @@ import json
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','control.sh','control-lib.sh','skip_mount',
-         'webroot/index.html','webroot/app.js','webroot/style.css')
+FILES = (
+    'module.prop','customize.sh','service.sh','action.sh','update.sh','update-lib.sh','control.sh','control-lib.sh','skip_mount',
+    'webroot/index.html','webroot/bridge-guard.js','webroot/app.js','webroot/style.css'
+)
 
 def properties(path):
     return dict(line.split('=',1) for line in path.read_text().splitlines() if '=' in line and not line.startswith('#'))
@@ -34,7 +36,7 @@ def package(output):
             zipout.writestr(info,(ROOT/'kernelsu-module'/path).read_bytes(),compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
     digest=hashlib.sha256(archive.read_bytes()).hexdigest()
     (output/'SHA256SUMS').write_text(f'{digest}  {archive.name}\n')
-    # This manifest is staged with the artifact. The public main manifest only changes after release publication.
+    # This manifest is staged with the artifact. The public main manifest changes only after a real release is published.
     (output/'update.json').write_text(json.dumps(dict(version=version['versionName'],versionCode=int(version['versionCode']),
         zipUrl=f"https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v{version['versionName']}/{archive.name}",
         sha256=digest,changelog='https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/main/CHANGELOG.md'),indent=2)+'\n')
