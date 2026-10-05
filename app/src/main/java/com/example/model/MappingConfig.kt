@@ -25,6 +25,7 @@ data class MappingConfig(
     val gameTitle: String = "",
     val controllerType: ControllerType = ControllerType.XBOX,
     val preferredBackend: PrivilegeMethod? = null,
+    val controllerProfileId: String? = null,
     val targetAspectRatio: String = "19.5:9", // "16:9", "19.5:9", "20:9", "4:3"
     val joystick: JoystickSettings = JoystickSettings(),
     val camera: CameraSettings = CameraSettings(),

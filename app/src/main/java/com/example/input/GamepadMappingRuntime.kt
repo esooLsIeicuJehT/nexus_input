@@ -58,9 +58,8 @@ class GamepadMappingRuntime(
         val aliases = ControllerBindingAliases.forKeyCode(event.keyCode)
         val nodes = config.buttons.filter { node ->
             val physicalMatches = when {
-                node.inputKeyCode != null -> node.inputKeyCode == event.keyCode &&
-                    (node.inputScanCode == null || node.inputScanCode == event.scanCode)
-                node.inputScanCode != null -> node.inputScanCode == event.scanCode
+                node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN -> node.inputKeyCode == event.keyCode
+                node.inputScanCode != null -> event.keyCode == KeyEvent.KEYCODE_UNKNOWN && node.inputScanCode == event.scanCode
                 else -> aliases.any { ControllerBindingAliases.canonical(it) == ControllerBindingAliases.canonical(node.boundKey) }
             }
             physicalMatches && node.type in setOf(NodeType.BUTTON, NodeType.TURBO, NodeType.MACRO)

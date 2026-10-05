@@ -104,6 +104,7 @@ class ControlystRepository(
             json.put("controllerType", config.controllerType.name)
             json.put("targetAspectRatio", config.targetAspectRatio)
             json.put("preferredBackend", config.preferredBackend?.name ?: JSONObject.NULL)
+            json.put("controllerProfileId", config.controllerProfileId ?: JSONObject.NULL)
             json.put("joystick", JSONObject().apply {
                 put("innerDeadzone", config.joystick.innerDeadzone); put("outerDeadzone", config.joystick.outerDeadzone)
                 put("runThresholdNorm", config.joystick.runThresholdNorm); put("sprintLockEnabled", config.joystick.sprintLockEnabled)
@@ -241,6 +242,7 @@ class ControlystRepository(
             val camera = json.optJSONObject("camera") ?: JSONObject()
             return MappingConfig(
                 preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
+                controllerProfileId = if (json.has("controllerProfileId") && !json.isNull("controllerProfileId")) json.getString("controllerProfileId") else null,
                 joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
                     joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", true), joystick.optDouble("curveExponent", 1.0).toFloat()),
                 camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),

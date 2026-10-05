@@ -44,3 +44,6 @@ data class MacroEntity(
 
 @Entity(tableName = "profile_migrations")
 data class ProfileMigrationEntity(@PrimaryKey val sourceKey: String, val checksum: String, val importedAt: Long)
+
+@Entity(tableName = "mapper_state")
+data class MapperStateEntity(@PrimaryKey val id: Int = 1, val activeProfileId: String?, val mappingEnabled: Boolean)

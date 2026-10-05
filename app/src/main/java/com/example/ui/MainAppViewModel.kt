@@ -164,6 +164,20 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
             }
             if (migration.errors.isNotEmpty()) showSnack(migration.errors.joinToString("\n"))
             else if (migration.imported > 0) showSnack("Migrated ${migration.imported} legacy profiles into Room; original source retained.")
+            val savedState = db.mapperStateDao().get()
+            val restored = savedState?.activeProfileId?.let { db.configProfileDao().getProfileById(it) }
+            if (restored != null) {
+                try {
+                    val config = ControlystRepository.deserializeJsonToConfig(restored.jsonBlob)
+                    val errors = com.example.input.ProfileValidator.errors(config, restored.gamePackage, restored.id, false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") }
+                    _activeConfig.value = config
+                    _selectedGame.value = db.gameDao().getGame(config.gamePackage)
+                    if (savedState.mappingEnabled) showSnack("Saved mapping-enabled preference restored. Launch the game to explicitly arm mapping after permissions are checked.")
+                } catch (error: Exception) {
+                    showSnack("Saved profile restore failed: ${error.message}")
+                }
+            }
             refreshPrivileges()
             detectController()
         }

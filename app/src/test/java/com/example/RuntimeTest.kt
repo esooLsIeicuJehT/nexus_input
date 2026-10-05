@@ -83,7 +83,7 @@ class RuntimeTest {
     @Test fun explicitAndroidKeyAndScanCodesOverrideLabelAndFailedDownIsObservable() {
         val errors=CopyOnWriteArrayList<String>();val r=GamepadMappingRuntime({1000 to 500},errors::add);val b=Recording()
         val node=MappingNode("x",1f,1f,boundKey="B",inputKeyCode=KeyEvent.KEYCODE_BUTTON_A,
-            buttonBehavior=ButtonBehavior.HOLD,touchSlot=31)
+            buttonBehavior=ButtonBehavior.HOLD,touchSlot=31,inputScanCode=0)
         assertFalse(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_B),config(node),b))
         b.failDown=true;assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(node),b));r.awaitIdle()
         assertTrue(errors.any { it.contains("down failed") });assertEquals(999f,b.calls.first().third.first,0f)

@@ -14,8 +14,8 @@ import com.example.data.entity.GameEntity
 import com.example.data.entity.MacroEntity
 
 @Database(
-    entities = [GameEntity::class, ConfigProfileEntity::class, MacroEntity::class, com.example.data.entity.ProfileMigrationEntity::class],
-    version = 2,
+    entities = [GameEntity::class, ConfigProfileEntity::class, MacroEntity::class, com.example.data.entity.ProfileMigrationEntity::class, com.example.data.entity.MapperStateEntity::class],
+    version = 3,
     exportSchema = true
 )
 abstract class ControlystDatabase : RoomDatabase() {
@@ -23,11 +23,17 @@ abstract class ControlystDatabase : RoomDatabase() {
     abstract fun configProfileDao(): ConfigProfileDao
     abstract fun macroDao(): MacroDao
     abstract fun profileMigrationDao(): com.example.data.dao.ProfileMigrationDao
+    abstract fun mapperStateDao(): com.example.data.dao.MapperStateDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `profile_migrations` (`sourceKey` TEXT NOT NULL, `checksum` TEXT NOT NULL, `importedAt` INTEGER NOT NULL, PRIMARY KEY(`sourceKey`))")
+            }
+        }
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `mapper_state` (`id` INTEGER NOT NULL, `activeProfileId` TEXT, `mappingEnabled` INTEGER NOT NULL, PRIMARY KEY(`id`))")
             }
         }
 
@@ -40,7 +46,7 @@ abstract class ControlystDatabase : RoomDatabase() {
                     context.applicationContext,
                     ControlystDatabase::class.java,
                     "controlyst_database"
-                ).addMigrations(MIGRATION_1_2).build()
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
                 INSTANCE = instance
                 instance
             }

@@ -40,12 +40,13 @@ object ProfileValidator {
             if (!node.deadzoneInner.isFinite() || !node.deadzoneOuter.isFinite() ||
                 node.deadzoneInner !in 0f..0.9f || node.deadzoneOuter !in .01f..1f ||
                 node.deadzoneInner >= node.deadzoneOuter) add("$label: invalid deadzone interval")
-            if (node.inputKeyCode != null && node.inputKeyCode !in 1..KeyEvent.getMaxKeyCode()) add("$label: invalid Android key code")
-            if (node.inputScanCode != null && node.inputScanCode <= 0) add("$label: invalid scan code")
+            if (node.inputKeyCode != null && node.inputKeyCode !in 0..KeyEvent.getMaxKeyCode()) add("$label: invalid Android key code")
+            if (node.inputScanCode != null && (node.inputScanCode < 0 || (node.inputKeyCode == null || node.inputKeyCode == KeyEvent.KEYCODE_UNKNOWN) && node.inputScanCode == 0)) add("$label: invalid scan code")
             if ((node.axisX == null) != (node.axisY == null)) add("$label: both stick axes must be set")
             if (node.axisX != null && (node.axisX !in 0..63 || node.axisY !in 0..63 || node.axisX == node.axisY)) add("$label: invalid stick axes")
+            if (node.inputKeyCode == KeyEvent.KEYCODE_UNKNOWN && (node.inputScanCode == null || node.inputScanCode <= 0)) add("$label: unknown key requires a positive scan code")
             val canonical = ControllerBindingAliases.canonical(node.boundKey)
-            val input = if (node.inputKeyCode != null) {
+            val input = if (node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN) {
                 ControllerBindingAliases.forKeyCode(node.inputKeyCode).firstOrNull()?.let(ControllerBindingAliases::canonical)
                     ?: "KEY_${node.inputKeyCode}"
             } else if (node.inputScanCode != null) "SCAN_${node.inputScanCode}" else canonical

@@ -32,7 +32,7 @@ class ProfileIntegrityTest {
         val original=config(MappingNode("hold",.2f,.3f,boundKey="RT",buttonBehavior=ButtonBehavior.HOLD,
             touchSlot=7,inputKeyCode=105,inputScanCode=308,axisX=0,axisY=1,invertY=true,
             macroActions=listOf(MacroStep(10,"HOLD",.4f,.5f,80),MacroStep(50,"RELEASE",.4f,.5f,80))))
-            .copy(preferredBackend=PrivilegeMethod.SHIZUKU, joystick=JoystickSettings(.07f,.88f,.8f,false,1.5f),
+            .copy(preferredBackend=PrivilegeMethod.SHIZUKU, controllerProfileId="saved-controller", joystick=JoystickSettings(.07f,.88f,.8f,false,1.5f),
                 camera=CameraSettings(1.7f,.9f,1.4f,6,true,1.2f),tags=listOf("custom"),antiRecoilVerticalPull=.4f)
         assertEquals(original,ControlystRepository.deserializeJsonToConfig(ControlystRepository.serializeConfigToJson(original)))
     }
