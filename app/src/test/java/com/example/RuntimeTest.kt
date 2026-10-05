@@ -250,14 +250,20 @@ class RuntimeTest {
             assertEquals(1,backend.calls.count { it.first=="down" });assertTrue(backend.calls.count { it.first=="move" }>=2)
             val last=backend.calls.last { it.first=="move" }.third
             assertEquals(799.2f,last.first,.01f);assertEquals(299.4f,last.second,.01f)
+            // The last transport UP can precede the queued macro-completion marker.
+            // Start the panic scenario only after acknowledged release clears that earlier session.
+            assertTrue(runtime.releaseAll(backend))
             backend.calls.clear()
-            val longSwipe=swipe.copy(buttons=listOf(swipe.buttons.single().copy(macroActions=listOf(swipe.buttons.single().macroActions.single().copy(durationMs=1000)))))
+            val longSwipe=swipe.copy(buttons=listOf(swipe.buttons.single().copy(macroActions=listOf(swipe.buttons.single().macroActions.single().copy(durationMs=5000)))))
             runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
             runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
             deadline=System.nanoTime()+1_000_000_000
-            while(backend.calls.none { it.first=="down" } && System.nanoTime()<deadline) Thread.sleep(5)
+            while(backend.calls.none { it.first=="move" } && System.nanoTime()<deadline) Thread.sleep(5)
+            assertEquals(1,backend.calls.count { it.first=="down" })
+            assertTrue("The second swipe must actually be in flight before panic",backend.calls.any { it.first=="move" })
+            assertFalse(backend.calls.any { it.first=="up" })
             assertTrue(runtime.releaseAll(backend));val stopped=backend.calls.size;Thread.sleep(80)
-            assertEquals(stopped,backend.calls.size);assertTrue(errors.isEmpty())
+            assertEquals(stopped,backend.calls.size);assertTrue(errors.joinToString("; "),errors.isEmpty())
         } finally { runtime.shutdown(null) }
     }
 
