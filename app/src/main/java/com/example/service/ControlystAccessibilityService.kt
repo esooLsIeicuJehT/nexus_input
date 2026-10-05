@@ -257,6 +257,33 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun captureScreenshot(onResult: (Result<android.graphics.Bitmap>) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30) {
+            onResult(Result.failure(IllegalStateException("Screenshot capture requires Android 11 or later; import an image instead.")))
+            return
+        }
+        try {
+            takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(result: ScreenshotResult) {
+                        val buffer = result.hardwareBuffer
+                        val bitmap = runCatching {
+                            val hardware = android.graphics.Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                                ?: error("Screenshot buffer could not be decoded")
+                            try { hardware.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                                ?: error("Screenshot copy failed") } finally { hardware.recycle() }
+                        }
+                        buffer.close()
+                        onResult(bitmap)
+                    }
+                    override fun onFailure(errorCode: Int) {
+                        Log.e(TAG, "Screenshot capture failed: code=$errorCode (secure windows cannot be captured)")
+                        onResult(Result.failure(IllegalStateException("Android rejected screenshot capture (code=$errorCode); protected content cannot be captured.")))
+                    }
+                })
+        } catch (error: Exception) { onResult(Result.failure(error)) }
+    }
+
     fun performTap(x: Float, y: Float, durationMs: Long = 50L): Boolean {
         if (!x.isFinite() || !y.isFinite()) return false
         val path = Path().apply { moveTo(x, y) }

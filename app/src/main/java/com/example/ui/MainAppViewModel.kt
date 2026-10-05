@@ -1,6 +1,12 @@
 package com.example.ui
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -177,6 +183,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun showSnack(msg: String) {
+        Log.i("NexusUI", msg)
         _snackMessage.value = msg
     }
 
@@ -303,28 +310,54 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         updateActiveConfig(_activeConfig.value.copy(buttons = list))
     }
 
-    /**
-     * Heuristic Auto-detection of HUD elements from screenshot
-     */
-    fun runAutoDetectHud() {
-        val suggestedNodes = listOf(
-            MappingNode("hud_fire_auto", 0.86f, 0.72f, 0.06f, NodeType.BUTTON, "RT", "Fire [Auto]"),
-            MappingNode("hud_ads_auto", 0.82f, 0.44f, 0.055f, NodeType.BUTTON, "LT", "ADS [Auto]"),
-            MappingNode("hud_jump_auto", 0.92f, 0.60f, 0.05f, NodeType.BUTTON, "A", "Jump [Auto]"),
-            MappingNode("hud_crouch_auto", 0.88f, 0.86f, 0.05f, NodeType.BUTTON, "B", "Crouch [Auto]"),
-            MappingNode("hud_reload_auto", 0.76f, 0.74f, 0.05f, NodeType.BUTTON, "X", "Reload [Auto]"),
-            MappingNode("hud_joy_auto", 0.18f, 0.72f, 0.12f, NodeType.JOYSTICK_ZONE, "LS", "WASD [Auto]"),
-            MappingNode("hud_cam_auto", 0.70f, 0.48f, 0.20f, NodeType.CAMERA_DRAG, "RS", "Aim Look [Auto]")
-        )
-        val combined = _activeConfig.value.buttons.toMutableList()
-        suggestedNodes.forEach { candidate ->
-            if (combined.none { it.id == candidate.id }) {
-                combined.add(candidate)
+    private val _screenshot = MutableStateFlow<Bitmap?>(null)
+    val screenshot: StateFlow<Bitmap?> = _screenshot.asStateFlow()
+
+    fun importScreenshot(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected document is not a readable image" }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888
+                    }
+                    resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Image decode failed")
+                }
+            }
+            result.onSuccess { bitmap ->
+                _screenshot.value = bitmap
+                _aiHudCandidates.value = emptyList()
+                showSnack("Screenshot imported: ${bitmap.width} × ${bitmap.height}. Review coordinates before saving.")
+            }.onFailure {
+                _screenshot.value = null
+                _aiHudCandidates.value = emptyList()
+                showSnack("Screenshot import failed: ${it.message}")
             }
         }
-        updateActiveConfig(_activeConfig.value.copy(buttons = combined))
-        showSnack("Auto-detected 7 HUD touch controls!")
     }
+
+    fun captureScreenshot() {
+        val service = com.example.service.ControlystAccessibilityService.getInstance()
+        if (service == null) { showSnack("Enable NEXUS INPUT accessibility service to capture; importing remains available."); return }
+        service.captureScreenshot { result ->
+            result.onSuccess { _screenshot.value = it; _aiHudCandidates.value = emptyList(); showSnack("Screenshot captured. Review before mapping.") }
+                .onFailure { _screenshot.value = null; _aiHudCandidates.value = emptyList(); showSnack("Capture failed: ${it.message}") }
+        }
+    }
+
+    fun assignHudCandidateInput(id: String, input: String) {
+        _aiHudCandidates.value = _aiHudCandidates.value.map {
+            if (it.id == id) it.copy(recommendedKey = input.trim().uppercase()) else it
+        }
+    }
+
+    fun runAutoDetectHud() = runAiHudScan()
 
     fun addGame(game: GameEntity) {
         viewModelScope.launch {
@@ -386,21 +419,26 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun runAiHudScan() {
+        val bitmap = _screenshot.value
         viewModelScope.launch {
-            val candidates = AiHudDetector.detectHudElements(null)
-            _aiHudCandidates.value = candidates
-            showSnack("AI Vision found ${candidates.size} HUD candidates! Review & confirm.")
+            val detection = withContext(Dispatchers.Default) { AiHudDetector.detect(bitmap) }
+            _aiHudCandidates.value = detection.candidates
+            showSnack(detection.error ?: "Found ${detection.candidates.size} contrast regions. Assign each input; action semantics are not detected.")
         }
     }
 
     fun confirmAiHudCandidates(candidates: List<AiHudCandidate>) {
+        if (candidates.any { it.recommendedKey.isBlank() }) {
+            showSnack("Assign a controller input to every selected contrast region first.")
+            return
+        }
         val newNodes = candidates.map { c ->
             MappingNode(
                 id = c.id,
                 xNorm = c.xNorm,
                 yNorm = c.yNorm,
                 radiusNorm = 0.055f,
-                type = if (c.recommendedKey == "LS" || c.recommendedKey == "RS") NodeType.JOYSTICK_ZONE else NodeType.BUTTON,
+                type = when (c.recommendedKey) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> NodeType.BUTTON },
                 boundKey = c.recommendedKey,
                 label = c.predictedAction
             )
@@ -443,7 +481,9 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     fun runConfigDiff() {
         viewModelScope.launch {
-            val freshCandidates = AiHudDetector.detectHudElements(null)
+            val detection = AiHudDetector.detect(_screenshot.value)
+            if (detection.error != null) { showSnack(detection.error); return@launch }
+            val freshCandidates = detection.candidates
             val diffList = ConfigDiffEngine.calculateDiff(_activeConfig.value, freshCandidates)
             val result = ConfigDiffResult(
                 unchangedCount = diffList.count { it.status == DiffStatus.UNCHANGED },

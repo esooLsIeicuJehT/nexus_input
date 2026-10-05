@@ -1,6 +1,11 @@
 package com.example.ui.mapper
 
 import androidx.compose.animation.core.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -43,6 +48,10 @@ fun ScreenshotMapperScreen(
     viewModel: MainAppViewModel
 ) {
     val activeConfig by viewModel.activeConfig.collectAsState()
+    val screenshot by viewModel.screenshot.collectAsState()
+    val importImage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importScreenshot(uri)
+    }
     var selectedNodeId by remember { mutableStateOf<String?>(null) }
     var activeTool by remember { mutableStateOf("tool") } // tool, collections, controls, snaps, devices
     var snapToGrid by remember { mutableStateOf(false) }
@@ -116,7 +125,7 @@ fun ScreenshotMapperScreen(
                             }
                         }
                         Text(
-                            text = "${activeConfig.buttons.size} Mapped Nodes • Low Latency Direct Inject",
+                            text = "${activeConfig.buttons.size} bindings • manual placement or pixel proposals",
                             color = TextMuted,
                             fontSize = 10.sp
                         )
@@ -124,6 +133,12 @@ fun ScreenshotMapperScreen(
 
                     // Quick Actions
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        IconButton(onClick = { importImage.launch(arrayOf("image/*")) }) {
+                            Icon(Icons.Default.Image, contentDescription = "Import screenshot", tint = NexusCyan)
+                        }
+                        IconButton(onClick = { viewModel.captureScreenshot() }) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = "Capture screen", tint = NexusCyan)
+                        }
                         // AI HUD Scan toggle
                         FilterChip(
                             selected = isAiHudScanActive,
@@ -133,7 +148,7 @@ fun ScreenshotMapperScreen(
                             },
                             label = {
                                 Text(
-                                    if (isAiHudScanActive) "AI Scanning" else "AI HUD",
+                                    "Find regions",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -271,6 +286,13 @@ fun ScreenshotMapperScreen(
             val widthPx = constraints.maxWidth.toFloat()
             val heightPx = constraints.maxHeight.toFloat()
 
+            screenshot?.let { image ->
+                Image(image.asImageBitmap(), "Imported game screenshot",
+                    modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+            }
+            if (screenshot == null) Text("Import a game screenshot or place bindings manually",
+                color = TextMuted, modifier = Modifier.align(Alignment.Center))
+
             // Underlying Tactical HUD Canvas (Grid, Background HUD lines, AI Scanline, Ghost regions)
             Canvas(
                 modifier = Modifier
@@ -285,8 +307,8 @@ fun ScreenshotMapperScreen(
                                     dist <= (node.radiusNorm * 1.5f)
                                 }
                                 if (hit != null) {
-                                    viewModel.currentInjector.injectTap(offset.x, offset.y)
-                                    testTappedFeedback = "Triggered: ${hit.boundKey} (${hit.label}) @ (${(xNorm * 100).toInt()}%, ${(yNorm * 100).toInt()}%)"
+                                    val success = viewModel.currentInjector.injectTap(offset.x, offset.y)
+                                    testTappedFeedback = "${if (success) "Injection accepted" else "INJECTION FAILED"}: ${hit.boundKey} (${hit.label}) @ (${(xNorm * 100).toInt()}%, ${(yNorm * 100).toInt()}%)"
                                 }
                             }
                         } else {
@@ -344,73 +366,13 @@ fun ScreenshotMapperScreen(
                     }
                 }
 
-                // Ares Legends simulated tactical game HUD background lines
-                // Left thumbstick boundary guide
-                drawCircle(
-                    color = Color(0x187C8CFF),
-                    radius = canvasW * 0.12f,
-                    center = Offset(canvasW * 0.18f, canvasH * 0.70f),
-                    style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f))
-                )
-                // Right action cluster guide
-                drawCircle(
-                    color = Color(0x1400CFEB),
-                    radius = canvasW * 0.16f,
-                    center = Offset(canvasW * 0.85f, canvasH * 0.70f),
-                    style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f))
-                )
-
-                // AI-Assisted HUD Detection Regions & Scanline (matching final.jpeg)
-                if (isAiHudScanActive) {
-                    // Sweeping vertical scanline
-                    val scanX = canvasW * scanProgress
-                    drawLine(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                ControlystCyan.copy(alpha = 0.5f),
-                                Color.White.copy(alpha = 0.8f),
-                                ControlystCyan.copy(alpha = 0.5f),
-                                Color.Transparent
-                            ),
-                            startX = scanX - 40f,
-                            endX = scanX + 40f
-                        ),
-                        start = Offset(scanX, 0f),
-                        end = Offset(scanX, canvasH),
-                        strokeWidth = 3f
-                    )
-
-                    // Detected HUD Bounding Boxes
-                    val detectedZones = listOf(
-                        Triple("FIRE", Offset(canvasW * 0.84f, canvasH * 0.70f), canvasW * 0.07f),
-                        Triple("AIM", Offset(canvasW * 0.80f, canvasH * 0.40f), canvasW * 0.06f),
-                        Triple("RELOAD", Offset(canvasW * 0.74f, canvasH * 0.84f), canvasW * 0.05f),
-                        Triple("JUMP", Offset(canvasW * 0.90f, canvasH * 0.56f), canvasW * 0.05f),
-                        Triple("SPRINT", Offset(canvasW * 0.18f, canvasH * 0.70f), canvasW * 0.13f)
-                    )
-
-                    detectedZones.forEach { (label, center, rad) ->
-                        drawCircle(
-                            color = ControlystCyan.copy(alpha = ghostPulse * 0.25f),
-                            radius = rad,
-                            center = center
-                        )
-                        drawCircle(
-                            color = ControlystCyan.copy(alpha = ghostPulse * 0.7f),
-                            radius = rad,
-                            center = center,
-                            style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f))
-                        )
-                    }
-                }
             }
 
             // Floating Designed Mapping Nodes matching final.jpeg (Soft purple glowing circular nodes with crisp bold white letters)
             activeConfig.buttons.forEach { node ->
                 val isSelected = node.id == selectedNodeId
                 val nodeSizePx = (node.radiusNorm * 2f * widthPx).coerceIn(36f, 130f)
-                val nodeSizeDp = (nodeSizePx / 2.5f).dp // approximate dp conversion
+                val nodeSizeDp = with(androidx.compose.ui.platform.LocalDensity.current) { nodeSizePx.toDp() }
 
                 Box(
                     modifier = Modifier
@@ -728,13 +690,13 @@ fun ScreenshotMapperScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AutoFixHigh, contentDescription = null, tint = ControlystCyan)
                     Spacer(Modifier.width(8.dp))
-                    Text("AI HUD Review (${aiCandidates.size} Elements)", color = ControlystCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("Pixel proposals (${aiCandidates.size}) — assign controls", color = ControlystCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "AI Vision analyzed the HUD layout and detected the following controls. Confirm or reject bindings:",
+                        "These bounds come from image contrast. They may be scenery; assign a physical input before applying. No action semantics are inferred.",
                         fontSize = 11.sp,
                         color = TextSecondary
                     )
@@ -750,20 +712,14 @@ fun ScreenshotMapperScreen(
                             ) {
                                 Column {
                                     Text(candidate.predictedAction, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary)
-                                    Text("Confidence ${(candidate.confidence * 100).toInt()}% • Pos: (${(candidate.xNorm * 100).toInt()}%, ${(candidate.yNorm * 100).toInt()}%)", fontSize = 10.sp, color = TextSecondary)
+                                    Text("Edge coverage ${(candidate.confidence * 100).toInt()}% • Pos: (${(candidate.xNorm * 100).toInt()}%, ${(candidate.yNorm * 100).toInt()}%)", fontSize = 10.sp, color = TextSecondary)
                                 }
-                                Surface(
-                                    color = ControlystCyan,
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        candidate.recommendedKey,
-                                        color = Color(0xFF00363D),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
+                                OutlinedTextField(
+                                    value = candidate.recommendedKey,
+                                    onValueChange = { viewModel.assignHudCandidateInput(candidate.id, it) },
+                                    label = { Text("Input") }, singleLine = true,
+                                    modifier = Modifier.width(95.dp)
+                                )
                             }
                         }
                     }
@@ -774,7 +730,7 @@ fun ScreenshotMapperScreen(
                     onClick = { viewModel.confirmAiHudCandidates(aiCandidates) },
                     colors = ButtonDefaults.buttonColors(containerColor = ControlystCyan)
                 ) {
-                    Text("Apply All Detected", color = Color(0xFF00363D), fontWeight = FontWeight.Bold)
+                    Text("Apply assigned regions", color = Color(0xFF00363D), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
