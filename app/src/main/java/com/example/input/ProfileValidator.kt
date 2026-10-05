@@ -90,6 +90,7 @@ object ProfileValidator {
             if (node.type == NodeType.JOYSTICK_ZONE && canonical != "LS" && node.axisX == null) add("$label: joystick must bind LS or explicit axes")
             if (node.type == NodeType.CAMERA_DRAG && canonical != "RS" && node.axisX == null) add("$label: camera must bind RS or explicit axes")
             val isStick=node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)
+            if(!isStick && node.inputKeyCode==null && node.inputScanCode==null && canonical in setOf("LS","RS")) add("$label: LS/RS require stick mapping; use L3/R3 for stick clicks")
             if(!isStick && node.axisX!=null) add("$label: button bindings cannot use stick axes")
             if(isStick && (node.inputKeyCode!=null || node.inputScanCode!=null)) add("$label: stick bindings cannot use key/scan codes")
             val stickAxes = if (isStick && node.axisX != null && node.axisY != null) listOf(node.axisX, node.axisY)
@@ -109,8 +110,13 @@ object ProfileValidator {
                 node.macroActions.forEach { step ->
                     if (!step.xNorm.isFinite() || step.xNorm !in 0f..1f || !step.yNorm.isFinite() || step.yNorm !in 0f..1f) add("$label: invalid macro coordinates")
                     if (step.delayMs !in 0..10000 || step.durationMs !in 1..10000) add("$label: invalid macro duration")
-                    duration += step.delayMs.coerceIn(0, 10001) + step.durationMs.coerceIn(0, 10001)
+                    duration += step.delayMs.coerceIn(0, 10001) + if(step.actionType.uppercase() in setOf("TAP","SWIPE")) step.durationMs.coerceIn(0, 10001) else 0
                     when (step.actionType.uppercase()) {
+                        "SWIPE" -> {
+                            if(held) add("$label: SWIPE while macro touch held")
+                            if(step.endXNorm==null || !step.endXNorm.isFinite() || step.endXNorm !in 0f..1f ||
+                                step.endYNorm==null || !step.endYNorm.isFinite() || step.endYNorm !in 0f..1f) add("$label: invalid swipe destination")
+                        }
                         "TAP" -> if (held) add("$label: TAP while macro touch held")
                         "HOLD" -> { if (held) add("$label: repeated macro HOLD"); held = true }
                         "RELEASE" -> { if (!held) add("$label: RELEASE without HOLD"); held = false }

@@ -33,6 +33,10 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 class ControlystAccessibilityService : AccessibilityService() {
+    private val gestures = com.example.input.GestureLedger()
+    fun awaitGestureIdle(): Boolean = gestures.awaitIdle(200)
+    val pendingGestureCount: Int get() = gestures.count
+
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val backendExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -355,7 +359,7 @@ class ControlystAccessibilityService : AccessibilityService() {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(1L))
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, mainHandler)
+        return dispatchObservedGesture(gesture)
     }
 
     fun performDrag(points: List<PointF>, durationMs: Long): Boolean {
@@ -366,7 +370,29 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        return dispatchGesture(gesture, null, mainHandler)
+        return dispatchObservedGesture(gesture)
+    }
+
+    private fun dispatchObservedGesture(gesture: GestureDescription): Boolean {
+        val token=gestures.begin()
+        val session=MappingRuntimeBridge.state.value.sessionId
+        val callback=object : GestureResultCallback() {
+            override fun onCompleted(description: GestureDescription?) { gestures.complete(token) }
+            override fun onCancelled(description: GestureDescription?) {
+                gestures.complete(token)
+                Log.e(TAG,"Android cancelled an Accessibility gesture")
+                val state=MappingRuntimeBridge.state.value
+                if(state.sessionId==session) {
+                    if(state.armed) { MappingRuntimeBridge.disarm("Android cancelled the Accessibility gesture; mapping stopped");teardownInjectorAsync() }
+                    else MappingRuntimeBridge.reportError("Android cancelled the Accessibility gesture")
+                }
+            }
+        }
+        return try {
+            dispatchGesture(gesture,callback,mainHandler).also { accepted -> if(!accepted) gestures.complete(token) }
+        } catch(error:Exception) {
+            gestures.complete(token);Log.e(TAG,"Accessibility gesture dispatch failed",error);false
+        }
     }
 
     @Suppress("DEPRECATION")

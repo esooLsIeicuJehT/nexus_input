@@ -39,6 +39,7 @@ object ReleaseDiagnostics {
             .put("kernel",System.getProperty("os.version") ?: JSONObject.NULL)
             .put("hardwareVerification","Not established by this self-check; perform the device checklist")
             .put("capture",JSONObject().put("connected",ControlystAccessibilityService.isServiceRunning())
+                .put("pendingAccessibilityGestures",ControlystAccessibilityService.getInstance()?.pendingGestureCount ?: JSONObject.NULL)
                 .put("globalMotionApiAvailable",Build.VERSION.SDK_INT >= 34).put("screenshotApiAvailable",Build.VERSION.SDK_INT >= 30)
                 .put("overlayPermission",Settings.canDrawOverlays(context)))
             .put("runtime",JSONObject().put("armed",runtime.armed).put("gamePackage",runtime.gamePackage ?: JSONObject.NULL)

@@ -138,7 +138,8 @@ class ControlystRepository(
                 nodeObj.put("triggerReleaseThreshold", node.triggerReleaseThreshold)
                 nodeObj.put("macroActions", JSONArray().apply { node.macroActions.forEach { step ->
                     put(JSONObject().apply { put("delayMs", step.delayMs); put("durationMs", step.durationMs)
-                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm) })
+                        put("actionType", step.actionType); put("xNorm", step.xNorm); put("yNorm", step.yNorm)
+                        put("endXNorm",step.endXNorm ?: JSONObject.NULL);put("endYNorm",step.endYNorm ?: JSONObject.NULL) })
                 } })
                 buttonsArray.put(nodeObj)
             }
@@ -212,7 +213,9 @@ class ControlystRepository(
                             macroActions = nodeObj.optJSONArray("macroActions")?.let { array ->
                                 (0 until array.length()).map { index -> array.getJSONObject(index).let { step ->
                                     MacroStep(step.getLong("delayMs"), step.getString("actionType"),
-                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"))
+                                        step.getDouble("xNorm").toFloat(), step.getDouble("yNorm").toFloat(), step.getLong("durationMs"),
+                                        if(step.isNull("endXNorm")) null else step.getDouble("endXNorm").toFloat(),
+                                        if(step.isNull("endYNorm")) null else step.getDouble("endYNorm").toFloat())
                                 } }
                             } ?: emptyList()
                         )

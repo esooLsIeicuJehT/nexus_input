@@ -204,4 +204,25 @@ class RuntimeTest {
         } finally { runtime.shutdown(null) }
     }
 
+    @Test fun swipeUsesRealContactMovesAndPanicCancelsTheRemainingTrajectory() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val swipe=config(MappingNode("swipe",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(0,"SWIPE",.2f,.3f,100,.8f,.6f))))
+        try {
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),swipe,backend)
+            var deadline=System.nanoTime()+1_000_000_000
+            while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline) Thread.sleep(5)
+            assertEquals(1,backend.calls.count { it.first=="down" });assertTrue(backend.calls.count { it.first=="move" }>=2)
+            val last=backend.calls.last { it.first=="move" }.third
+            assertEquals(799.2f,last.first,.01f);assertEquals(299.4f,last.second,.01f)
+            backend.calls.clear()
+            val longSwipe=swipe.copy(buttons=listOf(swipe.buttons.single().copy(macroActions=listOf(swipe.buttons.single().macroActions.single().copy(durationMs=1000)))))
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
+            runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),longSwipe,backend)
+            deadline=System.nanoTime()+1_000_000_000
+            while(backend.calls.none { it.first=="down" } && System.nanoTime()<deadline) Thread.sleep(5)
+            assertTrue(runtime.releaseAll(backend));val stopped=backend.calls.size;Thread.sleep(80)
+            assertEquals(stopped,backend.calls.size);assertTrue(errors.isEmpty())
+        } finally { runtime.shutdown(null) }
+    }
+
 }

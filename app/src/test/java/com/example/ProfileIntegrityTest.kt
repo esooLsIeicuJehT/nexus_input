@@ -69,4 +69,13 @@ class ProfileIntegrityTest {
         com.example.service.MappingRuntimeBridge.disarm()
     }
 
+    @Test fun swipeDestinationsAreValidatedAndPreservedInTheExactProfile() {
+        val swipe=MappingNode("swipe",.2f,.3f,type=NodeType.MACRO,boundKey="A",macroActions=listOf(MacroStep(0,"SWIPE",.2f,.3f,120,.8f,.6f)))
+        val profile=config(swipe)
+        assertTrue(ProfileValidator.errors(profile).isEmpty())
+        assertEquals(profile,ControlystRepository.deserializeJsonToConfig(ControlystRepository.serializeConfigToJson(profile)))
+        assertTrue(ProfileValidator.errors(config(swipe.copy(macroActions=listOf(swipe.macroActions.single().copy(endXNorm=null))))).any { it.contains("swipe destination") })
+        assertTrue(ProfileValidator.errors(config(swipe.copy(type=NodeType.BUTTON,boundKey="LS"))).any { it.contains("LS/RS") })
+    }
+
 }

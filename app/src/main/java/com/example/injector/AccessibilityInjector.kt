@@ -39,7 +39,9 @@ class AccessibilityInjector : InputInjector {
     }
 
     override fun cleanup() {
-        Log.d(TAG, "Accessibility injector cleanup: no persistent injection session")
+        val service=ControlystAccessibilityService.getInstance()
+        check(service != null && service.awaitGestureIdle()) { "Accessibility gesture completion could not be confirmed; Android may still be executing a gesture" }
+        Log.d(TAG,"Accessibility gesture callbacks confirmed idle")
     }
 
     private companion object {

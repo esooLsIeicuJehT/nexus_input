@@ -123,7 +123,7 @@ class GamepadMappingRuntime(
         when (node.type) {
             NodeType.JOYSTICK_ZONE, NodeType.CAMERA_DRAG -> true
             NodeType.BUTTON -> node.buttonBehavior == ButtonBehavior.HOLD
-            NodeType.MACRO -> node.macroActions.any { !it.actionType.equals("TAP", ignoreCase = true) }
+            NodeType.MACRO -> node.macroActions.any { it.actionType.uppercase() in setOf("HOLD","RELEASE") }
             NodeType.TURBO -> false
         }
     }
@@ -283,11 +283,15 @@ class GamepadMappingRuntime(
             at += step.delayMs.coerceAtLeast(0L)
             val scheduledAt = at
             schedule(scheduledAt) { executeMacroStep(node, slot, step, injector) }
-            if (step.actionType.equals("TAP", ignoreCase = true)) {
+            if (step.actionType.uppercase() in setOf("TAP","SWIPE")) {
                 at += step.durationMs.coerceAtLeast(1L)
             }
         }
-        schedule(at + 1L) { activeMacros.remove(node.id) }
+        fun finish() {
+            if(slot !in activeSlots) activeMacros.remove(node.id)
+            else schedule(16L) { finish() }
+        }
+        schedule(at + 1L) { finish() }
     }
 
     private fun executeMacroStep(node: MappingNode, slot: Int, step: MacroStep, injector: InputInjector) {
@@ -314,6 +318,29 @@ class GamepadMappingRuntime(
                             if(activeSlots.contains(slot)) {
                                 if(injector.endTouch(slot)) activeSlots.remove(slot)
                                 else onError("Macro tap up failed for ${node.label}")
+                            }
+                        }
+                    }
+                }
+            }
+            "SWIPE" -> {
+                val destinationX=step.endXNorm ?: error("Swipe destination X is missing")
+                val destinationY=step.endYNorm ?: error("Swipe destination Y is missing")
+                require(destinationX.isFinite() && destinationX in 0f..1f && destinationY.isFinite() && destinationY in 0f..1f) { "Invalid swipe destination" }
+                val endX=destinationX*(size.first-1);val endY=destinationY*(size.second-1)
+                if(injector.method==PrivilegeMethod.ACCESSIBILITY) {
+                    if(!injector.injectDrag(listOf(PointF(x,y),PointF(endX,endY)),step.durationMs)) onError("Accessibility swipe request failed")
+                } else if(activateSlot(slot)) {
+                    if(!injector.beginTouch(slot,x,y)) { activeSlots.remove(slot);onError("Swipe down failed") }
+                    else {
+                        val segments=((step.durationMs+15)/16).toInt().coerceAtLeast(1)
+                        for(index in 1..segments) schedule(step.durationMs*index/segments) {
+                            if(slot in activeSlots) {
+                                val fraction=index.toFloat()/segments
+                                if(!injector.moveTouch(slot,x+(endX-x)*fraction,y+(endY-y)*fraction)) onError("Swipe move failed")
+                                if(index==segments) {
+                                    if(injector.endTouch(slot)) activeSlots.remove(slot) else onError("Swipe up failed")
+                                }
                             }
                         }
                     }
