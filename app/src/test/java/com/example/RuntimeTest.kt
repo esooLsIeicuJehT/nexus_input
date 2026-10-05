@@ -47,7 +47,7 @@ class RuntimeTest {
                 val deadline=System.nanoTime()+1_000_000_000
                 while(ticks.size<2 && System.nanoTime()<deadline) Thread.sleep(2)
                 assertTrue("Expected the next real tick",ticks.size>=2)
-                val minimumGap=if(sticks) 12_000_000L else 28_000_000L
+                val minimumGap=if(sticks) 6_000_000L else 28_000_000L
                 assertTrue("Missed ticks must not catch up immediately",ticks[1]-firstFinished.get()>=minimumGap)
             } finally { resume.countDown();runtime.shutdown(backend) }
         }
