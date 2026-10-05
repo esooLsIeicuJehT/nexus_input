@@ -21,7 +21,7 @@ import com.example.injector.InputInjectorFactory
 import com.example.injector.PrivilegeDetector
 import com.example.input.ControllerInputMonitor
 import com.example.input.ControllerSessionDevices
-import com.example.injector.PrivilegeBackendSelector
+import com.example.injector.PrivilegeBackendSelector\nimport com.example.injector.PrivilegeAvailabilityState
 import com.example.input.GamepadMappingRuntime
 import com.example.model.PrivilegeMethod
 import kotlinx.coroutines.CoroutineScope
@@ -254,6 +254,15 @@ class ControlystAccessibilityService : AccessibilityService() {
                 val detail = buildString {
                     append("No compatible injection backend could be prepared. ")
                     append(availableSummary)
+                    config.preferredBackend?.let { forced ->
+                        val alternatives = probes.filter { it.method != forced && it.state == PrivilegeAvailabilityState.AVAILABLE }
+                        append("; profile forced ").append(forced)
+                        if (alternatives.isNotEmpty()) {
+                            append("; available alternatives were deliberately not attempted: ")
+                            append(alternatives.joinToString { it.method.name })
+                            append(". Select Automatic or explicitly choose another backend to change this profile.")
+                        }
+                    }
                     if (failures.isNotEmpty()) append("; ").append(failures.joinToString("; "))
                 }
                 Log.e(TAG, detail)
