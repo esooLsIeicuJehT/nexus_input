@@ -15,7 +15,8 @@ data class MappingRuntimeState(
     val backend: PrivilegeMethod? = null,
     val backendReady: Boolean = false,
     val error: String? = null,
-    val notice: String? = null
+    val notice: String? = null,
+    val sessionId: Long = 0L
 )
 
 /**
@@ -26,6 +27,7 @@ data class MappingRuntimeState(
  * MappingConfig, and backend failures remain visible in [state].
  */
 object MappingRuntimeBridge {
+    private val sessions = java.util.concurrent.atomic.AtomicLong()
     private val _state = MutableStateFlow(MappingRuntimeState())
     val state: StateFlow<MappingRuntimeState> = _state.asStateFlow()
 
@@ -39,7 +41,8 @@ object MappingRuntimeBridge {
             targetForeground = false,
             gamePackage = gamePackage,
             configId = config.id,
-            profileName = config.profileName
+            profileName = config.profileName,
+            sessionId = sessions.incrementAndGet()
         )
     }
 

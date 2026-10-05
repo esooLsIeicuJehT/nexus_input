@@ -170,6 +170,10 @@ class ControlystAccessibilityService : AccessibilityService() {
                 val config = MappingRuntimeBridge.config.value
                 if (!expectedState.armed || !expectedState.targetForeground || config == null) return@execute
 
+                if (Build.VERSION.SDK_INT < 34 && config.buttons.any { it.type in setOf(com.example.model.NodeType.JOYSTICK_ZONE,com.example.model.NodeType.CAMERA_DRAG) }) {
+                    MappingRuntimeBridge.reportError("Android 14 or newer is required for global stick motion capture. Button-only profiles can use older Android versions.")
+                    return@execute
+                }
                 val probes = PrivilegeDetector(this).probeAll()
                 val requiresPersistent = mappingRuntime.requiresPersistentTouch(config)
                 val order = config.preferredBackend?.let { listOf(it) } ?: listOf(
@@ -205,7 +209,7 @@ class ControlystAccessibilityService : AccessibilityService() {
                     }
 
                     val liveState = MappingRuntimeBridge.state.value
-                    if (!liveState.armed || !liveState.targetForeground || liveState.configId != expectedState.configId) {
+                    if (!liveState.armed || !liveState.targetForeground || liveState.sessionId != expectedState.sessionId) {
                         runCatching { candidate.cleanup() }
                         return@execute
                     }
@@ -229,6 +233,9 @@ class ControlystAccessibilityService : AccessibilityService() {
                 }
                 Log.e(TAG, detail)
                 MappingRuntimeBridge.reportError(detail)
+            } catch(error: Exception) {
+                Log.e(TAG,"Backend preparation failed",error)
+                MappingRuntimeBridge.reportError("Backend preparation failed: ${error.javaClass.simpleName}: ${error.message}")
             } finally {
                 runtimePreparing = false
             }

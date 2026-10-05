@@ -31,12 +31,12 @@ object PanicKillSwitch {
     fun triggerPanic(context: Context, source: String = "Manual UI Button") {
         _state.value = PanicState(true, System.currentTimeMillis(), source)
         val service = ControlystAccessibilityService.getInstance()
-        MappingRuntimeBridge.disarm("Emergency stop requested")
         if (service != null) service.emergencyRelease { released ->
             _state.value = _state.value.copy(releaseConfirmed = released,
                 error = if (released) null else "Contact release or backend cleanup failed; inspect Android logs and backend state.")
             Log.w("NexusPanic", "Emergency release completed; backend acknowledgement=$released")
         } else {
+            MappingRuntimeBridge.disarm("Emergency stop requested")
             _state.value = _state.value.copy(error = "Capture service unavailable; release could not be confirmed.")
             Log.e("NexusPanic", "Cannot confirm release without capture service")
         }

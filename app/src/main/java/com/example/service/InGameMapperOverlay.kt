@@ -1,0 +1,205 @@
+package com.example.service
+
+import android.app.AlertDialog
+import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.*
+import android.widget.*
+import com.example.data.ControlystDatabase
+import com.example.data.ProfilePersistence
+import com.example.input.MapperEditSession
+import com.example.model.*
+import kotlinx.coroutines.*
+import kotlin.math.hypot
+import kotlin.math.roundToInt
+
+/** Android windows over the actual game. Injection is released before any editable window opens. */
+class InGameMapperOverlay(private val context: Context) {
+    private val wm = context.getSystemService(WindowManager::class.java)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val handler = Handler(Looper.getMainLooper())
+    private val density = context.resources.displayMetrics.density
+    private var bubble: TextView? = null
+    private var bubbleParams: WindowManager.LayoutParams? = null
+    private var panel: LinearLayout? = null
+    private var editor: FrameLayout? = null
+    private var dialog: AlertDialog? = null
+    private var session: MapperEditSession? = null
+    private var selected: String? = null
+    private var saving = false
+    private var closed = false
+
+    private fun params(width: Int, height: Int, focusable: Boolean = false) = WindowManager.LayoutParams(width,height,
+        if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            if (focusable) 0 else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply {
+        gravity = Gravity.TOP or Gravity.LEFT
+        if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    }
+    private fun fail(message: String, error: Throwable? = null) {
+        android.util.Log.e("NexusOverlay",message,error)
+        MappingRuntimeBridge.reportError(message)
+        Toast.makeText(context,message,Toast.LENGTH_LONG).show()
+    }
+    private fun remove(view: View?) { if (view != null) try { wm.removeView(view) } catch(error:Exception) { fail("Overlay removal failed: ${error.message}",error) } }
+    private fun button(label: String, action: () -> Unit) = Button(context).apply {
+        text = label; textSize = 11f; setTextColor(Color.WHITE); setBackgroundColor(0xFF183247.toInt())
+        setOnClickListener { action() }
+    }
+
+    fun show() {
+        if (closed || bubble != null) return
+        if (!Settings.canDrawOverlays(context)) { fail("Floating mapper requires Android overlay permission");return }
+        val size = (52*density).roundToInt()
+        val view = TextView(context).apply {
+            text="N";textSize=22f;gravity=Gravity.CENTER;setTextColor(0xFF00D9EE.toInt())
+            contentDescription="NEXUS INPUT floating controls: tap for mapper, long-press to panic"
+            background=GradientDrawable().apply { shape=GradientDrawable.OVAL;setColor(0xFF071827.toInt());setStroke((2*density).roundToInt(),0xFF00D9EE.toInt()) }
+        }
+        val layout=params(size,size).apply { x=(12*density).roundToInt();y=(120*density).roundToInt() }
+        var downX=0f;var downY=0f;var baseX=0;var baseY=0;var dragged=false;var longPressed=false
+        val panic = Runnable { longPressed=true;PanicKillSwitch.triggerPanic(context,"Floating bubble") }
+        view.setOnTouchListener { _, event ->
+            when(event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX=event.rawX;downY=event.rawY;baseX=layout.x;baseY=layout.y;dragged=false;longPressed=false;handler.postDelayed(panic,800) }
+                MotionEvent.ACTION_MOVE -> {
+                    if(hypot(event.rawX-downX,event.rawY-downY)>8*density) { dragged=true;handler.removeCallbacks(panic) }
+                    if(dragged) {
+                        layout.x=(baseX+event.rawX-downX).roundToInt().coerceAtLeast(0)
+                        layout.y=(baseY+event.rawY-downY).roundToInt().coerceAtLeast(0)
+                        try { wm.updateViewLayout(view,layout) } catch(error:Exception) { fail("Bubble move failed: ${error.message}",error) }
+                    }
+                }
+                MotionEvent.ACTION_UP -> { handler.removeCallbacks(panic);if(!dragged&&!longPressed) { view.performClick();togglePanel() } }
+                MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(panic)
+            };true
+        }
+        try { wm.addView(view,layout);bubble=view;bubbleParams=layout } catch(error:Exception) { fail("Floating bubble failed: ${error.message}",error) }
+        scope.launch { MappingRuntimeBridge.state.collect { state ->
+            view.setTextColor(if(state.backendReady) 0xFF20D5A4.toInt() else if(state.error!=null) 0xFFFF6588.toInt() else 0xFF00D9EE.toInt())
+        } }
+    }
+
+    private fun togglePanel() {
+        if (panel != null) { remove(panel);panel=null;return }
+        val menu=LinearLayout(context).apply {
+            orientation=LinearLayout.VERTICAL;setPadding(8,8,8,8);setBackgroundColor(0xF5071827.toInt())
+            addView(TextView(context).apply { text="NEXUS INPUT · ${MappingRuntimeBridge.state.value.profileName ?: "Disarmed"}";setTextColor(Color.WHITE) })
+            addView(button("Edit game layout") { beginEdit() })
+            addView(button("Panic release") { PanicKillSwitch.triggerPanic(context,"Floating controls") })
+            addView(button("Close controls") { remove(panel);panel=null })
+        }
+        val layout=params((260*density).roundToInt(),WindowManager.LayoutParams.WRAP_CONTENT).apply { x=bubbleParams?.x?:0;y=(bubbleParams?.y?:0)+(54*density).roundToInt() }
+        try { wm.addView(menu,layout);panel=menu } catch(error:Exception) { fail("Floating controls failed: ${error.message}",error) }
+    }
+
+    private fun beginEdit() {
+        val config=MappingRuntimeBridge.config.value ?: run { fail("No armed game profile is available to edit");return }
+        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Capture service is unavailable; release cannot be confirmed");return }
+        remove(panel);panel=null
+        service.emergencyRelease { released -> handler.post {
+            if(closed) return@post
+            if(!released) { fail("Mapper edit aborted: backend did not acknowledge release");return@post }
+            session=MapperEditSession(config);selected=null;openEditor()
+        } }
+    }
+
+    private fun openEditor() {
+        remove(bubble);bubble=null
+        val root=FrameLayout(context)
+        val canvas=EditorCanvas()
+        root.addView(canvas,FrameLayout.LayoutParams(-1,-1))
+        val bar=LinearLayout(context).apply {
+            orientation=LinearLayout.HORIZONTAL;setBackgroundColor(0xEC071827.toInt())
+            addView(button("Add") { chooseBinding(true,canvas) })
+            addView(button("Bind") { chooseBinding(false,canvas) })
+            addView(button("Delete") { selected?.let { session?.remove(it);selected=null;canvas.invalidate() } })
+            addView(button("Save") { save() })
+            addView(button("Cancel") { finishEdit(session?.original) })
+            addView(button("Panic") { PanicKillSwitch.triggerPanic(context,"In-game mapper") })
+        }
+        val scroll=HorizontalScrollView(context).apply { addView(bar);isFillViewport=true }
+        root.addView(scroll,FrameLayout.LayoutParams(-1,(52*density).roundToInt()).apply { gravity=Gravity.BOTTOM })
+        root.addView(TextView(context).apply { text="Mapping paused · drag a binding over the real game · tap to select";setTextColor(Color.WHITE);setBackgroundColor(0xDC071827.toInt());textSize=11f },FrameLayout.LayoutParams(-1,(26*density).roundToInt()))
+        try { wm.addView(root,params(-1,-1));editor=root } catch(error:Exception) { fail("In-game mapper window failed: ${error.message}",error);finishEdit(null) }
+    }
+
+    private fun chooseBinding(add: Boolean, canvas: View) {
+        if(saving || (!add && selected==null)) { Toast.makeText(context,"Select a binding first",Toast.LENGTH_SHORT).show();return }
+        val keys=arrayOf("A","B","X","Y","LB","RB","LT","RT","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","L3","R3","START","SELECT","LS","RS")
+        val choice=AlertDialog.Builder(context).setTitle(if(add) "Add physical input" else "Bind physical input")
+            .setItems(keys) { _, index ->
+                val binding=keys[index]
+                if(add) selected=session?.add(binding)
+                else selected?.let { session?.bind(it,binding,if(binding in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP) }
+                canvas.invalidate()
+                if(binding !in setOf("LS","RS")) chooseBehavior(canvas)
+            }.setNegativeButton("Cancel",null).create()
+        choice.window?.setType(params(1,1).type);dialog=choice
+        try { choice.show() } catch(error:Exception) { fail("Binding dialog failed: ${error.message}",error) }
+    }
+    private fun chooseBehavior(canvas: View) {
+        val node=session?.draft?.buttons?.firstOrNull { it.id==selected } ?: return
+        val choice=AlertDialog.Builder(context).setTitle("Touch behavior for ${node.boundKey}")
+            .setItems(arrayOf("TAP","HOLD")) { _,index -> session?.bind(node.id,node.boundKey,ButtonBehavior.entries[index]);canvas.invalidate() }.create()
+        choice.window?.setType(params(1,1).type);dialog=choice
+        try { choice.show() } catch(error:Exception) { fail("Behavior dialog failed: ${error.message}",error) }
+    }
+    private fun save() {
+        if(saving) return
+        val edited=try { session?.validated() ?: error("No edit session") } catch(error:Exception) { fail("Profile rejected: ${error.message}",error);return }
+        saving=true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { ProfilePersistence(ControlystDatabase.getDatabase(context)).save(edited) }
+                if(!closed) { saving=false;MappingForegroundService.currentCrosshairConfig.value=edited.crosshair;finishEdit(edited);Toast.makeText(context,"Game layout saved",Toast.LENGTH_SHORT).show() }
+            } catch(error:Exception) { if(error is CancellationException) throw error;fail("Mapper save failed: ${error.message}",error) }
+            finally { saving=false }
+        }
+    }
+    private fun finishEdit(config: MappingConfig?) {
+        if(saving) return
+        dialog?.dismiss();dialog=null;remove(editor);editor=null;session=null
+        if(config!=null && !closed) MappingRuntimeBridge.arm(config.gamePackage,config)
+        if(!closed) show()
+    }
+    fun onConfigurationChanged(configuration: Configuration) {
+        if(editor!=null) { fail("Screen orientation changed during editing; draft discarded and mapping stopped");finishEdit(null) }
+        else { remove(panel);panel=null;remove(bubble);bubble=null;show() }
+    }
+    fun hide() {
+        closed=true;handler.removeCallbacksAndMessages(null);dialog?.dismiss();dialog=null
+        remove(editor);editor=null;remove(panel);panel=null;remove(bubble);bubble=null;session=null;scope.cancel()
+    }
+    private inner class EditorCanvas : View(context) {
+        private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            session?.draft?.buttons?.forEach { node ->
+                val x=node.xNorm*(width-1);val y=node.yNorm*(height-1)
+                paint.style=Paint.Style.FILL;paint.color=0x770B2440;canvas.drawCircle(x,y,24*density,paint)
+                paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF00D9EE.toInt();canvas.drawCircle(x,y,24*density,paint)
+                paint.style=Paint.Style.FILL;paint.textSize=12*density;paint.textAlign=Paint.Align.CENTER;canvas.drawText(node.boundKey,x,y+4*density,paint)
+            }
+        }
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if(saving) return true
+            when(event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { selected=session?.draft?.buttons?.minByOrNull { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y) }
+                    ?.takeIf { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y)<40*density }?.id;invalidate() }
+                MotionEvent.ACTION_MOVE -> selected?.let { session?.move(it,event.x,event.y,width,height);invalidate() }
+                MotionEvent.ACTION_UP -> performClick()
+            };return true
+        }
+        override fun performClick(): Boolean { super.performClick();return true }
+    }
+}
