@@ -23,14 +23,27 @@ interface ShellExecutor {
  * stdout/stderr are drained concurrently so probes do not deadlock on filled pipes.
  */
 class ProcessShellExecutor : ShellExecutor {
-    override fun run(argv: List<String>, timeoutMillis: Long): CommandResult {
+    override fun run(argv: List<String>, timeoutMillis: Long): CommandResult = execute(argv,timeoutMillis,null)
+
+    /** Short stdin payloads, such as pairing codes, are never placed in argv or logged. */
+    fun runWithInput(argv: List<String>, input: String, timeoutMillis: Long = 3_000): CommandResult {
+        require(input.toByteArray(Charsets.UTF_8).size<=4096) { "Command stdin exceeds the bounded payload limit" }
+        return execute(argv,timeoutMillis,input)
+    }
+
+    private fun execute(argv: List<String>, timeoutMillis: Long, input: String?): CommandResult {
         require(argv.isNotEmpty())
+        require(timeoutMillis>0) { "Process timeout must be positive" }
+        var ownedProcess: Process?=null
         return try {
             val process = ProcessBuilder(argv).start()
+            ownedProcess=process
             val outThread = StreamCollector(process.inputStream.bufferedReader())
             val errThread = StreamCollector(process.errorStream.bufferedReader())
             outThread.start()
             errThread.start()
+
+            process.outputStream.bufferedWriter().use { writer -> if(input!=null) writer.write(input) }
 
             val finished=ProcessWait.await(process,timeoutMillis)
             if (!finished) process.destroy()
@@ -48,13 +61,14 @@ class ProcessShellExecutor : ShellExecutor {
                     if(outThread.isAlive || errThread.isAlive) "Command output streams did not finish" else null).takeIf { it.isNotEmpty() }?.joinToString("; ")
             )
         } catch (t: Throwable) {
+            if(t is InterruptedException) Thread.currentThread().interrupt()
             CommandResult(
                 exitCode = null,
                 stdout = "",
-                stderr = t.message.orEmpty(),
+                stderr = "${t.javaClass.simpleName}: ${t.message}",
                 timedOut = false
             )
-        }
+        } finally { ownedProcess?.destroy() }
     }
 
     private class StreamCollector(private val reader: BufferedReader) : Thread() {

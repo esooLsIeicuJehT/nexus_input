@@ -56,94 +56,94 @@ object ShizukuPairingManager {
         if(customPort !in 1..65535) { notificationFailure("Enter the actual wireless pairing port (1..65535)");return }
         if(Build.VERSION.SDK_INT < 30) { notificationFailure("Wireless ADB pairing requires Android 11 or later");return }
         try {
-        createNotificationChannel(context)
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if(!manager.areNotificationsEnabled()) { notificationFailure("Android notifications are disabled; grant notification permission or pair in Shizuku's manager");return }
-        if(manager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) {
-            notificationFailure("The pairing notification channel is disabled in Android settings");return
-        }
-        _pairingState.value = _pairingState.value.copy(
-            isHelperNotificationActive = false,
-            pairingPort = customPort,
-            statusMessage = "Pairing notification requested; waiting for Android to expose it"
-        )
-
-        // Intent to open Developer Options directly
-        val devSettingsIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        val devSettingsPendingIntent = PendingIntent.getActivity(
-            context,
-            101,
-            devSettingsIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // RemoteInput for typing the 6-digit pairing code directly in the notification
-        val remoteInput = RemoteInput.Builder(KEY_PAIRING_CODE)
-            .setLabel("Enter 6-digit code (e.g. 123456)")
-            .build()
-
-        // Broadcast intent for submission
-        val submitIntent = Intent(context, ShizukuPairingReceiver::class.java).apply {
-            action = ACTION_SUBMIT_PAIRING_CODE
-            putExtra("port", customPort)
-        }
-        val submitPendingIntent = PendingIntent.getBroadcast(
-            context,
-            102,
-            submitIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
-        )
-
-        val replyAction = NotificationCompat.Action.Builder(
-            android.R.drawable.ic_input_add,
-            "Enter Pairing Code",
-            submitPendingIntent
-        ).addRemoteInput(remoteInput)
-            .build()
-
-        // Stop helper intent
-        val stopIntent = Intent(context, ShizukuPairingReceiver::class.java).apply {
-            action = ACTION_STOP_PAIRING_HELPER
-        }
-        val stopPendingIntent = PendingIntent.getBroadcast(
-            context,
-            103,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Shizuku Wireless Pairing Helper")
-            .setContentText("Enter the 6-digit pairing code below without leaving Developer Options!")
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    "DO NOT leave Developer Options or switch apps — doing so resets the pairing code!\n" +
-                    "Pull down this notification shade, tap 'Enter Pairing Code', type the 6 digits and tap Send."
-                )
-            )
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .addAction(replyAction)
-            .addAction(android.R.drawable.ic_menu_preferences, "Open Dev Options", devSettingsPendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", stopPendingIntent)
-            .build()
-
-        manager.notify(NOTIFICATION_ID, notification)
-        notificationObservation=scope.launch {
-            repeat(10) {
-                if(manager.activeNotifications.any { it.id==NOTIFICATION_ID }) {
-                    _pairingState.value=_pairingState.value.copy(isHelperNotificationActive=true,
-                        statusMessage="Android exposes the pairing notification. Enter the current code from Developer Options.")
-                    return@launch
-                }
-                delay(100)
+            createNotificationChannel(context)
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if(!manager.areNotificationsEnabled()) { notificationFailure("Android notifications are disabled; grant notification permission or pair in Shizuku's manager");return }
+            if(manager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE) {
+                notificationFailure("The pairing notification channel is disabled in Android settings");return
             }
-            notificationFailure("Android did not expose the requested pairing notification; inspect notification settings")
-        }
+            _pairingState.value = _pairingState.value.copy(
+                isHelperNotificationActive = false,
+                pairingPort = customPort,
+                statusMessage = "Pairing notification requested; waiting for Android to expose it"
+            )
+
+            // Intent to open Developer Options directly
+            val devSettingsIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val devSettingsPendingIntent = PendingIntent.getActivity(
+                context,
+                101,
+                devSettingsIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // RemoteInput for typing the 6-digit pairing code directly in the notification
+            val remoteInput = RemoteInput.Builder(KEY_PAIRING_CODE)
+                .setLabel("Enter 6-digit code (e.g. 123456)")
+                .build()
+
+            // Broadcast intent for submission
+            val submitIntent = Intent(context, ShizukuPairingReceiver::class.java).apply {
+                action = ACTION_SUBMIT_PAIRING_CODE
+                putExtra("port", customPort)
+            }
+            val submitPendingIntent = PendingIntent.getBroadcast(
+                context,
+                102,
+                submitIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+            )
+
+            val replyAction = NotificationCompat.Action.Builder(
+                android.R.drawable.ic_input_add,
+                "Enter Pairing Code",
+                submitPendingIntent
+            ).addRemoteInput(remoteInput)
+                .build()
+
+            // Stop helper intent
+            val stopIntent = Intent(context, ShizukuPairingReceiver::class.java).apply {
+                action = ACTION_STOP_PAIRING_HELPER
+            }
+            val stopPendingIntent = PendingIntent.getBroadcast(
+                context,
+                103,
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle("Shizuku Wireless Pairing Helper")
+                .setContentText("Enter the 6-digit pairing code below without leaving Developer Options!")
+                .setStyle(
+                    NotificationCompat.BigTextStyle().bigText(
+                        "DO NOT leave Developer Options or switch apps — doing so resets the pairing code!\n" +
+                        "Pull down this notification shade, tap 'Enter Pairing Code', type the 6 digits and tap Send."
+                    )
+                )
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .addAction(replyAction)
+                .addAction(android.R.drawable.ic_menu_preferences, "Open Dev Options", devSettingsPendingIntent)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", stopPendingIntent)
+                .build()
+
+            manager.notify(NOTIFICATION_ID, notification)
+            notificationObservation=scope.launch {
+                repeat(10) {
+                    if(manager.activeNotifications.any { it.id==NOTIFICATION_ID }) {
+                        _pairingState.value=_pairingState.value.copy(isHelperNotificationActive=true,
+                            statusMessage="Android exposes the pairing notification. Enter the current code from Developer Options.")
+                        return@launch
+                    }
+                    delay(100)
+                }
+                notificationFailure("Android did not expose the requested pairing notification; inspect notification settings")
+            }
         } catch(error:Exception) {
             Log.e("NexusPairing","Pairing notification failed",error)
             notificationFailure("Pairing notification failed: ${error.javaClass.simpleName}: ${error.message}")
@@ -192,44 +192,15 @@ object ShizukuPairingManager {
         else PairingOutcome(false, "ADB pairing was not confirmed (exit $exitCode). Use Shizuku's wireless debugging pairing in its manager.")
     }
 
-    private suspend fun executeAdbPair(code: String, port: Int): PairingOutcome = coroutineScope {
-        var process: Process? = null
-        try {
-            // An actual adb executable is required; Android does not bundle adb.
-            // Send the secret code through stdin, never a shell command or log.
-            val child = ProcessBuilder("adb", "pair", "localhost:$port")
-                .redirectErrorStream(true).start()
-            process = child
-            val output = async(Dispatchers.IO) {
-                child.inputStream.bufferedReader().use { reader ->
-                    val text = StringBuilder()
-                    var truncated=false
-                    val buffer = CharArray(1024)
-                    while (true) {
-                        val count = reader.read(buffer)
-                        if (count < 0) break
-                        val available=(16384-text.length).coerceAtLeast(0)
-                        text.append(buffer,0,minOf(count,available))
-                        if(count>available) truncated=true
-                    }
-                    text.toString() to truncated
-                }
-            }
-            child.outputStream.bufferedWriter().use { it.write(code + "\n") }
-            if (!com.example.injector.ProcessWait.await(child,8000)) {
-                child.destroy()
-                output.cancel()
-                PairingOutcome(false, "ADB pairing timed out. Pair using the Shizuku manager.")
-            } else {
-                val observed=output.await()
-                evaluateAdbPair(child.exitValue(),observed.first,observed.second)
-            }
-        } catch (error: Exception) {
-            if (error is CancellationException) throw error
-            Log.e("NexusPairing","ADB pairing command failed",error)
-            PairingOutcome(false, "ADB pairing unavailable: ${error.javaClass.simpleName}: ${error.message}. Pair using the Shizuku manager.")
-        } finally {
-            process?.destroy()
+    private suspend fun executeAdbPair(code: String, port: Int): PairingOutcome = withContext(Dispatchers.IO) {
+        // Android does not bundle adb. Use actual process observations and never put the code in argv.
+        val observed=com.example.injector.ProcessShellExecutor().runWithInput(
+            listOf("adb","pair","localhost:$port"),code+"\n",8000)
+        when {
+            observed.timedOut -> PairingOutcome(false,"ADB pairing timed out. Pair using the Shizuku manager.")
+            observed.streamError!=null -> PairingOutcome(false,"ADB pairing output failed: ${observed.streamError}")
+            observed.exitCode==null -> PairingOutcome(false,"ADB pairing unavailable: ${observed.stderr}. Pair using the Shizuku manager.")
+            else -> evaluateAdbPair(observed.exitCode,observed.stdout+"\n"+observed.stderr,observed.outputTruncated)
         }
     }
 

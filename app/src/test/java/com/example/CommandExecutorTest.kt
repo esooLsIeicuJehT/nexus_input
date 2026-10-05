@@ -6,6 +6,14 @@ import org.junit.Test
 
 /** Executes real host processes in CI; this does not verify an Android su provider. */
 class CommandExecutorTest {
+    @Test fun realStdinUsesTheSameBoundedExitAndOutputFlow() {
+        val result=ProcessShellExecutor().runWithInput(listOf("/bin/sh","-c","cat"),"test-only stdin\n",1000)
+        assertTrue(result.succeeded)
+        assertEquals("test-only stdin\n",result.stdout)
+        assertEquals("",result.stderr)
+        assertTrue(runCatching { ProcessShellExecutor().runWithInput(listOf("/bin/sh","-c","cat"),"x".repeat(4097)) }.isFailure)
+        assertTrue(runCatching { ProcessShellExecutor().run(listOf("/bin/sh","-c","exit 0"),0) }.isFailure)
+    }
     @Test fun actualExitCodeAndBothStreamsArePreserved() {
         val result=ProcessShellExecutor().run(listOf("/bin/sh","-c","printf out; printf denied >&2; exit 7"))
         assertEquals(7,result.exitCode);assertEquals("out",result.stdout);assertEquals("denied",result.stderr)
