@@ -12,7 +12,8 @@ data class KernelModuleStatus(
     companion object {
         fun fromProbe(result: CommandResult): KernelModuleStatus = when {
             result.succeeded -> KernelModuleStatus(true,"Module directory observed. Open its WebUI in KernelSU for root controls.")
-            !result.timedOut && result.exitCode == 4 -> KernelModuleStatus(false,"NEXUS INPUT companion directory is absent")
+            !result.timedOut && !result.outputTruncated && result.streamError == null && result.exitCode == 4 ->
+                KernelModuleStatus(false,"NEXUS INPUT companion directory is absent")
             else -> KernelModuleStatus(null,"Module status unavailable: ${result.stderr.ifBlank { result.stdout }.ifBlank { "exit=${result.exitCode}, timeout=${result.timedOut}" }}")
         }
     }

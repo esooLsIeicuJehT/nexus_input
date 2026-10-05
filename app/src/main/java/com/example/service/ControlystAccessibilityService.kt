@@ -321,7 +321,11 @@ class ControlystAccessibilityService : AccessibilityService() {
         val injector = activeInjector
         activeInjector = null
         MappingRuntimeBridge.disarm("Emergency stop requested")
-        if (backendExecutor.isShutdown) { onComplete(injector == null); return }
+        if (backendExecutor.isShutdown) {
+            MappingRuntimeBridge.disarm("Emergency contact release cannot be confirmed: backend executor is closed")
+            onComplete(false)
+            return
+        }
         backendExecutor.execute {
             // Teardowns queued before panic complete first; retained failures must also be retried.
             val targets=failedCleanup.toMutableSet().apply { if(injector!=null) add(injector) }

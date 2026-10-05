@@ -16,6 +16,18 @@ import java.util.concurrent.TimeUnit
 /** Exercises real service queue ordering with an explicitly rejecting transport fixture. */
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class ServicePanicTest {
+    @Test fun closedBackendExecutorCannotAcknowledgeEmergencyContactRelease() {
+        val service=Robolectric.buildService(ControlystAccessibilityService::class.java).create().get()
+        val executor=service.javaClass.getDeclaredField("backendExecutor").apply { isAccessible=true }
+            .get(service) as java.util.concurrent.ExecutorService
+        executor.shutdownNow()
+        var released: Boolean?=null
+        try {
+            service.emergencyRelease { released=it }
+            assertEquals(false,released)
+            assertTrue(MappingRuntimeBridge.state.value.error!!.contains("cannot be confirmed"))
+        } finally { service.onDestroy();MappingRuntimeBridge.disarm() }
+    }
     private class RejectCleanup : InputInjector {
         override val method=PrivilegeMethod.KERNELSU
         @Volatile var cleanups=0
