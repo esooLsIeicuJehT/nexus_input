@@ -35,4 +35,11 @@ class MapperEditSessionTest {
         assertEquals(NodeType.BUTTON,edit.validated().buttons.first { it.id==ls }.type)
         assertNull(edit.validated().buttons.first { it.id==ls }.axisX)
     }
+    @Test fun floatingWindowsRemainReachableAcrossDragAndRotation() {
+        assertEquals(0 to 0,com.example.service.OverlayBounds.position(-50,-80,52,52,1000,500))
+        assertEquals(948 to 448,com.example.service.OverlayBounds.position(3000,1000,52,52,1000,500))
+        assertEquals(448 to 948,com.example.service.OverlayBounds.position(948,948,52,52,500,1000))
+        assertEquals(0 to 0,com.example.service.OverlayBounds.position(100,100,300,300,200,200))
+    }
+
 }

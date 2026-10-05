@@ -37,7 +37,23 @@ class InGameMapperOverlay(private val context: Context) {
     private var selected: String? = null
     private var saving = false
     private var closed = false
+    private var bubbleObserver: Job? = null
+    private var saveJob: Job? = null
 
+    private fun displaySize(): Pair<Int,Int> {
+        if(Build.VERSION.SDK_INT >= 30) {
+            val bounds=wm.currentWindowMetrics.bounds
+            return bounds.width() to bounds.height()
+        }
+        @Suppress("DEPRECATION")
+        val metrics=android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+        return metrics.widthPixels to metrics.heightPixels
+    }
+    private fun clamp(layout: WindowManager.LayoutParams, width: Int, height: Int) {
+        val (w,h)=displaySize()
+        val position=OverlayBounds.position(layout.x,layout.y,width,height,w,h)
+        layout.x=position.first;layout.y=position.second
+    }
     private fun params(width: Int, height: Int, focusable: Boolean = false) = WindowManager.LayoutParams(width,height,
         if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
@@ -66,6 +82,7 @@ class InGameMapperOverlay(private val context: Context) {
             background=GradientDrawable().apply { shape=GradientDrawable.OVAL;setColor(0xFF071827.toInt());setStroke((2*density).roundToInt(),0xFF00D9EE.toInt()) }
         }
         val layout=params(size,size).apply { x=(12*density).roundToInt();y=(120*density).roundToInt() }
+        clamp(layout,size,size)
         var downX=0f;var downY=0f;var baseX=0;var baseY=0;var dragged=false;var longPressed=false
         val panic = Runnable { longPressed=true;PanicKillSwitch.triggerPanic(context,"Floating bubble") }
         view.setOnTouchListener { _, event ->
@@ -76,6 +93,7 @@ class InGameMapperOverlay(private val context: Context) {
                     if(dragged) {
                         layout.x=(baseX+event.rawX-downX).roundToInt().coerceAtLeast(0)
                         layout.y=(baseY+event.rawY-downY).roundToInt().coerceAtLeast(0)
+                        clamp(layout,size,size)
                         try { wm.updateViewLayout(view,layout) } catch(error:Exception) { fail("Bubble move failed: ${error.message}",error) }
                     }
                 }
@@ -83,8 +101,9 @@ class InGameMapperOverlay(private val context: Context) {
                 MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(panic)
             };true
         }
-        try { wm.addView(view,layout);bubble=view;bubbleParams=layout } catch(error:Exception) { fail("Floating bubble failed: ${error.message}",error) }
-        scope.launch { MappingRuntimeBridge.state.collect { state ->
+        try { wm.addView(view,layout);bubble=view;bubbleParams=layout } catch(error:Exception) { fail("Floating bubble failed: ${error.message}",error);return }
+        bubbleObserver?.cancel()
+        bubbleObserver=scope.launch { MappingRuntimeBridge.state.collect { state ->
             view.setTextColor(if(state.backendReady) 0xFF20D5A4.toInt() else if(state.error!=null) 0xFFFF6588.toInt() else 0xFF00D9EE.toInt())
         } }
     }
@@ -99,6 +118,7 @@ class InGameMapperOverlay(private val context: Context) {
             addView(button("Close controls") { remove(panel);panel=null })
         }
         val layout=params((260*density).roundToInt(),WindowManager.LayoutParams.WRAP_CONTENT).apply { x=bubbleParams?.x?:0;y=(bubbleParams?.y?:0)+(54*density).roundToInt() }
+        clamp(layout,(260*density).roundToInt(),(180*density).roundToInt())
         try { wm.addView(menu,layout);panel=menu } catch(error:Exception) { fail("Floating controls failed: ${error.message}",error) }
     }
 
@@ -114,6 +134,7 @@ class InGameMapperOverlay(private val context: Context) {
     }
 
     private fun openEditor() {
+        bubbleObserver?.cancel();bubbleObserver=null
         remove(bubble);bubble=null
         val root=FrameLayout(context)
         val canvas=EditorCanvas()
@@ -158,7 +179,7 @@ class InGameMapperOverlay(private val context: Context) {
         if(saving) return
         val edited=try { session?.validated() ?: error("No edit session") } catch(error:Exception) { fail("Profile rejected: ${error.message}",error);return }
         saving=true
-        scope.launch {
+        saveJob=scope.launch {
             try {
                 withContext(Dispatchers.IO) { ProfilePersistence(ControlystDatabase.getDatabase(context)).save(edited) }
                 if(!closed) { saving=false;MappingForegroundService.currentCrosshairConfig.value=edited.crosshair;finishEdit(edited);Toast.makeText(context,"Game layout saved",Toast.LENGTH_SHORT).show() }
@@ -173,11 +194,15 @@ class InGameMapperOverlay(private val context: Context) {
         if(!closed) show()
     }
     fun onConfigurationChanged(configuration: Configuration) {
-        if(editor!=null) { fail("Screen orientation changed during editing; draft discarded and mapping stopped");finishEdit(null) }
-        else { remove(panel);panel=null;remove(bubble);bubble=null;show() }
+        if(editor!=null) {
+            saveJob?.cancel();saveJob=null;saving=false
+            fail("Screen orientation changed during editing; mapping stopped. Inspect the saved profile before restarting.")
+            finishEdit(null)
+        }
+        else { bubbleObserver?.cancel();bubbleObserver=null;remove(panel);panel=null;remove(bubble);bubble=null;show() }
     }
     fun hide() {
-        closed=true;handler.removeCallbacksAndMessages(null);dialog?.dismiss();dialog=null
+        closed=true;bubbleObserver?.cancel();bubbleObserver=null;saveJob?.cancel();saveJob=null;handler.removeCallbacksAndMessages(null);dialog?.dismiss();dialog=null
         remove(editor);editor=null;remove(panel);panel=null;remove(bubble);bubble=null;session=null;scope.cancel()
     }
     private inner class EditorCanvas : View(context) {
@@ -202,4 +227,10 @@ class InGameMapperOverlay(private val context: Context) {
         }
         override fun performClick(): Boolean { super.performClick();return true }
     }
+}
+
+internal object OverlayBounds {
+    fun position(x: Int,y: Int,windowWidth: Int,windowHeight: Int,screenWidth: Int,screenHeight: Int): Pair<Int,Int> =
+        x.coerceIn(0,(screenWidth-windowWidth).coerceAtLeast(0)) to
+            y.coerceIn(0,(screenHeight-windowHeight).coerceAtLeast(0))
 }
