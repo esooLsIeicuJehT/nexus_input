@@ -14,6 +14,30 @@ function sandbox(ksu) {
   vm.createContext(context);vm.runInContext(source,context);
   return {context,elements,timers};
 }
+
+test('opening the WebUI performs zero root shell calls', () => {
+  const calls=[];
+  sandbox({exec(...args){calls.push(args)}});
+  assert.equal(calls.length,0);
+});
+
+test('root shell requests are FIFO serialized and first request starts immediately', async () => {
+  const calls=[];const {context}=sandbox({exec(...args){calls.push(args)}});
+  const first=context.execRoot('first');
+  const second=context.execRoot('second');
+  assert.equal(calls.length,1);
+  assert.equal(calls[0][0],'first');
+  context.window[calls[0][2]](0,'one','');
+  const firstResult=await first;
+  assert.equal(firstResult.stdout,'one');
+  await Promise.resolve();
+  assert.equal(calls.length,2);
+  assert.equal(calls[1][0],'second');
+  context.window[calls[1][2]](0,'two','');
+  const secondResult=await second;
+  assert.equal(secondResult.stdout,'two');
+});
+
 test('missing actual KernelSU bridge rejects and clears stale cards', async () => {
   const {context,elements}=sandbox();
   await assert.rejects(context.execRoot('id'),/unavailable/);
@@ -44,6 +68,14 @@ test('AVAILABLE text with failure status never enables updater installation', as
   const calls=[];const {context,elements}=sandbox({exec(...args){calls.push(args)}});
   const check=context.checkGithubUpdate();context.window[calls.at(-1)[2]](1,'STATE=AVAILABLE\nREMOTE_VERSION=2.0.0','failed');
   await check;assert.equal(elements.get('installUpdate').disabled,true);
+});
+test('LOCAL_NEWER never enables updater installation or pretends up to date', async () => {
+  const calls=[];const {context,elements}=sandbox({exec(...args){calls.push(args)}});
+  const check=context.checkGithubUpdate();
+  context.window[calls.at(-1)[2]](0,'STATE=LOCAL_NEWER\nCURRENT_VERSION=1.0.0\nREMOTE_VERSION=0.6.0-dev\nMESSAGE=Published update channel is older than installed 1.0.0','');
+  await check;
+  assert.equal(elements.get('installUpdate').disabled,true);
+  assert.match(elements.get('updateStatus').textContent,/older than installed/i);
 });
 
 test('incomplete capability output cannot enable root tuning controls', async () => {
