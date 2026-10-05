@@ -94,5 +94,61 @@ class RuntimeTest {
         assertTrue(r.requiresPersistentTouch(config(MappingNode("a",.2f,.3f,boundKey="RT"))))
         assertFalse(r.requiresPersistentTouch(config(MappingNode("a",.2f,.3f,boundKey="A"))))
         r.shutdown(null)
+    }    @Test fun failedTapReleaseRetainsItsSlotForPanicRetryAndMacroCornersStayInBounds() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val tap=MappingNode("tap",1f,1f,boundKey="A",touchSlot=31)
+        backend.failUp=true;runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(tap),backend)
+        val deadline=System.nanoTime()+1_000_000_000
+        while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline) Thread.sleep(5)
+        assertTrue(errors.any { it.contains("Tap up failed") })
+        backend.failUp=false;assertTrue(runtime.releaseAll(backend))
+        assertEquals(2,backend.calls.count { it.first=="up" })
+        backend.calls.clear()
+        val macro=MappingNode("macro",.2f,.3f,type=NodeType.MACRO,boundKey="B",macroActions=listOf(MacroStep(0,"TAP",1f,1f,20)))
+        runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_B),config(macro),backend)
+        val deadline2=System.nanoTime()+1_000_000_000
+        while(backend.calls.none { it.first=="down" } && System.nanoTime()<deadline2) Thread.sleep(5)
+        assertEquals(999f,backend.calls.first().third.first,0f);assertEquals(499f,backend.calls.first().third.second,0f)
+        runtime.shutdown(backend)
     }
+    @Test fun turboStopsAfterReleaseAndPanicCancelsItsFuturePulses() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val turbo=MappingNode("turbo",.3f,.4f,type=NodeType.TURBO,boundKey="A",turboHz=30)
+        runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(turbo),backend)
+        val deadline=System.nanoTime()+1_000_000_000
+        while(backend.calls.count { it.first=="down" }<3 && System.nanoTime()<deadline) Thread.sleep(5)
+        assertTrue(backend.calls.count { it.first=="down" }>=3)
+        runtime.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_A),config(turbo),backend);runtime.awaitIdle()
+        val stopped=backend.calls.count { it.first=="down" };Thread.sleep(120)
+        assertEquals(stopped,backend.calls.count { it.first=="down" })
+        runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(turbo),backend);runtime.awaitIdle()
+        assertTrue(runtime.releaseAll(backend));val panic=backend.calls.size;Thread.sleep(120)
+        assertEquals(panic,backend.calls.size);assertTrue(errors.isEmpty());runtime.shutdown(null)
+    }
+    @Test fun explicitPhysicalKeysOverrideAnalogLabelsAndUnknownScanBindingsRequireUnknownKey() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val node=MappingNode("explicit",.3f,.4f,boundKey="RT",inputKeyCode=KeyEvent.KEYCODE_BUTTON_A,buttonBehavior=ButtonBehavior.HOLD)
+        runtime.handleMotionSnapshot(sample(rt=1f),config(node),backend);runtime.awaitIdle()
+        assertTrue(backend.calls.isEmpty())
+        val scan=node.copy(inputKeyCode=KeyEvent.KEYCODE_UNKNOWN,inputScanCode=310)
+        val unknown=KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_UNKNOWN,0,0,1,310,0,InputDevice.SOURCE_GAMEPAD)
+        assertTrue(runtime.handleKeyEvent(unknown,config(scan),backend));runtime.awaitIdle()
+        assertEquals(1,backend.calls.count { it.first=="down" })
+        assertFalse(runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(scan),backend))
+        runtime.shutdown(backend)
+    }
+    @Test fun invalidMotionSamplesFailExplicitlyAndStickNeutralReleasesContacts() {
+        val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
+        val c=config(MappingNode("ls",.2f,.7f,.12f,NodeType.JOYSTICK_ZONE,"LS"))
+        runtime.handleMotionSnapshot(sample(lx=Float.NaN),c,backend);runtime.awaitIdle()
+        assertTrue(errors.any { it.contains("Invalid Android motion") });assertTrue(backend.calls.isEmpty())
+        runtime.handleMotionSnapshot(sample(lx=1f),c,backend)
+        val deadline=System.nanoTime()+1_000_000_000
+        while(backend.calls.none { it.first=="down" } && System.nanoTime()<deadline) Thread.sleep(5)
+        runtime.handleMotionSnapshot(sample(),c,backend);runtime.awaitIdle()
+        val deadline2=System.nanoTime()+1_000_000_000
+        while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline2) Thread.sleep(5)
+        assertTrue(backend.calls.any { it.first=="up" });runtime.shutdown(backend)
+    }
+
 }

@@ -68,7 +68,7 @@ class GamepadMappingRuntime(
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
         if (event.repeatCount > 0) return true
         val pressed = event.action == KeyEvent.ACTION_DOWN
-        val channel = "key_${event.keyCode}_${event.scanCode}"
+        val channel = if(event.keyCode != KeyEvent.KEYCODE_UNKNOWN) "key_${event.deviceId}_${event.keyCode}" else "scan_${event.deviceId}_${event.scanCode}"
         enqueue { nodes.forEach { handleOwnedInput(channel, it, pressed, config, injector) } }
         return true
     }
@@ -80,6 +80,10 @@ class GamepadMappingRuntime(
 
     internal fun handleMotionSnapshot(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
         enqueue {
+            (listOfNotNull(snapshot.leftX,snapshot.leftY,snapshot.rightX,snapshot.rightY,
+                snapshot.leftTrigger,snapshot.rightTrigger,snapshot.hatX,snapshot.hatY)+snapshot.axes.values).forEach { axis ->
+                require(axis.raw.isFinite() && axis.minimum.isFinite() && axis.maximum.isFinite() && axis.flat.isFinite() && axis.minimum < axis.maximum) { "Invalid Android motion sample or axis range" }
+            }
             snapshot.leftTrigger?.let {
                 handleThreshold("left_trigger", it.normalizedTrigger(), ControllerBindingAliases.leftTrigger(), config, injector)
             }
@@ -152,7 +156,10 @@ class GamepadMappingRuntime(
     private fun matchingNodes(config: MappingConfig, aliases: Set<String>): List<MappingNode> {
         val normalizedAliases = aliases.mapTo(hashSetOf(), ControllerBindingAliases::canonical)
         return config.buttons.filter { node ->
-            ControllerBindingAliases.canonical(node.boundKey) in normalizedAliases &&
+            (if(node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN)
+                ControllerBindingAliases.forKeyCode(node.inputKeyCode).any { ControllerBindingAliases.canonical(it) in normalizedAliases }
+             else if(node.inputScanCode != null) false
+             else ControllerBindingAliases.canonical(node.boundKey) in normalizedAliases) &&
                 node.type in setOf(NodeType.BUTTON, NodeType.TURBO, NodeType.MACRO)
         }
     }
@@ -226,8 +233,9 @@ class GamepadMappingRuntime(
             return
         }
         executor.schedule({
-            if (activeSlots.remove(slot) && !injector.endTouch(slot)) {
-                onError("Tap up failed for ${node.label.ifBlank { node.boundKey }}")
+            if(activeSlots.contains(slot)) {
+                if(injector.endTouch(slot)) activeSlots.remove(slot)
+                else onError("Tap up failed for ${node.label.ifBlank { node.boundKey }}")
             }
         }, durationMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
     }
@@ -279,8 +287,8 @@ class GamepadMappingRuntime(
             onError("Macro '${node.label}' contains invalid normalized coordinate (${step.xNorm},${step.yNorm})")
             return
         }
-        val x = step.xNorm * size.first
-        val y = step.yNorm * size.second
+        val x = step.xNorm * (size.first - 1)
+        val y = step.yNorm * (size.second - 1)
         when (step.actionType.uppercase()) {
             "TAP" -> {
                 if (injector.method == PrivilegeMethod.ACCESSIBILITY) {
@@ -291,8 +299,9 @@ class GamepadMappingRuntime(
                         onError("Macro tap down failed for ${node.label}")
                     } else {
                         executor.schedule({
-                            if (activeSlots.remove(slot) && !injector.endTouch(slot)) {
-                                onError("Macro tap up failed for ${node.label}")
+                            if(activeSlots.contains(slot)) {
+                                if(injector.endTouch(slot)) activeSlots.remove(slot)
+                                else onError("Macro tap up failed for ${node.label}")
                             }
                         }, step.durationMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
                     }
@@ -307,8 +316,9 @@ class GamepadMappingRuntime(
                 }
             }
             "RELEASE" -> {
-                if (activeSlots.remove(slot) && !injector.endTouch(slot)) {
-                    onError("Macro release failed for ${node.label}")
+                if(activeSlots.contains(slot)) {
+                    if(injector.endTouch(slot)) activeSlots.remove(slot)
+                    else onError("Macro release failed for ${node.label}")
                 }
             }
             else -> onError("Macro '${node.label}' has unsupported action '${step.actionType}'")
@@ -443,7 +453,7 @@ class GamepadMappingRuntime(
     private fun normalizeAxis(axis: AxisValue, node: MappingNode): Float {
         val center = if (axis.minimum < 0f && axis.maximum > 0f) 0f else (axis.minimum + axis.maximum) / 2f
         val span = max(abs(axis.maximum - center), abs(center - axis.minimum))
-        if (!span.isFinite() || span <= 0f) return 0f
+        require(axis.raw.isFinite() && span.isFinite() && span > 0f) { "Invalid stick sample or range" }
         val raw = ((axis.raw - center) / span).coerceIn(-1f, 1f)
         val flat = (axis.flat / span).coerceIn(0f, 0.9f)
         val inner = max(node.deadzoneInner.coerceIn(0f, 0.9f), flat)
@@ -489,7 +499,7 @@ class GamepadMappingRuntime(
     ) {
         fun normalizedTrigger(): Float {
             val span = maximum - minimum
-            if (!span.isFinite() || span <= 0f) return 0f
+            require(raw.isFinite() && span.isFinite() && span > 0f) { "Invalid trigger sample or range" }
             return ((raw - minimum) / span).coerceIn(0f, 1f)
         }
     }
