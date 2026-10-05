@@ -123,6 +123,12 @@ android {
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
+androidComponents {
+  beforeVariants(selector().withBuildType("release")) { variant ->
+    variant.enableUnitTest = true
+  }
+}
+
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
