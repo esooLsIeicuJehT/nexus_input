@@ -210,7 +210,7 @@ class MappingForegroundService : Service() {
         _activeGamePackage.value = null
         exitWatcherJob?.cancel()
         exitWatcherJob = null
-        MappingRuntimeBridge.disarm()
+        MappingRuntimeBridge.disarm(MappingRuntimeBridge.state.value.error)
         crosshairOverlayManager?.hideOverlay()
         crosshairOverlayManager = null
         if (clearNotification) {

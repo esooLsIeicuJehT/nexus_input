@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <queries>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
+        <package android:name="me.weishu.kernelsu" />
+        <package android:name="com.rifsxd.ksunext" />
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
 
@@ -17,7 +20,7 @@
         tools:ignore="ProtectedPermissions" />
 
     <application
-        android:name=".ControlystApp"
+        android:name=".NEXUS INPUTApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -70,7 +73,7 @@
 
         <!-- Accessibility Service for Non-Root Touch Injection Fallback -->
         <service
-            android:name=".service.ControlystAccessibilityService"
+            android:name=".service.NEXUS INPUTAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

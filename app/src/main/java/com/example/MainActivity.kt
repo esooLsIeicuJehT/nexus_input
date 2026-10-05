@@ -76,8 +76,8 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         snackbarHostState = snackbarHostState,
                         onPanicKill = {
-                            MappingForegroundService.triggerPanicKill(this@MainActivity)
-                            viewModel.showSnack("Panic kill executed. Mapping halted.")
+                            com.example.service.PanicKillSwitch.triggerPanic(this@MainActivity)
+                            viewModel.showSnack("Emergency stop requested; inspect release status in System.")
                         }
                     )
                 }

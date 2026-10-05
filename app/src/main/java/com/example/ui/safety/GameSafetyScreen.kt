@@ -40,7 +40,7 @@ fun GameSafetyScreen(
                 antiCheatEngine = "ACE (Anti-Cheat Expert)",
                 banRiskSummary = "Hardware /dev/uinput input behaves identically to official Bluetooth controller. Rapid macros discouraged in ranked queues.",
                 userReportsCount = 342,
-                maintainerNotes = "Verified safe with Controlyst v1.0.0. Use standard analog sensitivity."
+                maintainerNotes = "Verified safe with NEXUS INPUT v1.0.0. Use standard analog sensitivity."
             ),
             GameSafetyReport(
                 gamePackage = "com.activision.callofduty.warzone",
@@ -115,7 +115,7 @@ fun GameSafetyScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text("Integrity & Anti-Cheat Disclaimer", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = DarkTextPrimary)
-                        Text("Controlyst does not bypass anti-cheat systems, spoof memory, or claim to be 'undetectable'. All assessments are community-verified reports based on /dev/uinput virtual gamepad standards.", fontSize = 10.sp, color = DarkTextSecondary)
+                        Text("NEXUS INPUT does not bypass anti-cheat systems, spoof memory, or claim to be 'undetectable'. All assessments are community-verified reports based on /dev/uinput virtual gamepad standards.", fontSize = 10.sp, color = DarkTextSecondary)
                     }
                 }
             }

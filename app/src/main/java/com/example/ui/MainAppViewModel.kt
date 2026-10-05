@@ -33,8 +33,6 @@ import com.example.model.MappingConfig
 import com.example.model.MappingNode
 import com.example.model.NodeType
 import com.example.model.PrivilegeMethod
-import com.example.monetization.MonetizationManager
-import com.example.monetization.MonetizationState
 import com.example.service.MappingForegroundService
 import com.example.service.ShizukuPairingManager
 import com.example.service.ShizukuPairingState
@@ -42,10 +40,8 @@ import com.example.service.PanicKillSwitch
 import com.example.module.KernelSuModuleManager
 import com.example.model.*
 import com.example.ai.vision.AiHudDetector
-import com.example.ai.AiMappingAssistant
 import com.example.ai.ConfigDiffEngine
 import com.example.backup.LocalBackupManager
-import com.example.performance.drivers.PerformanceDriverManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,7 +55,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
     val privilegeDetector = PrivilegeDetector(application)
     val calibrationManager = CalibrationManager(application)
-    val monetizationManager = MonetizationManager(application)
     val firebaseRepository = com.example.data.FirebaseRepository(application)
 
     private val _authState = MutableStateFlow(firebaseRepository.currentUser)
@@ -69,17 +64,11 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     private val _aiHudCandidates = MutableStateFlow<List<AiHudCandidate>>(emptyList())
     val aiHudCandidates: StateFlow<List<AiHudCandidate>> = _aiHudCandidates.asStateFlow()
 
-    private val _aiMappingSuggestion = MutableStateFlow<AiMappingSuggestion?>(null)
-    val aiMappingSuggestion: StateFlow<AiMappingSuggestion?> = _aiMappingSuggestion.asStateFlow()
-
     private val _diffResult = MutableStateFlow<ConfigDiffResult?>(null)
     val diffResult: StateFlow<ConfigDiffResult?> = _diffResult.asStateFlow()
 
-    val performanceMode = PerformanceDriverManager.currentMode
-    val hardwareTelemetry = PerformanceDriverManager.telemetry
 
     init {
-        PerformanceDriverManager.initialize()
         viewModelScope.launch {
             firebaseRepository.authStateFlow().collect { user ->
                 _authState.value = user
@@ -87,9 +76,9 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun signInWithGoogle() {
+    fun signInWithGoogle(activity: android.app.Activity) {
         viewModelScope.launch {
-            val result = firebaseRepository.signInWithGoogleCredential()
+            val result = firebaseRepository.signInWithGoogleCredential(activity)
             result.onSuccess { user ->
                 showSnack("Signed in as ${user.email ?: user.displayName}")
             }.onFailure { err ->
@@ -142,7 +131,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedGame = MutableStateFlow<GameEntity?>(null)
     val selectedGame: StateFlow<GameEntity?> = _selectedGame.asStateFlow()
 
-    private val _activeConfig = MutableStateFlow(ControlystRepository.createSampleDfmConfig())
+    private val _activeConfig = MutableStateFlow(MappingConfig(id = "new_profile", profileName = "Choose a game", gamePackage = ""))
     val activeConfig: StateFlow<MappingConfig> = _activeConfig.asStateFlow()
 
     // Calibration States
@@ -151,7 +140,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     val touchLatencyResult: StateFlow<TouchLatencyResult> = calibrationManager.latencyResult
 
     // Monetization State
-    val monetizationState: StateFlow<MonetizationState> = monetizationManager.state
 
     // Active Injector
     var currentInjector: InputInjector = InputInjectorFactory.createInjector(PrivilegeMethod.ACCESSIBILITY)
@@ -229,13 +217,13 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         _selectedGame.value = game
         viewModelScope.launch {
             // Find default config for this game
-            val list = db.configProfileDao().getProfileById("${game.packageName}_default")
+            val list = db.configProfileDao().getDefaultForGame(game.packageName)
             if (list != null) {
                 _activeConfig.value = ControlystRepository.deserializeJsonToConfig(list.jsonBlob)
             } else {
                 // Generate base template config
-                _activeConfig.value = ControlystRepository.createSampleDfmConfig().copy(
-                    id = "${game.packageName}_config",
+                _activeConfig.value = MappingConfig(
+                    id = "${game.packageName}_default",
                     profileName = "${game.displayName} Layout",
                     gamePackage = game.packageName,
                     gameTitle = game.displayName
@@ -263,9 +251,9 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
-                showSnack("Launched ${game.displayName} with Controlyst HUD!")
+                showSnack("Launched ${game.displayName} with NEXUS INPUT HUD!")
             } else {
-                showSnack("Target app ${game.displayName} ready. Controlyst HUD started.")
+                showSnack("Target app ${game.displayName} ready. NEXUS INPUT HUD started.")
             }
         }
     }
@@ -420,8 +408,8 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun triggerPanicKillSwitch() {
-        val count = PanicKillSwitch.trigger(getApplication(), currentInjector)
-        showSnack("PANIC KILL-SWITCH: Released $count active inputs & reset axes!")
+        PanicKillSwitch.trigger(getApplication(), currentInjector)
+        showSnack("Emergency stop requested; release status is shown in System diagnostics.")
     }
 
     fun runAiHudScan() {
@@ -463,28 +451,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         _aiHudCandidates.value = emptyList()
     }
 
-    fun runAiAssistant() {
-        viewModelScope.launch {
-            val suggestion = AiMappingAssistant.suggestMapping(
-                _activeConfig.value.gameTitle,
-                _controllerProfile.value.type,
-                _activeConfig.value
-            )
-            _aiMappingSuggestion.value = suggestion
-        }
-    }
-
-    fun applyAiAssistantSuggestion() {
-        val s = _aiMappingSuggestion.value ?: return
-        updateActiveConfig(_activeConfig.value.copy(buttons = s.nodes))
-        _aiMappingSuggestion.value = null
-        showSnack("Applied AI Recommended Mapping with ${s.estimatedLatencyMs}ms latency!")
-    }
-
-    fun dismissAiAssistant() {
-        _aiMappingSuggestion.value = null
-    }
-
     fun runConfigDiff() {
         viewModelScope.launch {
             val detection = AiHudDetector.detect(_screenshot.value)
@@ -513,17 +479,6 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissDiff() {
         _diffResult.value = null
-    }
-
-    fun setPerformanceProfile(mode: PerformanceMode) {
-        val results = PerformanceDriverManager.setPerformanceMode(mode)
-        val passed = results.count { it.isSuccess }
-        showSnack("Performance Mode: ${mode.displayName} ($passed/${results.size} sysfs nodes applied)")
-    }
-
-    fun restoreStockPerformance() {
-        PerformanceDriverManager.restoreStock()
-        showSnack("Stock hardware snapshot restored.")
     }
 
     fun completeOnboarding() {

@@ -169,7 +169,7 @@ class CrosshairOverlayService : Service() {
 
     private fun createForegroundNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Controlyst Crosshair Active")
+            .setContentTitle("NEXUS INPUT Crosshair Active")
             .setContentText("Floating aiming overlay is currently rendering.")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -33,9 +33,9 @@ data class MappingConfig(
     val antiRecoilEnabled: Boolean = false,
     val antiRecoilVerticalPull: Float = 0.0f,
     val tags: List<String> = emptyList(),
-    val author: String = "Controlyst Community",
+    val author: String = "Local user",
     val isOfficialVerified: Boolean = false,
     val downloadCount: Int = 0,
-    val rating: Float = 4.8f,
+    val rating: Float = 0f,
     val lastUpdated: Long = System.currentTimeMillis()
 )

@@ -42,6 +42,9 @@ interface ConfigProfileDao {
     @Query("SELECT * FROM config_profiles WHERE id = :id LIMIT 1")
     suspend fun getProfileById(id: String): ConfigProfileEntity?
 
+    @Query("SELECT * FROM config_profiles WHERE gamePackage = :packageName ORDER BY isDefault DESC, updatedAt DESC LIMIT 1")
+    suspend fun getDefaultForGame(packageName: String): ConfigProfileEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: ConfigProfileEntity)
 

@@ -70,6 +70,7 @@ android {
       // AGP 9.1 exposes source directories through the mutable directories set.
       // The Termux build writes the verified prebuilt .so here before Gradle runs.
       jniLibs.directories.add("src/main/jniLibs")
+      assets.directories.add(rootProject.file("kernelsu-module").absolutePath)
     }
   }
 

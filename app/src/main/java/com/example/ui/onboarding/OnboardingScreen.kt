@@ -156,7 +156,7 @@ fun OnboardingScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (step == 5) "Launch Controlyst" else "Continue",
+                                    text = if (step == 5) "Launch NEXUS INPUT" else "Continue",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp
@@ -225,7 +225,7 @@ fun OnboardingScreen(
         val (title, rationale, intent) = when (permKey) {
             "ACCESSIBILITY" -> Triple(
                 "Accessibility Service",
-                "Controlyst uses Android Accessibility Service to perform synthetic tap and swipe gestures directly on game touchscreens without root permissions.",
+                "NEXUS INPUT uses Android Accessibility Service to perform synthetic tap and swipe gestures directly on game touchscreens without root permissions.",
                 Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             )
             "OVERLAY" -> Triple(
@@ -235,7 +235,7 @@ fun OnboardingScreen(
             )
             "USAGE_STATS" -> Triple(
                 "Game Process Detection",
-                "Allows Controlyst to detect when your game starts and exits, automatically activating and cleaning up input injection services.",
+                "Allows NEXUS INPUT to detect when your game starts and exits, automatically activating and cleaning up input injection services.",
                 Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
             )
             else -> Triple(
@@ -360,7 +360,7 @@ fun StepWelcome() {
             icon = Icons.Default.CenterFocusStrong,
             iconTint = ControlystBlue,
             title = "Crosshair & Live FPS Overlays",
-            desc = "Tactical reticle studio and low-overhead floating performance telemetry (119 FPS, 8.4 ms)."
+            desc = "Tactical reticle studio and low-overhead floating performance telemetry (no fabricated FPS or latency)."
         )
         Spacer(Modifier.height(10.dp))
         FeatureHighlightCard(
@@ -461,7 +461,7 @@ fun StepRootDetection(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Controlyst automatically detects which injection backend your device supports. You can also manually force a method below.",
+            text = "NEXUS INPUT automatically detects which injection backend your device supports. You can also manually force a method below.",
             style = MaterialTheme.typography.bodyMedium.copy(color = TextSecondary)
         )
 
@@ -526,7 +526,7 @@ fun StepRootDetection(
                             fontSize = 12.sp
                         )
                         Text(
-                            text = "Est. Latency: ${probe.latencyScoreMs}ms",
+                            text = "Latency not measured",
                             color = CyberCyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -547,7 +547,7 @@ fun StepRootDetection(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Notice: Switching away from Developer Options cancels and resets the 6-digit wireless pairing code! Controlyst posts an interactive notification with an inline text box so you can submit the code directly from the notification shade without leaving Developer Options.",
+                            text = "Notice: Switching away from Developer Options cancels and resets the 6-digit wireless pairing code! NEXUS INPUT posts an interactive notification with an inline text box so you can submit the code directly from the notification shade without leaving Developer Options.",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -676,7 +676,7 @@ fun StepRootDetection(
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    text = "Controlyst includes a universal /dev/uinput Kernel module with 1000Hz polling and native WebUI dashboard for KernelSU & APatch.",
+                                    text = "NEXUS INPUT includes a universal /dev/uinput Kernel module with 1000Hz polling and native WebUI dashboard for KernelSU & APatch.",
                                     color = TextSecondary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
@@ -1154,7 +1154,7 @@ fun StepMappingTutorial(viewModel: MainAppViewModel) {
         Spacer(Modifier.height(16.dp))
 
         Text(
-            text = "You're all set! Controlyst has initialized your layout profile with ${activeConfig.buttons.size} preset buttons. You can edit them at any time in the Visual Mapper tab.",
+            text = "You're all set! NEXUS INPUT has initialized your layout profile with ${activeConfig.buttons.size} preset buttons. You can edit them at any time in the Visual Mapper tab.",
             color = TextSecondary,
             fontSize = 13.sp,
             lineHeight = 19.sp

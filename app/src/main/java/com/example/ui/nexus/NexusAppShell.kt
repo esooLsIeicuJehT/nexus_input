@@ -28,7 +28,6 @@ import com.example.ui.overlay.FloatingOverlayHUD
 import com.example.ui.root.KernelSuWebUiScreen
 import com.example.ui.safety.GameSafetyScreen
 import com.example.ui.theme.*
-import com.example.ui.vip.VipMonetizationScreen
 
 private data class NexusNavItem(
     val route: String,
@@ -170,7 +169,6 @@ fun NexusAppShell(
                 "crosshair" -> CrosshairStudioScreen(viewModel)
                 "calibration" -> CalibrationScreen(viewModel)
                 "community" -> CommunityShareScreen(viewModel)
-                "vip" -> VipMonetizationScreen(viewModel)
                 "root_webui" -> KernelSuWebUiScreen(
                     viewModel = viewModel,
                     onBack = { viewModel.selectTab("system") }

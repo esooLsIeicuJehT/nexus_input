@@ -20,5 +20,5 @@ data class GameSafetyReport(
     val banRiskSummary: String = "No bans reported for standard /dev/uinput virtual controller. Avoid automated rapid-fire macros in ranked play.",
     val lastVerifiedDate: String = "2026-09-15",
     val userReportsCount: Int = 124,
-    val maintainerNotes: String = "Tested with Controlyst KernelSU Module v1.0.0. Hardware /dev/uinput injection registers as an official OTG gamepad."
+    val maintainerNotes: String = "Tested with NEXUS INPUT KernelSU Module v1.0.0. Hardware /dev/uinput injection registers as an official OTG gamepad."
 )

@@ -11,9 +11,9 @@ class ControlystApp : Application() {
         NexusRuntimeContext.initialize(this)
         try {
             FirebaseApp.initializeApp(this)
-            Log.d("ControlystApp", "FirebaseApp initialized successfully.")
+            Log.d("NEXUS INPUTApp", "FirebaseApp initialized successfully.")
         } catch (e: Exception) {
-            Log.e("ControlystApp", "Failed to initialize FirebaseApp: ${e.message}", e)
+            Log.e("NEXUS INPUTApp", "Failed to initialize FirebaseApp: ${e.message}", e)
         }
     }
 }

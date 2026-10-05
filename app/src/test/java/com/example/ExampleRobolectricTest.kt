@@ -53,12 +53,12 @@ class ExampleRobolectricTest {
 
     @Test
     fun `verify json serialization roundtrip for mapping config`() {
-        val originalConfig = ControlystRepository.createSampleDfmConfig()
+        val originalConfig = com.example.model.MappingConfig(id="test_profile",profileName="Test",gamePackage="com.test.game",buttons=listOf(com.example.model.MappingNode("test_button",.2f,.3f)))
         val jsonStr = ControlystRepository.serializeConfigToJson(originalConfig)
 
         assertTrue(jsonStr.contains("schemaVersion"))
-        assertTrue(jsonStr.contains("dfm_pro_ranked"))
-        assertTrue(jsonStr.contains("b_fire"))
+        assertTrue(jsonStr.contains("test_profile"))
+        assertTrue(jsonStr.contains("test_button"))
 
         val deserialized = ControlystRepository.deserializeJsonToConfig(jsonStr)
         assertEquals(originalConfig.id, deserialized.id)
@@ -70,12 +70,12 @@ class ExampleRobolectricTest {
     @Test
     fun `verify KernelSU module metadata and WebUI HTML content generation`() {
         val prop = com.example.module.KernelSuModuleManager.getModuleProp()
-        assertTrue(prop.contains("id=controlyst_uinput"))
+        assertTrue(prop.contains("id=gamepad.pro.root"))
         assertTrue(prop.contains("webroot=webroot"))
 
         val webUiHtml = com.example.module.KernelSuModuleManager.getWebUiHtml()
-        assertTrue(webUiHtml.contains("Controlyst WebUI"))
+        assertTrue(webUiHtml.contains("NEXUS INPUT"))
         assertTrue(webUiHtml.contains("/dev/uinput"))
-        assertTrue(webUiHtml.contains("1000 Hz"))
+        assertTrue(com.example.module.KernelSuModuleManager.getServiceSh().contains("/dev/uinput"))
     }
 }

@@ -135,15 +135,7 @@ fun CommunityShareScreen(
                                         color = TextPrimary,
                                         fontSize = 15.sp
                                     )
-                                    if (profile.isOfficialVerified) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Icon(
-                                            Icons.Default.Verified,
-                                            contentDescription = "Verified Profile",
-                                            tint = CyberCyan,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
+
                                 }
                                 Spacer(Modifier.height(2.dp))
                                 Text(
@@ -158,9 +150,9 @@ fun CommunityShareScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Star, contentDescription = null, tint = AccentAmber, modifier = Modifier.size(14.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("${profile.rating}", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Text("Local profile", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
-                                Text("${profile.downloads} dl", color = TextMuted, fontSize = 11.sp)
+                                Text("No server statistics", color = TextMuted, fontSize = 11.sp)
                             }
                         }
 
@@ -190,7 +182,7 @@ fun CommunityShareScreen(
                             IconButton(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Controlyst Config", profile.jsonBlob))
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("NEXUS INPUT Config", profile.jsonBlob))
                                     viewModel.showSnack("Config JSON copied to clipboard!")
                                 }
                             ) {
@@ -235,7 +227,7 @@ fun CommunityShareScreen(
                 Button(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Controlyst JSON", jsonOutput))
+                        clipboard.setPrimaryClip(ClipData.newPlainText("NEXUS INPUT JSON", jsonOutput))
                         viewModel.showSnack("Profile copied to clipboard!")
                         showExportDialog = false
                     },

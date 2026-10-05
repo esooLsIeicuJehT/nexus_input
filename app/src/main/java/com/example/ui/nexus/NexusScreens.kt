@@ -548,7 +548,7 @@ fun NexusDevicesScreen(
             Text("Open calibration tools")
         }
         Text(
-            "Calibration currently contains a legacy simulated path and is not treated as hardware-verified data by the Nexus dashboard.",
+            "Calibration consumes real Android motion events. Missing events or insufficient travel produce a visible failure.",
             color = AccentAmber,
             fontSize = 9.sp
         )

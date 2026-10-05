@@ -38,7 +38,8 @@ class ControlystAccessibilityService : AccessibilityService() {
         screenSizeProvider = ::screenSize,
         onError = { message ->
             Log.e(TAG, message)
-            MappingRuntimeBridge.reportError(message)
+            MappingRuntimeBridge.disarm(message)
+            teardownInjectorAsync()
         }
     )
 
@@ -260,6 +261,24 @@ class ControlystAccessibilityService : AccessibilityService() {
             runtimePreparing = false
             val state = MappingRuntimeBridge.state.value
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
+        }
+    }
+
+    fun emergencyRelease(onComplete: (Boolean) -> Unit) {
+        val injector = activeInjector
+        activeInjector = null
+        MappingRuntimeBridge.disarm("Emergency stop requested")
+        if (backendExecutor.isShutdown) { onComplete(injector == null); return }
+        backendExecutor.execute {
+            var released = true
+            if (injector != null) {
+                released = mappingRuntime.releaseAll(injector)
+                runCatching { injector.cleanup() }.onFailure {
+                    Log.e(TAG, "Backend cleanup failed during panic", it)
+                    released = false
+                }
+            }
+            onComplete(released)
         }
     }
 
