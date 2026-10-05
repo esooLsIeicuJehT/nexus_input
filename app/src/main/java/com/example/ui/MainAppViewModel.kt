@@ -519,6 +519,7 @@ class MainAppViewModel(application: Application) : AndroidViewModel(application)
         val bitmap = _screenshot.value
         viewModelScope.launch {
             val detection = withContext(Dispatchers.Default) { AiHudDetector.detect(bitmap) }
+            if(bitmap !== _screenshot.value) { showSnack("Screenshot changed during detection; run the scan again");return@launch }
             _aiHudCandidates.value = detection.candidates
             showSnack(detection.error ?: "Found ${detection.candidates.size} contrast regions. Assign each input; action semantics are not detected.")
         }

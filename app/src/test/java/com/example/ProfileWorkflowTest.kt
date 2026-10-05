@@ -61,5 +61,20 @@ class ProfileWorkflowTest {
         vm.updateActiveConfig(MappingConfig(id="bad",profileName="Bad",gamePackage="not-a-package")) { saved=true }
         assertEquals(before,vm.activeConfig.value);assertFalse(saved)
         assertTrue(vm.snackMessage.value!!.contains("Profile rejected"))
+    }    @Test fun screenshotImportReadsActualFileAndUnreadableImagesClearDetectionInput() = withViewModel { vm,app ->
+        val file=java.io.File(app.cacheDir,"fixture.png")
+        val bitmap=android.graphics.Bitmap.createBitmap(200,100,android.graphics.Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(bitmap).drawColor(android.graphics.Color.WHITE)
+        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
+        vm.importScreenshot(android.net.Uri.fromFile(file))
+        await { vm.screenshot.value!=null }
+        assertEquals(200,vm.screenshot.value!!.width)
+        assertEquals(100,vm.screenshot.value!!.height)
+        file.writeText("not an image")
+        vm.importScreenshot(android.net.Uri.fromFile(file))
+        await { vm.snackMessage.value?.contains("Screenshot import failed")==true }
+        assertNull(vm.screenshot.value);assertTrue(vm.aiHudCandidates.value.isEmpty())
+        file.delete();bitmap.recycle()
     }
+
 }

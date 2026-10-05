@@ -49,9 +49,20 @@ class ControlystAccessibilityService : AccessibilityService() {
     @Volatile
     private var runtimePreparing = false
 
+    private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = Unit
+        override fun onInputDeviceChanged(deviceId: Int) = Unit
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            val used=ControllerInputMonitor.state.value.deviceId==deviceId
+            ControllerInputMonitor.onDeviceRemoved(deviceId)
+            if(used && MappingRuntimeBridge.state.value.armed) PanicKillSwitch.triggerPanic(this@ControlystAccessibilityService,"Controller disconnected")
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         currentInstance = this
+        getSystemService(android.hardware.input.InputManager::class.java).registerInputDeviceListener(inputListener,mainHandler)
 
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.flags = info.flags or
@@ -148,11 +159,11 @@ class ControlystAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        getSystemService(android.hardware.input.InputManager::class.java).unregisterInputDeviceListener(inputListener)
         val current = activeInjector
         activeInjector = null
         if (current != null) {
-            mappingRuntime.releaseAll(current)
-            runCatching { current.cleanup() }
+            cleanupRuntime(current)
         }
         mappingRuntime.shutdown(null)
         backendExecutor.shutdownNow()
@@ -214,10 +225,7 @@ class ControlystAccessibilityService : AccessibilityService() {
                         return@execute
                     }
 
-                    activeInjector?.let { previous ->
-                        mappingRuntime.releaseAll(previous)
-                        runCatching { previous.cleanup() }
-                    }
+                    activeInjector?.let(::cleanupRuntime)
                     activeInjector = candidate
                     MappingRuntimeBridge.setBackend(method, true, null,
                         failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" })
@@ -242,13 +250,21 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun cleanupRuntime(injector: InputInjector) {
+        val released=mappingRuntime.releaseAll(injector)
+        if(!released) MappingRuntimeBridge.reportError("Backend contact release could not be confirmed")
+        runCatching { injector.cleanup() }.onFailure {
+            Log.e(TAG,"Backend cleanup failed",it)
+            MappingRuntimeBridge.reportError("Backend cleanup failed: ${it.message}")
+        }
+    }
+
     private fun teardownInjectorAsync() {
         if (backendExecutor.isShutdown) return
         val current = activeInjector ?: return
         activeInjector = null
         backendExecutor.execute {
-            mappingRuntime.releaseAll(current)
-            runCatching { current.cleanup() }
+            cleanupRuntime(current)
         }
     }
 
@@ -262,8 +278,7 @@ class ControlystAccessibilityService : AccessibilityService() {
         }
         backendExecutor.execute {
             if (current != null) {
-                mappingRuntime.releaseAll(current)
-                runCatching { current.cleanup() }
+                cleanupRuntime(current)
             }
             runtimePreparing = false
             val state = MappingRuntimeBridge.state.value
