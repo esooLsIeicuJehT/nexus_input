@@ -20,7 +20,7 @@
         tools:ignore="ProtectedPermissions" />
 
     <application
-        android:name=".NEXUS INPUTApp"
+        android:name=".ControlystApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -73,7 +73,7 @@
 
         <!-- Accessibility Service for Non-Root Touch Injection Fallback -->
         <service
-            android:name=".service.NEXUS INPUTAccessibilityService"
+            android:name=".service.ControlystAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
