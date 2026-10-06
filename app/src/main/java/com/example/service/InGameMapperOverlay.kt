@@ -159,6 +159,8 @@ class InGameMapperOverlay(private val context: Context) {
             addView(button("Add") { chooseBinding(true,canvas) })
             addView(button("Bind") { chooseBinding(false,canvas) })
             addView(button("Delete") { selected?.let { session?.remove(it);selected=null;canvas.invalidate() } })
+            addView(button("− Size") { selected?.let { session?.resize(it,-.01f);canvas.invalidate() } })
+            addView(button("+ Size") { selected?.let { session?.resize(it,.01f);canvas.invalidate() } })
             addView(button("Save") { save() })
             addView(button("Cancel") { finishEdit(session?.original) })
             addView(button("Panic") { PanicKillSwitch.triggerPanic(context,"In-game mapper") })
@@ -226,8 +228,9 @@ class InGameMapperOverlay(private val context: Context) {
             super.onDraw(canvas)
             session?.draft?.buttons?.forEach { node ->
                 val x=node.xNorm*(width-1);val y=node.yNorm*(height-1)
-                paint.style=Paint.Style.FILL;paint.color=0x770B2440;canvas.drawCircle(x,y,24*density,paint)
-                paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF00D9EE.toInt();canvas.drawCircle(x,y,24*density,paint)
+                val radius=maxOf(18*density,node.radiusNorm*minOf(width,height))
+                paint.style=Paint.Style.FILL;paint.color=0x770B2440;canvas.drawCircle(x,y,radius,paint)
+                paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF00D9EE.toInt();canvas.drawCircle(x,y,radius,paint)
                 paint.style=Paint.Style.FILL;paint.textSize=12*density;paint.textAlign=Paint.Align.CENTER;canvas.drawText(node.boundKey,x,y+4*density,paint)
             }
         }
