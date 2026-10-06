@@ -176,7 +176,7 @@ class MainAppViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             val probes = privilegeDetector.probeAll()
             _privilegeResults.value = probes
-            val best = privilegeDetector.detectBestMethod()
+            val best = com.example.injector.PrivilegeBackendSelector.choose(probes)?.method
             _activePrivilegeMethod.value = best
             currentInjector = best?.let(InputInjectorFactory::createInjector)
             if (best == null) showSnack("No injection backend is currently available. Grant Shizuku, root, or Accessibility before mapping.")
