@@ -2,9 +2,19 @@
 
 
 
-# NEXUS INPUT 1.0.0 candidate
+# NEXUS INPUT 1.0.0
 
-Android gamepad-to-touch mapping with per-game profiles, real controller sampling, screenshot mapping, an in-game editor, crosshair and presented-frame overlays. This branch is a release candidate; CI compilation does not establish hardware verification or production acceptance.
+Android gamepad-to-touch mapping for Android with per-game profiles, screenshot mapping, in-game editing, controller diagnostics, crosshair/presented-frame overlays, Shizuku support and a KernelSU `/dev/uinput` backend. Version 1.0.0 is under active device validation; CI success does not by itself establish production hardware acceptance.
+
+## Current status
+
+CI run **#124** passed for the controller-diagnostics head that was merged into `main`. The Devices tester now records real Android controller input instead of inferred/mock values: all motion axes exposed by the device, normalized axes, HAT X/Y, trigger axes, key code, scan code, source, device ID, key down/up state and a rolling raw event log.
+
+Current non-root device testing confirms the main controller/touch path works, while **Start, Select, D-pad and R3/right-stick behavior still require hardware-specific follow-up** on the Stadia controller. The raw diagnostics were added specifically so those controls can be fixed from the values Android actually reports rather than guessed aliases.
+
+The KernelSU foreground-transition lifecycle fix is merged. It preserves a prepared root backend across brief target-app focus changes while input delivery remains gated by target foreground state. **KernelSU + Delta Force still requires final verification on the rooted test phone.**
+
+Mapper/runtime capabilities currently include per-game bindings, screenshot placement, HAT/key D-pad paths, paired trigger-axis handling with hysteresis, walk/run stick settings, radial camera settings, continuous stick scheduling, persistent multi-touch bookkeeping, turbo/macros and profile validation. The mapper UX and right-stick tuning remain active work and should not be described as final device-accepted behavior yet.
 
 ## Two products
 
@@ -26,7 +36,7 @@ python3 scripts/verify_android_artifacts.py
 python3 scripts/package_release.py
 ```
 
-[Android validation workflow](.github/workflows/android-debug.yml) uploads a debug APK, explicitly **unsigned** release APK/AAB, KernelSU ZIP, test/lint reports and Room schemas. [Branch CI runs](https://github.com/esooLsIeicuJehT/nexus_input/actions?query=branch%3Afeature%2Fnexus-v1-finish) are the build evidence. Unit tests use host/Robolectric transport fixtures; they do not certify Android injection, SELinux or hardware.
+[Android validation workflow](.github/workflows/android-debug.yml) uploads a debug APK, explicitly **unsigned** release APK/AAB, KernelSU ZIP, test/lint reports and Room schemas. GitHub Actions on `main` and feature branches are the build evidence. CI #124 validated the merged controller-diagnostics change. Unit tests use host/Robolectric transport fixtures; they do not certify Android injection, SELinux or physical-controller behavior. Unit tests use host/Robolectric transport fixtures; they do not certify Android injection, SELinux or hardware.
 
 Global gamepad motion capture requires Android 14+. Android 7–13 supports Activity controller testing and key capture, but global stick profiles are rejected rather than silently losing motion. Accessibility screenshot capture requires Android 11+; image import remains available on older supported versions. Accessibility injection has explicit gesture and simultaneous-contact limitations.
 
