@@ -17,7 +17,26 @@ def violations(root):
                     found.append(f'{source.relative_to(root.parent if root.is_file() else root)}:{number}: {line.strip()}')
     return found
 
+def kernelsu_inputmanager_violations():
+    found=[]
+    platform=ROOT/'app/src/main/java/com/inputmapper/platform/root/KernelSUInjector.kt'
+    client=ROOT/'app/src/main/java/com/inputmapper/platform/root/RootInputManagerInjector.kt'
+    adapter=ROOT/'app/src/main/java/com/example/injector/KernelSUInjector.kt'
+    platform_text=platform.read_text()
+    client_text=client.read_text()
+    adapter_text=adapter.read_text()
+
+    if 'RootInputManagerInjector' not in platform_text or 'RootUinputInjector' in platform_text:
+        found.append('KernelSU platform backend must delegate exclusively to RootInputManagerInjector')
+    for token in ('.touchDown(', '.touchMove(', '.touchUp(', '.create('):
+        if token in client_text:
+            found.append(f'KernelSU InputManager client must not call legacy uinput RPC {token}')
+    for token in ('DisplayMetrics', 'WindowManager', 'virtual touchscreen', 'KernelSU/uinput'):
+        if token in adapter_text:
+            found.append(f'KernelSU app adapter retains stale uinput/geometry dependency: {token}')
+    return found
+
 if __name__=='__main__':
-    failures=violations(ROOT/'app/src/main')+violations(ROOT/'app/build.gradle.kts')
+    failures=violations(ROOT/'app/src/main')+violations(ROOT/'app/build.gradle.kts')+kernelsu_inputmanager_violations()
     if failures: raise SystemExit('APK architecture boundary violations:\n'+'\n'.join(failures))
-    print('OK: APK sources contain no root tuning, module mutations, Community/VIP routes or performance inheritance.')
+    print('OK: APK sources contain no root tuning/module ownership leaks; KernelSU touch remains isolated on the InputManager client.')
