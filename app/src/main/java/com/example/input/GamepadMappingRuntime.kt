@@ -474,6 +474,8 @@ class GamepadMappingRuntime(
                             return@forEach
                         }
                         cameraPositions[slot] = anchor.x to anchor.y
+                        cameraLastTickNanos[slot] = System.nanoTime()
+                        return@forEach
                     }
                     val current = cameraPositions[slot] ?: (anchor.x to anchor.y)
                     val nowNanos = System.nanoTime()
