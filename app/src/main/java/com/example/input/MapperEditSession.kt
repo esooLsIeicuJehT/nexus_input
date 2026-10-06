@@ -15,6 +15,13 @@ class MapperEditSession(val original: MappingConfig) {
                 yNorm = (pixelY / (height - 1)).coerceIn(0f,1f)) else node
         })
     }
+    fun resize(id: String, delta: Float) {
+        require(delta.isFinite()) { "Invalid resize delta" }
+        draft = draft.copy(buttons = draft.buttons.map { node ->
+            if (node.id == id) node.copy(radiusNorm = (node.radiusNorm + delta).coerceIn(.02f, .3f)) else node
+        })
+    }
+
     fun add(binding: String): String {
         val id = UUID.randomUUID().toString()
         val canonical = ControllerBindingAliases.canonical(binding)
