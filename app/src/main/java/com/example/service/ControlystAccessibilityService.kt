@@ -162,7 +162,12 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        reconnectForGeometryChange()
+        // Android can deliver several configuration changes while a landscape game is
+        // relaunching. Tearing down here destroys the live /dev/uinput touchscreen and
+        // stops the libsu RootService mid-transition. Keep the prepared backend for the
+        // armed session; normalized mapping coordinates continue to use current metrics.
+        Log.i(TAG, "Configuration changed; preserving active mapper backend for session " +
+            MappingRuntimeBridge.state.value.sessionId)
     }
 
     override fun onInterrupt() {
@@ -298,24 +303,6 @@ class ControlystAccessibilityService : AccessibilityService() {
         activeInjector = null
         backendExecutor.execute {
             cleanupRuntime(current)
-        }
-    }
-
-    private fun reconnectForGeometryChange() {
-        if (backendExecutor.isShutdown) return
-        val current = activeInjector
-        activeInjector = null
-        val method = current?.method
-        if (method != null) {
-            MappingRuntimeBridge.setBackend(method, false, null)
-        }
-        backendExecutor.execute {
-            if (current != null) {
-                cleanupRuntime(current)
-            }
-            runtimePreparing = false
-            val state = MappingRuntimeBridge.state.value
-            if (state.armed && state.targetForeground) prepareRuntimeAsync()
         }
     }
 
