@@ -57,6 +57,8 @@ class ControlystAccessibilityService : AccessibilityService() {
     @Volatile
     private var runtimePreparing = false
 
+    private var pendingForegroundTeardown: Runnable? = null
+
     private val capturedDevices = ControllerSessionDevices()
 
     private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
@@ -86,6 +88,7 @@ class ControlystAccessibilityService : AccessibilityService() {
         runtimeScope.launch {
             MappingRuntimeBridge.state.collectLatest { state ->
                 if (!state.armed) {
+                    cancelPendingForegroundTeardown()
                     teardownInjectorAsync()
                     return@collectLatest
                 }
@@ -99,8 +102,12 @@ class ControlystAccessibilityService : AccessibilityService() {
 
                 val refreshed = MappingRuntimeBridge.state.value
                 if (refreshed.armed && refreshed.targetForeground) {
+                    cancelPendingForegroundTeardown()
                     prepareRuntimeAsync()
+                } else if (refreshed.armed) {
+                    scheduleForegroundTeardown(refreshed.sessionId)
                 } else {
+                    cancelPendingForegroundTeardown()
                     teardownInjectorAsync()
                 }
             }
@@ -297,10 +304,30 @@ class ControlystAccessibilityService : AccessibilityService() {
         return false
     }
 
+    private fun cancelPendingForegroundTeardown() {
+        pendingForegroundTeardown?.let(mainHandler::removeCallbacks)
+        pendingForegroundTeardown = null
+    }
+
+    private fun scheduleForegroundTeardown(sessionId: Long) {
+        if (pendingForegroundTeardown != null) return
+        val task = Runnable {
+            pendingForegroundTeardown = null
+            val state = MappingRuntimeBridge.state.value
+            if (state.armed && !state.targetForeground && state.sessionId == sessionId) {
+                Log.i(TAG, "Target left foreground beyond grace window; releasing mapper backend for session $sessionId")
+                teardownInjectorAsync()
+            }
+        }
+        pendingForegroundTeardown = task
+        mainHandler.postDelayed(task, FOREGROUND_EXIT_GRACE_MS)
+    }
+
     private fun teardownInjectorAsync() {
         if (backendExecutor.isShutdown) return
         val current = activeInjector ?: return
         activeInjector = null
+        MappingRuntimeBridge.clearBackendReady()
         backendExecutor.execute {
             cleanupRuntime(current)
         }
@@ -424,6 +451,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "NexusAccessibility"
+        private const val FOREGROUND_EXIT_GRACE_MS = 1_000L
 
         @Volatile
         private var currentInstance: ControlystAccessibilityService? = null

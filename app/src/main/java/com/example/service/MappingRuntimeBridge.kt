@@ -55,7 +55,6 @@ object MappingRuntimeBridge {
         val isTarget = packageName != null && packageName == current.gamePackage
         _state.value = current.copy(
             targetForeground = isTarget,
-            backendReady = if (isTarget) current.backendReady else false,
             error = current.error
         )
     }
@@ -68,6 +67,10 @@ object MappingRuntimeBridge {
             error = error,
             notice = notice
         )
+    }
+
+    fun clearBackendReady() {
+        _state.value = _state.value.copy(backendReady = false)
     }
 
     fun reportError(message: String) {

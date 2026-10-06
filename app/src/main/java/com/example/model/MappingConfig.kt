@@ -5,6 +5,8 @@ data class JoystickSettings(
     val outerDeadzone: Float = 0.95f,
     val runThresholdNorm: Float = 0.75f,
     val sprintLockEnabled: Boolean = false,
+    val walkRadiusScale: Float = 0.62f,
+    val runRadiusScale: Float = 1.0f,
     val curveExponent: Float = 1.0f     // Linear 1.0, Exponential 1.4
 )
 
@@ -13,6 +15,8 @@ data class CameraSettings(
     val verticalSensitivity: Float = 0.85f,
     val accelerationCurve: Float = 1.2f,
     val smoothingFrames: Int = 3,
+    val verticalRatio: Float = 1.0f,
+    val fastTurnBoost: Float = 1.0f,
     val invertY: Boolean = false,
     val mouseDpiScale: Float = 1.0f
 )
