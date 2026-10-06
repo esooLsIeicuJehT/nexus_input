@@ -50,6 +50,13 @@ class InGameMapperOverlay(private val context: Context) {
         val metrics=android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
         return metrics.widthPixels to metrics.heightPixels
     }
+    private fun safeControlInsets(): android.graphics.Insets =
+        if (Build.VERSION.SDK_INT >= 30) {
+            wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+            )
+        } else android.graphics.Insets.NONE
+
     private fun clamp(layout: WindowManager.LayoutParams, width: Int, height: Int) {
         val (w,h)=displaySize()
         val position=OverlayBounds.position(layout.x,layout.y,width,height,w,h)
@@ -166,8 +173,18 @@ class InGameMapperOverlay(private val context: Context) {
             addView(button("Panic") { PanicKillSwitch.triggerPanic(context,"In-game mapper") })
         }
         val scroll=HorizontalScrollView(context).apply { addView(bar);isFillViewport=true }
-        root.addView(scroll,FrameLayout.LayoutParams(-1,(52*density).roundToInt()).apply { gravity=Gravity.BOTTOM })
-        root.addView(TextView(context).apply { text="Mapping paused · drag a binding over the real game · tap to select";setTextColor(Color.WHITE);setBackgroundColor(0xDC071827.toInt());textSize=11f },FrameLayout.LayoutParams(-1,(26*density).roundToInt()))
+        val safeInsets=safeControlInsets()
+        root.addView(scroll,FrameLayout.LayoutParams(-1,(52*density).roundToInt()).apply {
+            gravity=Gravity.BOTTOM
+            bottomMargin=safeInsets.bottom
+        })
+        root.addView(TextView(context).apply {
+            text="Mapping paused · drag a binding over the real game · tap to select"
+            setTextColor(Color.WHITE);setBackgroundColor(0xDC071827.toInt());textSize=11f
+        },FrameLayout.LayoutParams(-1,(26*density).roundToInt()).apply {
+            gravity=Gravity.TOP
+            topMargin=safeInsets.top
+        })
         try { wm.addView(root,params(-1,-1));editor=root } catch(error:Exception) { fail("In-game mapper window failed: ${error.message}",error);finishEdit(null) }
     }
 
