@@ -443,8 +443,9 @@ class MainAppViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             val injector = currentInjector
             if (injector == null) {
+                val failure = calibrationManager.reportLatencyUnavailable("no backend available")
                 showSnack("No backend is available to time.")
-                onComplete(touchLatencyResult.value)
+                onComplete(failure)
                 return@launch
             }
             val res = calibrationManager.measureTouchLatency(injector)
