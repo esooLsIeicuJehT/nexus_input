@@ -136,6 +136,7 @@ class RuntimeTest {
         backend.failUp=true;runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(tap),backend)
         val deadline=System.nanoTime()+1_000_000_000
         while(backend.calls.none { it.first=="up" } && System.nanoTime()<deadline) Thread.sleep(5)
+        runtime.awaitIdle()
         assertTrue(errors.any { it.contains("Tap up failed") })
         backend.failUp=false;assertTrue(runtime.releaseAll(backend))
         assertEquals(2,backend.calls.count { it.first=="up" })
@@ -215,7 +216,7 @@ class RuntimeTest {
             .copy(camera=CameraSettings(2f,.5f,2f,2))
         val position=firstMove(rs,sample(rx=.5f,ry=.5f))
         assertTrue("dt-scaled camera must advance horizontally",position.first>499.5f)
-        assertTrue("dt-scaled camera must advance vertically",position.second>249.5f)
+        assertTrue("dt-scaled camera must respect configured vertical direction",position.second<249.5f)
         assertTrue(position.first in 0f..999f && position.second in 0f..499f)
     }
     @Test fun aMacroCannotRetriggerWhileItsPreviousStepsArePending() {
