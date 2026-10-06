@@ -2,22 +2,18 @@ package com.example.injector
 
 import android.content.Context
 import android.graphics.PointF
-import android.os.Build
-import android.util.DisplayMetrics
 import android.util.Log
-import android.view.WindowManager
 import com.example.model.PrivilegeMethod
 import com.inputmapper.platform.core.InjectionResult
 import com.inputmapper.platform.core.TimedTouchPoint
 import com.inputmapper.platform.root.KernelSUInjector as RuntimeKernelSUInjector
 
 /**
- * Adapter from the existing Nexus injector API to the device-verified
- * libsu RootService + JNI /dev/uinput engine recovered from 0.6.2.
+ * Adapter from the Nexus mapper API to the libsu RootService + privileged
+ * Android InputManager backend.
  *
- * There is intentionally no shell-input fallback here. If the native backend
- * cannot connect or inject, the failure is surfaced through the return value
- * and logs.
+ * KernelSU touch injection does not create a virtual touchscreen, does not depend
+ * on display geometry during preparation, and has no shell/uinput fallback.
  */
 class KernelSUInjector(
     context: Context = NexusRuntimeContext.require()
@@ -27,8 +23,7 @@ class KernelSUInjector(
     private val appContext = context.applicationContext
     private val lock = Any()
     @Volatile private var runtime: RuntimeKernelSUInjector? = null
-    private var runtimeWidth = 0
-    private var runtimeHeight = 0
+    @Volatile private var lastPrepareFailure: String? = null
 
     override fun isAvailable(): Boolean {
         val probe = PrivilegeDetector(appContext).probeAll()
@@ -37,8 +32,13 @@ class KernelSUInjector(
     }
 
     override fun prepare(): Boolean = synchronized(lock) {
-        ensureRuntime() != null
+        if (ensureRuntime() != null) return@synchronized true
+        throw IllegalStateException(lastPrepareFailure ?: "KernelSU/InputManager preparation failed without a diagnostic")
     }
+
+    override fun readinessDetails(): String? = runtime?.let {
+        "KernelSU/InputManager initialized: ${it.health()}. Game-visible touch delivery is unverified."
+    } ?: lastPrepareFailure
 
     override fun injectTap(x: Float, y: Float): Boolean = synchronized(lock) {
         val injector = ensureRuntime() ?: return@synchronized false
@@ -50,11 +50,8 @@ class KernelSUInjector(
         val injector = ensureRuntime() ?: return@synchronized false
         val lastIndex = path.lastIndex.coerceAtLeast(1)
         val timed = path.mapIndexed { index, point ->
-            val atMillis = if (index == lastIndex) {
-                durationMs
-            } else {
-                (durationMs * index.toLong()) / lastIndex.toLong()
-            }
+            val atMillis = if (index == lastIndex) durationMs
+            else (durationMs * index.toLong()) / lastIndex.toLong()
             TimedTouchPoint(point.x, point.y, atMillis)
         }
         result("drag", injector.injectDrag(timed, durationMs))
@@ -80,77 +77,60 @@ class KernelSUInjector(
         result("touch end", injector.endTouch(pointerId))
     }
 
-    override fun readSurfaceLayers(): Result<String> = runtime?.readSurfaceLayers() ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
-    override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer) ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+    override fun readSurfaceLayers(): Result<String> = runtime?.readSurfaceLayers()
+        ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
+
+    override fun readSurfaceLatency(layer: String): Result<String> = runtime?.readSurfaceLatency(layer)
+        ?: Result.failure(IllegalStateException("Mapping backend is not prepared"))
 
     override fun cleanup() = synchronized(lock) {
-        runtime?.cleanup()?.let { check(result("cleanup", it)) { "KernelSUInjector cleanup was rejected; inspect backend logs" } }
+        runtime?.cleanup()?.let {
+            check(result("cleanup", it)) { "KernelSU/InputManager cleanup was rejected; inspect backend logs" }
+        }
         runtime = null
-        runtimeWidth = 0
-        runtimeHeight = 0
         Unit
     }
 
     private fun ensureRuntime(): RuntimeKernelSUInjector? {
+        runtime?.let { return it }
+
         if (!isAvailable()) {
-            Log.e(TAG, "KernelSU/uinput is not currently available")
+            lastPrepareFailure = "KernelSU is not currently available or root permission is not granted"
+            Log.e(TAG, lastPrepareFailure!!)
             return null
         }
-
-        val geometry = resolveDisplayGeometry() ?: run {
-            Log.e(TAG, "Unable to resolve display geometry for virtual touchscreen")
-            return null
-        }
-
-        val existing = runtime
-        if (existing != null && runtimeWidth == geometry.first && runtimeHeight == geometry.second) {
-            return existing
-        }
-
-        existing?.cleanup()?.let { check(result("geometry cleanup", it)) { "KernelSUInjector geometry cleanup was rejected" } }
-        runtime = null
 
         val created = RuntimeKernelSUInjector(
             context = appContext,
-            width = geometry.first,
-            height = geometry.second,
             maxSlots = com.example.input.TouchSlotAllocator.MAX_SLOTS
         )
         return when (val connected = created.connect()) {
             InjectionResult.Success -> {
                 runtime = created
-                runtimeWidth = geometry.first
-                runtimeHeight = geometry.second
-                Log.i(TAG, "KernelSU/uinput connected at ${geometry.first}x${geometry.second}: ${created.health()}")
+                lastPrepareFailure = null
+                Log.i(TAG, "KernelSU/InputManager connected: ${created.health()}; game-visible touch delivery remains unverified")
                 created
             }
             is InjectionResult.Failure -> {
-                Log.e(TAG, "KernelSU/uinput connect failed [${connected.code}]: ${connected.message}", connected.cause)
-                created.cleanup()
+                lastPrepareFailure = "KernelSU/InputManager connect failed [${connected.code}]: ${connected.message}"
+                Log.e(TAG, lastPrepareFailure!!, connected.cause)
+                when (val cleanup = created.cleanup()) {
+                    InjectionResult.Success -> Unit
+                    is InjectionResult.Failure -> {
+                        val message = "$lastPrepareFailure; cleanup unconfirmed [${cleanup.code}]: ${cleanup.message}"
+                        lastPrepareFailure = message
+                        throw IllegalStateException(message, cleanup.cause)
+                    }
+                }
                 null
             }
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun resolveDisplayGeometry(): Pair<Int, Int>? {
-        val wm = appContext.getSystemService(WindowManager::class.java) ?: return null
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val bounds = wm.currentWindowMetrics.bounds
-            if (bounds.width() > 0 && bounds.height() > 0) bounds.width() to bounds.height() else null
-        } else {
-            val metrics = DisplayMetrics()
-            wm.defaultDisplay.getRealMetrics(metrics)
-            if (metrics.widthPixels > 0 && metrics.heightPixels > 0) {
-                metrics.widthPixels to metrics.heightPixels
-            } else null
         }
     }
 
     private fun result(operation: String, result: InjectionResult): Boolean = when (result) {
         InjectionResult.Success -> true
         is InjectionResult.Failure -> {
-            Log.e(TAG, "KernelSU/uinput $operation failed [${result.code}]: ${result.message}", result.cause)
+            Log.e(TAG, "KernelSU/InputManager $operation failed [${result.code}]: ${result.message}", result.cause)
             false
         }
     }
