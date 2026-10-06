@@ -108,7 +108,7 @@ fun NexusSplashScreen() {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "PLAY YOUR WAY",
+                text = "GAMEPAD TO ANYTHING",
                 color = NexusCyan,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
@@ -124,9 +124,9 @@ fun NexusSplashScreen() {
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Starting Nexus Input",
-                color = TextMuted,
-                fontSize = 10.sp
+                text = "INITIALIZING SYSTEM…",
+                color = NexusCyan,
+                fontSize = 9.sp
             )
         }
     }
