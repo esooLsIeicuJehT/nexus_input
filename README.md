@@ -8,15 +8,17 @@ Android gamepad-to-touch mapping for Android with per-game profiles, screenshot 
 
 ## Current status
 
-CI run **#143** passed the complete Android v1 validation workflow for the mapper/root-lifecycle upgrade merged by PR #12. The validated head was `8e5ebbd5668a1e053e5ec9ee05585900f4ba7b38`; the PR merged into `main` as `e427e060a87d9b19d03413b6f5702b5f8c41ee57`.
+CI run **#149** passed the complete Android v1 validation workflow for the latest Nexus Input candidate. It validated commit `d8c9b0a600826f1f908fd0d539291a8be345c01a`, including the controller/runtime fixes from PRs #12 and #13 plus the user-approved Nexus cyan/violet APK and KernelSU WebUI visual pass from PR #14. PR #14 merged into `main` as `738ff407f0a03ece7704717cb14554dc2202afad`.
 
-Real-device diagnostics on the rooted moto g 2026 established that KernelSU, libsu RootService, JNI and `/dev/uinput` can successfully create and register the virtual touchscreen and keyboard. The failure was in Nexus lifecycle handling: the prepared backend was being released during the game's splash/activity/orientation handoff. The merged fix removes that preparation race, ignores Nexus's own overlay/activity package as a false foreground exit, retains a prepared backend for the armed session through transient launch focus changes, and uses an explicit foreground-exit grace while still gating injection on the target game's foreground state.
+Real-device diagnostics on the rooted moto g 2026 established that KernelSU, libsu RootService, JNI and `/dev/uinput` can successfully create and register the virtual touchscreen and keyboard. The previously observed failure was in Nexus lifecycle handling: the prepared backend was being released during the game's splash/activity/orientation handoff. The merged fix removes that preparation race, ignores Nexus's own overlay/activity package as a false foreground exit, retains a prepared backend for the armed session through transient launch focus changes, and uses an explicit foreground-exit grace while still gating injection on the target game's foreground state.
 
-Stadia Controller rev. A input is now grounded in measured Android events rather than guessed mappings. Observed values include Start key 108/scan 315, Select key 109/scan 314, L3 key 106/scan 317, R3 key 107/scan 318, right-stick axes 11/14, and D-pad HAT axes 15/16. The runtime keeps standard Android keycode handling and adds a device-specific scan fallback only for the measured Stadia vendor/product pair.
+Stadia Controller rev. A input is grounded in measured Android events rather than guessed mappings. Observed values include Start key 108/scan 315, Select key 109/scan 314, L3 key 106/scan 317, R3 key 107/scan 318, right-stick axes 11/14, and D-pad HAT axes 15/16. The runtime keeps standard Android keycode handling and adds a device-specific scan fallback only for the measured Stadia vendor/product pair. Controller diagnostics also deduplicate the same physical key event when Android delivers it through both the Activity and Accessibility observation paths.
 
-The mapper now exposes visible +/- target resizing, walk/run radius and threshold tuning, right-stick H/V sensitivity, smoothing and fast-turn tuning, trigger press/release hysteresis, and matching in-game resize controls. Right-stick camera motion uses continuous dt-scaled movement with smoothing and safe display-boundary restart behavior instead of resetting whenever the pointer merely reaches the mapping radius. In-game controls respect display cutouts/system bars without shifting the full-screen mapping coordinate system.
+The mapper exposes visible +/- target resizing, walk/run radius and threshold tuning, right-stick H/V sensitivity, smoothing and fast-turn tuning, trigger press/release hysteresis, and matching in-game resize controls. Right-stick camera motion uses continuous dt-scaled movement with smoothing and safe display-boundary restart behavior instead of resetting whenever the pointer merely reaches the mapping radius. In-game controls respect display cutouts/system bars without shifting the full-screen mapping coordinate system.
 
-The Devices tester records real controller motion/key events including all reported axes, HAT X/Y, trigger representations, key code, scan code, source, device ID and a rolling raw event log. Backend selection also fails visibly now: if no real backend is available, the UI reports that state instead of silently pretending Accessibility was selected.
+The APK and KernelSU WebUI now share the approved Nexus visual language: near-black/navy panels, luminous cyan edges, violet accents and the updated Nexus splash hierarchy. This visual pass did not replace live controller/backend/profile state with mock data.
+
+The Devices tester records real controller motion/key events including all reported axes, HAT X/Y, trigger representations, key code, scan code, source, device ID and a rolling raw event log. Backend selection fails visibly: if no real backend is available, the UI reports that state instead of silently pretending Accessibility was selected.
 
 **Still requiring real-device acceptance:** rooted moto g 2026 + Delta Force backend persistence after the lifecycle fix, final Stadia Start/Select/D-pad/R3 behavior in-game, subjective right-stick tuning, and Shizuku in-game delivery after the combined upgrade. CI success establishes source/build/test validation, not those physical-device results.
 
@@ -40,9 +42,14 @@ python3 scripts/verify_android_artifacts.py
 python3 scripts/package_release.py
 ```
 
-[Android validation workflow](.github/workflows/android-debug.yml) uploads a debug APK, explicitly **unsigned** release APK/AAB, KernelSU ZIP, test/lint reports and Room schemas. GitHub Actions on `main` and pull-request branches are the build evidence. CI #143 validated the merged root-lifecycle, Stadia input, mapper UX, camera, trigger and backend-state changes. Unit tests use host/Robolectric transport fixtures; they do not certify SELinux behavior, physical-controller delivery or game-visible injection.
+[Android validation workflow](.github/workflows/android-debug.yml) uploads a debug APK, explicitly **unsigned** release APK/AAB, KernelSU ZIP, test/lint reports and Room schemas. GitHub Actions on `main` and pull-request branches are the build evidence. CI #149 validated the latest combined candidate: root lifecycle, Stadia input, controller-event deduplication, mapper UX, camera/trigger behavior, backend-state handling, Nexus APK styling and KernelSU WebUI regression coverage. Unit tests use host/Robolectric transport fixtures; they do not certify SELinux behavior, physical-controller delivery or game-visible injection.
 
 Global gamepad motion capture requires Android 14+. Android 7–13 supports Activity controller testing and key capture, but global stick profiles are rejected rather than silently losing motion. Accessibility screenshot capture requires Android 11+; image import remains available on older supported versions. Accessibility injection has explicit gesture and simultaneous-contact limitations.
+
+
+## Latest test APK
+
+CI **#149** produced the latest installable debug-signed test APK from commit `d8c9b0a600826f1f908fd0d539291a8be345c01a`. The GitHub Actions artifact is named `nexus-input-debug-v1`. This is a **debug/test candidate**, not a production-signed release. The corresponding CI run passed; rooted moto g 2026 + KernelSU + Stadia + Delta Force acceptance is still required before production publication.
 
 ## Upgrade and release gates
 
