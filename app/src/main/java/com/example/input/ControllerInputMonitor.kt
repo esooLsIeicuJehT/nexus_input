@@ -34,6 +34,18 @@ object ControllerInputMonitor {
     private val _state = MutableStateFlow(ControllerLiveState())
     val state: StateFlow<ControllerLiveState> = _state.asStateFlow()
     private val observedEvents = AtomicLong()
+    private val eventLock = Any()
+    private var lastKeyIdentity: KeyIdentity? = null
+
+    private data class KeyIdentity(
+        val deviceId: Int,
+        val eventTime: Long,
+        val action: Int,
+        val keyCode: Int,
+        val scanCode: Int,
+        val source: Int
+    )
+
 
     fun onMotionEvent(event: MotionEvent) {
         if (!isControllerSource(event.source)) return
@@ -87,6 +99,14 @@ object ControllerInputMonitor {
 
     fun onKeyEvent(event: KeyEvent) {
         if (!isControllerSource(event.source)) return
+        val identity = KeyIdentity(event.deviceId,event.eventTime,event.action,event.keyCode,event.scanCode,event.source)
+        synchronized(eventLock) {
+            // The foreground Activity and AccessibilityService can both observe the same
+            // physical KeyEvent. Android preserves eventTime/device/action/key/scan/source
+            // across that delivery, so drop only an exact duplicate observation.
+            if (lastKeyIdentity == identity) return
+            lastKeyIdentity = identity
+        }
 
         val label = KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")
         val updated = _state.value.pressedButtons.toMutableSet()
