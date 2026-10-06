@@ -291,13 +291,18 @@ fun CalibrationScreen(
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = {
+                        val injector=viewModel.currentInjector
+                        if(injector==null) {
+                            viewModel.showSnack("No backend is available to time.")
+                            return@Button
+                        }
                         isTestingLatency = true
                         coroutineScope.launch {
-                            viewModel.calibrationManager.measureTouchLatency(viewModel.currentInjector)
+                            viewModel.calibrationManager.measureTouchLatency(injector)
                             isTestingLatency = false
                         }
                     },
-                    enabled = !isTestingLatency,
+                    enabled = !isTestingLatency && viewModel.currentInjector != null,
                     colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
