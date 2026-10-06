@@ -63,6 +63,21 @@ class ControllerInputTest {
         ControllerInputMonitor.onDeviceRemoved(41);assertTrue(ControllerInputMonitor.state.value.axes.isEmpty())
         assertNull(ControllerInputMonitor.state.value.connectedEventSource)
     }
+    @Test fun duplicateActivityAndAccessibilityKeyObservationIsRecordedOnce() {
+        device()
+        val before=ControllerInputMonitor.state.value.observedEventSequence
+        val first=KeyEvent(100,120,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_START,0,0,41,315,0,InputDevice.SOURCE_GAMEPAD)
+        val duplicate=KeyEvent(100,120,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_START,0,0,41,315,0,InputDevice.SOURCE_GAMEPAD)
+        ControllerInputMonitor.onKeyEvent(first)
+        val afterFirst=ControllerInputMonitor.state.value.observedEventSequence
+        ControllerInputMonitor.onKeyEvent(duplicate)
+        assertEquals(afterFirst,ControllerInputMonitor.state.value.observedEventSequence)
+        assertEquals(before+1,afterFirst)
+        val release=KeyEvent(100,140,KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_START,0,0,41,315,0,InputDevice.SOURCE_GAMEPAD)
+        ControllerInputMonitor.onKeyEvent(release)
+        assertEquals(afterFirst+1,ControllerInputMonitor.state.value.observedEventSequence)
+    }
+
     @Test fun actualMotionEventsDriveBothCalibrationPhases() = runBlocking {
         val manager=CalibrationManager(device())
         val calibration=async(Dispatchers.Default) { manager.runStickCalibration {} }
