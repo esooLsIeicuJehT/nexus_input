@@ -38,14 +38,20 @@ private fun NexusPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Surface(
-        modifier = modifier,
-        shape = NexusPanelShape,
-        color = DarkSurface.copy(alpha = 0.96f),
-        border = NexusPanelBorder,
-        tonalElevation = 0.dp
+    Box(
+        modifier = modifier
+            .clip(NexusPanelShape)
+            .background(NexusGlowGradient)
+            .padding(1.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp), content = content)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(17.dp))
+                .background(NexusPanelGradient)
+                .padding(14.dp),
+            content = content
+        )
     }
 }
 
