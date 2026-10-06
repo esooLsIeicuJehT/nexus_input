@@ -172,7 +172,7 @@ internal class PrivilegedInputManagerEngine(private val maxPointers: Int) {
             0,
             1f,
             1f,
-            -1,
+            0,
             0,
             InputDevice.SOURCE_TOUCHSCREEN,
             0
