@@ -441,7 +441,13 @@ class MainAppViewModel @JvmOverloads constructor(
 
     fun runLatencyBenchmark(onComplete: (TouchLatencyResult) -> Unit) {
         viewModelScope.launch {
-            val res = calibrationManager.measureTouchLatency(currentInjector)
+            val injector = currentInjector
+            if (injector == null) {
+                showSnack("No backend is available to time.")
+                onComplete(touchLatencyResult.value)
+                return@launch
+            }
+            val res = calibrationManager.measureTouchLatency(injector)
             onComplete(res)
         }
     }
