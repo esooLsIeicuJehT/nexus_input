@@ -41,6 +41,7 @@ class GamepadMappingRuntime(
     private val inputOwners = mutableMapOf<String, MutableSet<String>>()
     private val activeMacros = mutableSetOf<String>()
     private val smoothedCamera = mutableMapOf<Int,Pair<Float,Float>>()
+    private val cameraLastTickNanos = mutableMapOf<Int,Long>()
     private var motionTask: ScheduledFuture<*>? = null
     private var latestMotion: Triple<MotionSnapshot, MappingConfig, InputInjector>? = null
     @Volatile private var generation = 0L
@@ -115,7 +116,7 @@ class GamepadMappingRuntime(
                         try { handleSticks(sample, profile, backend) }
                         catch (error: Exception) { onError("Stick mapping failed: ${error.message}") }
                     }
-                }, 0, 16, TimeUnit.MILLISECONDS)
+                }, 0, 8, TimeUnit.MILLISECONDS)
             }
         }
     }
@@ -151,7 +152,7 @@ class GamepadMappingRuntime(
                     if (released) activeSlots.remove(slot)
                     else { success = false; onError("Panic release failed for slot $slot") }
                 }
-                cameraPositions.clear(); smoothedCamera.clear();activeMacros.clear(); digitalAxisState.clear(); inputOwners.clear()
+                cameraPositions.clear(); smoothedCamera.clear(); cameraLastTickNanos.clear(); activeMacros.clear(); digitalAxisState.clear(); inputOwners.clear()
             } finally { latch.countDown() }
         }
         val completed = runCatching { latch.await(timeoutMillis, TimeUnit.MILLISECONDS) }.getOrDefault(false)
@@ -425,14 +426,13 @@ class GamepadMappingRuntime(
                 if (x != null && y != null) x to y else null
             } else if (node.type == NodeType.JOYSTICK_ZONE) snapshot.leftStick else snapshot.rightStick
             if (pair == null) { onError("${node.label.ifBlank { node.boundKey }}: controller does not expose required axes"); return@forEach }
-            var x = normalizeAxis(pair.first, node)
-            var y = normalizeAxis(pair.second, node)
+            val processed = normalizeStickVector(pair.first, pair.second, node,
+                if (node.type == NodeType.JOYSTICK_ZONE) config.joystick.curveExponent else config.camera.accelerationCurve,
+                if (node.type == NodeType.CAMERA_DRAG) config.camera.fastTurnBoost else 1f,
+                if (node.type == NodeType.CAMERA_DRAG) config.camera.verticalRatio else 1f)
+            var x = processed.first
+            var y = processed.second
             if (node.invertY || (node.type == NodeType.CAMERA_DRAG && config.camera.invertY)) y = -y
-            val magnitude = hypot(x.toDouble(), y.toDouble()).toFloat()
-            if (magnitude > 1f) {
-                x /= magnitude
-                y /= magnitude
-            }
 
             val slot = slotForNode(config, node) ?: return@forEach
             val anchor = screenPoint(node) ?: return@forEach
@@ -448,12 +448,10 @@ class GamepadMappingRuntime(
                 }
                 cameraPositions.remove(slot)
                 smoothedCamera.remove(slot)
+                cameraLastTickNanos.remove(slot)
                 return@forEach
             }
 
-            val exponent=if(node.type==NodeType.JOYSTICK_ZONE) config.joystick.curveExponent else config.camera.accelerationCurve
-            fun response(value:Float)=sign(value)*abs(value).pow(exponent)
-            x=response(x);y=response(y)
             when (node.type) {
                 NodeType.JOYSTICK_ZONE -> {
                     if (activateSlot(slot) && !injector.beginTouch(slot, anchor.x, anchor.y)) {
@@ -461,8 +459,11 @@ class GamepadMappingRuntime(
                         onError("Left-stick touch down failed")
                         return@forEach
                     }
-                    val tx = (anchor.x + x * radius * node.sensitivity).coerceIn(0f, width - 1f)
-                    val ty = (anchor.y + y * radius * node.sensitivity).coerceIn(0f, height - 1f)
+                    val magnitude = hypot(x.toDouble(), y.toDouble()).toFloat().coerceIn(0f, 1f)
+                    val runThreshold = config.joystick.runThresholdNorm.coerceIn(.05f, .99f)
+                    val outputScale = if (magnitude >= runThreshold) config.joystick.runRadiusScale else config.joystick.walkRadiusScale
+                    val tx = (anchor.x + x * radius * node.sensitivity * outputScale).coerceIn(0f, width - 1f)
+                    val ty = (anchor.y + y * radius * node.sensitivity * outputScale).coerceIn(0f, height - 1f)
                     if (!injector.moveTouch(slot, tx, ty)) onError("Left-stick touch move failed")
                 }
                 NodeType.CAMERA_DRAG -> {
@@ -475,14 +476,17 @@ class GamepadMappingRuntime(
                         cameraPositions[slot] = anchor.x to anchor.y
                     }
                     val current = cameraPositions[slot] ?: (anchor.x to anchor.y)
-                    val step = 22f * node.sensitivity
+                    val nowNanos = System.nanoTime()
+                    val previousTick = cameraLastTickNanos.put(slot, nowNanos) ?: nowNanos
+                    val dt = ((nowNanos - previousTick).coerceIn(0L, 64_000_000L) / 1_000_000_000f)
+                    val speed = radius * 7.5f * node.sensitivity.coerceIn(.25f, 3f)
                     val previous=smoothedCamera[slot] ?: (0f to 0f)
                     val alpha=1f/config.camera.smoothingFrames
                     val sx=previous.first+(x-previous.first)*alpha
                     val sy=previous.second+(y-previous.second)*alpha
                     smoothedCamera[slot]=sx to sy
-                    val deltaX=sx*step*config.camera.horizontalSensitivity
-                    val deltaY=sy*step*config.camera.verticalSensitivity
+                    val deltaX=sx*speed*dt*config.camera.horizontalSensitivity
+                    val deltaY=sy*speed*dt*config.camera.verticalSensitivity
                     var nextX = current.first + deltaX
                     var nextY = current.second + deltaY
                     val outside = abs(nextX - anchor.x) > radius || abs(nextY - anchor.y) > radius
@@ -507,18 +511,27 @@ class GamepadMappingRuntime(
         }
     }
 
-    private fun normalizeAxis(axis: AxisValue, node: MappingNode): Float {
-        val center = if (axis.minimum < 0f && axis.maximum > 0f) 0f else (axis.minimum + axis.maximum) / 2f
-        val span = max(abs(axis.maximum - center), abs(center - axis.minimum))
-        require(axis.raw.isFinite() && span.isFinite() && span > 0f) { "Invalid stick sample or range" }
-        val raw = ((axis.raw - center) / span).coerceIn(-1f, 1f)
-        val flat = (axis.flat / span).coerceIn(0f, 0.9f)
-        val inner = max(node.deadzoneInner.coerceIn(0f, 0.9f), flat)
-        val outer = max(inner + 0.01f, node.deadzoneOuter.coerceIn(0.01f, 1f))
-        val magnitude = abs(raw)
-        if (magnitude <= inner) return 0f
-        val scaled = ((magnitude - inner) / (outer - inner)).coerceIn(0f, 1f)
-        return sign(raw) * scaled
+    private fun normalizeStickVector(xAxis: AxisValue, yAxis: AxisValue, node: MappingNode, exponent: Float, fastTurnBoost: Float, verticalRatio: Float): Pair<Float,Float> {
+        fun raw(axis: AxisValue): Pair<Float,Float> {
+            val center = if (axis.minimum < 0f && axis.maximum > 0f) 0f else (axis.minimum + axis.maximum) / 2f
+            val span = max(abs(axis.maximum - center), abs(center - axis.minimum))
+            require(axis.raw.isFinite() && span.isFinite() && span > 0f) { "Invalid stick sample or range" }
+            return ((axis.raw - center) / span).coerceIn(-1f, 1f) to (axis.flat / span).coerceIn(0f, .9f)
+        }
+        val (rawX, flatX) = raw(xAxis)
+        val (rawY, flatY) = raw(yAxis)
+        val magnitude = hypot(rawX.toDouble(), rawY.toDouble()).toFloat()
+        val inner = max(node.deadzoneInner.coerceIn(0f, .9f), max(flatX, flatY))
+        val outer = max(inner + .01f, node.deadzoneOuter.coerceIn(.01f, 1f))
+        if (magnitude <= inner || magnitude == 0f) return 0f to 0f
+        val normalized = ((magnitude - inner) / (outer - inner)).coerceIn(0f, 1f)
+        val curved = normalized.pow(exponent.coerceIn(.25f, 4f))
+        val edge = ((normalized - .9f) / .1f).coerceIn(0f, 1f)
+        val smoothEdge = edge * edge * (3f - 2f * edge)
+        val boost = 1f + (fastTurnBoost.coerceIn(1f, 3f) - 1f) * smoothEdge
+        val factor = curved * boost / magnitude
+        return (rawX * factor).coerceIn(-1f, 1f) to
+            (rawY * factor * verticalRatio.coerceIn(.3f, 1.5f)).coerceIn(-1.5f, 1.5f)
     }
 
     private fun activateSlot(slot:Int): Boolean {
