@@ -204,12 +204,14 @@ class ControlystAccessibilityService : AccessibilityService() {
             MappingRuntimeBridge.disarm("Previous backend release is unconfirmed. Use panic to retry cleanup before restarting mapping.")
             return
         }
+        val scheduledState = MappingRuntimeBridge.state.value
+        if (!scheduledState.armed || !scheduledState.targetForeground) return
         runtimePreparing = true
         backendExecutor.execute {
             try {
-                val expectedState = MappingRuntimeBridge.state.value
+                val expectedState = scheduledState
                 val config = MappingRuntimeBridge.config.value
-                if (!expectedState.armed || !expectedState.targetForeground || config == null) return@execute
+                if (!expectedState.armed || config == null) return@execute
 
                 if (Build.VERSION.SDK_INT < 34 && config.buttons.any { it.type in setOf(com.example.model.NodeType.JOYSTICK_ZONE,com.example.model.NodeType.CAMERA_DRAG) }) {
                     MappingRuntimeBridge.reportError("Android 14 or newer is required for global stick motion capture. Button-only profiles can use older Android versions.")
