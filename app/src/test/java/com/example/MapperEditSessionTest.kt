@@ -35,6 +35,16 @@ class MapperEditSessionTest {
         assertEquals(NodeType.BUTTON,edit.validated().buttons.first { it.id==ls }.type)
         assertNull(edit.validated().buttons.first { it.id==ls }.axisX)
     }
+    @Test fun resizeChangesRealNodeRadiusAndClampsToEditorLimits() {
+        val edit=MapperEditSession(config())
+        edit.resize("a",.04f)
+        assertEquals(.09f,edit.draft.buttons.single().radiusNorm,.0001f)
+        edit.resize("a",10f)
+        assertEquals(.3f,edit.draft.buttons.single().radiusNorm,.0001f)
+        edit.resize("a",-10f)
+        assertEquals(.02f,edit.draft.buttons.single().radiusNorm,.0001f)
+        assertTrue(runCatching { edit.resize("a",Float.NaN) }.isFailure)
+    }
     @Test fun floatingWindowsRemainReachableAcrossDragAndRotation() {
         assertEquals(0 to 0,com.example.service.OverlayBounds.position(-50,-80,52,52,1000,500))
         assertEquals(948 to 448,com.example.service.OverlayBounds.position(3000,1000,52,52,1000,500))

@@ -151,7 +151,7 @@ fun NexusHomeScreen(
                     )
                     Text("Nexus Input", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Black)
                     Text(
-                        "Backend: ${activePrivilege.badgeLabel}",
+                        "Backend: ${activePrivilege?.badgeLabel ?: "None available"}",
                         color = TextSecondary,
                         fontSize = 11.sp
                     )

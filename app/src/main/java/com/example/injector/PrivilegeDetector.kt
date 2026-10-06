@@ -56,9 +56,9 @@ class PrivilegeDetector(
         )
     }
 
-    fun detectBestMethod(): PrivilegeMethod {
+    fun detectBestMethod(): PrivilegeMethod? {
         val probes = probeAll()
-        return PrivilegeBackendSelector.choose(probes)?.method ?: PrivilegeMethod.ACCESSIBILITY
+        return PrivilegeBackendSelector.choose(probes)?.method
     }
 
     private fun detectShizuku(): PrivilegeProbeResult {

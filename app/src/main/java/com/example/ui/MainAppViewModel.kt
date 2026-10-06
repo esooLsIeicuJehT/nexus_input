@@ -77,8 +77,8 @@ class MainAppViewModel @JvmOverloads constructor(
     private val _privilegeResults = MutableStateFlow<List<PrivilegeProbeResult>>(emptyList())
     val privilegeResults: StateFlow<List<PrivilegeProbeResult>> = _privilegeResults.asStateFlow()
 
-    private val _activePrivilegeMethod = MutableStateFlow(PrivilegeMethod.ACCESSIBILITY)
-    val activePrivilegeMethod: StateFlow<PrivilegeMethod> = _activePrivilegeMethod.asStateFlow()
+    private val _activePrivilegeMethod = MutableStateFlow<PrivilegeMethod?>(null)
+    val activePrivilegeMethod: StateFlow<PrivilegeMethod?> = _activePrivilegeMethod.asStateFlow()
 
     // Controller Profile
     private val _controllerProfile = MutableStateFlow(ControllerProfile())
@@ -99,7 +99,7 @@ class MainAppViewModel @JvmOverloads constructor(
     // Monetization State
 
     // Active Injector
-    var currentInjector: InputInjector = InputInjectorFactory.createInjector(PrivilegeMethod.ACCESSIBILITY)
+    var currentInjector: InputInjector? = null
         private set
 
     // Onboarding step (0..5), if completed = -1
@@ -176,9 +176,10 @@ class MainAppViewModel @JvmOverloads constructor(
         viewModelScope.launch {
             val probes = privilegeDetector.probeAll()
             _privilegeResults.value = probes
-            val best = privilegeDetector.detectBestMethod()
+            val best = com.example.injector.PrivilegeBackendSelector.choose(probes)?.method
             _activePrivilegeMethod.value = best
-            currentInjector = InputInjectorFactory.createInjector(best)
+            currentInjector = best?.let(InputInjectorFactory::createInjector)
+            if (best == null) showSnack("No injection backend is currently available. Grant Shizuku, root, or Accessibility before mapping.")
         }
     }
 
@@ -186,7 +187,9 @@ class MainAppViewModel @JvmOverloads constructor(
         val updated = _activeConfig.value.copy(preferredBackend = method)
         updateActiveConfig(updated) {
             if (_activeConfig.value == updated) {
-                currentInjector = InputInjectorFactory.createInjector(method ?: _activePrivilegeMethod.value)
+                val selected = method ?: _activePrivilegeMethod.value
+                currentInjector = selected?.let(InputInjectorFactory::createInjector)
+                if (selected == null) showSnack("Automatic backend selection has no available backend yet.")
             }
             showSnack("Profile backend saved: ${method?.title ?: "Automatic"}. Launch the game to prepare it.")
         }
@@ -438,7 +441,14 @@ class MainAppViewModel @JvmOverloads constructor(
 
     fun runLatencyBenchmark(onComplete: (TouchLatencyResult) -> Unit) {
         viewModelScope.launch {
-            val res = calibrationManager.measureTouchLatency(currentInjector)
+            val injector = currentInjector
+            if (injector == null) {
+                val failure = calibrationManager.reportLatencyUnavailable("no backend available")
+                showSnack("No backend is available to time.")
+                onComplete(failure)
+                return@launch
+            }
+            val res = calibrationManager.measureTouchLatency(injector)
             onComplete(res)
         }
     }

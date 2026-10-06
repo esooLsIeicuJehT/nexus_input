@@ -103,12 +103,54 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             }
         }
         if(node!=null) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("${node.boundKey} · ${node.type} · ${node.buttonBehavior}",color=TextPrimary)
-                TextButton(onClick={binding=node.boundKey;behavior=node.buttonBehavior;turbo=node.type==NodeType.TURBO;showBinding=true}) { Text("Rebind") }
-                TextButton(onClick={viewModel.removeNode(node.id);selected=null}) { Text("Delete") }
-                Text("Radius",color=TextSecondary)
-                Slider(value=node.radiusNorm,onValueChange={viewModel.updateNode(node.copy(radiusNorm=it))},valueRange=.02f.. .3f,modifier=Modifier.width(140.dp))
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("${node.boundKey} · ${node.type} · ${node.buttonBehavior}",color=TextPrimary)
+                    TextButton(onClick={binding=node.boundKey;behavior=node.buttonBehavior;turbo=node.type==NodeType.TURBO;showBinding=true}) { Text("Rebind") }
+                    TextButton(onClick={viewModel.removeNode(node.id);selected=null}) { Text("Delete") }
+                    TextButton(onClick={viewModel.updateNode(node.copy(radiusNorm=(node.radiusNorm-.01f).coerceAtLeast(.02f)))}) { Text("− Size") }
+                    Text("${(node.radiusNorm*100).toInt()}%",color=TextSecondary)
+                    TextButton(onClick={viewModel.updateNode(node.copy(radiusNorm=(node.radiusNorm+.01f).coerceAtMost(.3f)))}) { Text("+ Size") }
+                    Slider(value=node.radiusNorm,onValueChange={viewModel.updateNode(node.copy(radiusNorm=it))},valueRange=.02f.. .3f,modifier=Modifier.width(140.dp))
+                }
+                if(node.type==NodeType.JOYSTICK_ZONE) {
+                    Text("Walk / run tuning",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text("Walk ${(config.joystick.walkRadiusScale*100).toInt()}%",color=TextMuted)
+                        Slider(config.joystick.walkRadiusScale,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(walkRadiusScale=value))) },valueRange=.1f.. .95f,modifier=Modifier.width(130.dp))
+                        Text("Run ${(config.joystick.runRadiusScale*100).toInt()}%",color=TextMuted)
+                        Slider(config.joystick.runRadiusScale,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(runRadiusScale=value))) },valueRange=.2f..1.5f,modifier=Modifier.width(130.dp))
+                        Text("Run at ${(config.joystick.runThresholdNorm*100).toInt()}%",color=TextMuted)
+                        Slider(config.joystick.runThresholdNorm,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(runThresholdNorm=value))) },valueRange=.05f.. .99f,modifier=Modifier.width(130.dp))
+                    }
+                }
+                if(node.type==NodeType.CAMERA_DRAG) {
+                    Text("Right-stick camera",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text("H ${"%.2f".format(config.camera.horizontalSensitivity)}",color=TextMuted)
+                        Slider(config.camera.horizontalSensitivity,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(horizontalSensitivity=value))) },valueRange=.1f..3f,modifier=Modifier.width(130.dp))
+                        Text("V ${"%.2f".format(config.camera.verticalSensitivity)}",color=TextMuted)
+                        Slider(config.camera.verticalSensitivity,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(verticalSensitivity=value))) },valueRange=.1f..3f,modifier=Modifier.width(130.dp))
+                        Text("Smooth ${config.camera.smoothingFrames}",color=TextMuted)
+                        Slider(config.camera.smoothingFrames.toFloat(),{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(smoothingFrames=value.toInt().coerceIn(1,12)))) },valueRange=1f..12f,steps=10,modifier=Modifier.width(130.dp))
+                        Text("Fast turn ${"%.2f".format(config.camera.fastTurnBoost)}x",color=TextMuted)
+                        Slider(config.camera.fastTurnBoost,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(fastTurnBoost=value))) },valueRange=1f..3f,modifier=Modifier.width(130.dp))
+                    }
+                }
+                if(ControllerBindingAliases.canonical(node.boundKey) in setOf("LT","RT")) {
+                    Text("Trigger hysteresis",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text("Press ${"%.2f".format(node.triggerPressThreshold)}",color=TextMuted)
+                        Slider(node.triggerPressThreshold,{ value ->
+                            val release=node.triggerReleaseThreshold.coerceAtMost(value-.05f)
+                            viewModel.updateNode(node.copy(triggerPressThreshold=value,triggerReleaseThreshold=release))
+                        },valueRange=.1f..1f,modifier=Modifier.width(140.dp))
+                        Text("Release ${"%.2f".format(node.triggerReleaseThreshold)}",color=TextMuted)
+                        Slider(node.triggerReleaseThreshold,{ value ->
+                            viewModel.updateNode(node.copy(triggerReleaseThreshold=value.coerceAtMost(node.triggerPressThreshold-.05f)))
+                        },valueRange=0f.. .9f,modifier=Modifier.width(140.dp))
+                    }
+                }
             }
         }
         Text("Changes save to the selected game profile. Global stick capture requires Android 14+. Live testing is available over the game through the floating mapper.",color=TextMuted,modifier=Modifier.padding(8.dp),style=MaterialTheme.typography.bodySmall)

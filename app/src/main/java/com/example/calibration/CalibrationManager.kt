@@ -312,6 +312,12 @@ class CalibrationManager(private val context: Context) {
         return minimum + travel * .55f to minimum + travel * .35f
     }
 
+    fun reportLatencyUnavailable(message: String): TouchLatencyResult {
+        val result = TouchLatencyResult(grade = "FAILED: $message")
+        _latencyResult.value = result
+        return result
+    }
+
     // Measures the synchronous backend API call only; never device-to-photon latency.
     suspend fun measureTouchLatency(injector: InputInjector): TouchLatencyResult = withContext(Dispatchers.IO) {
         _latencyResult.value = TouchLatencyResult(isTesting = true)

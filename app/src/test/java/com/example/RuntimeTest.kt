@@ -174,6 +174,17 @@ class RuntimeTest {
         assertFalse(runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(scan),backend))
         runtime.shutdown(backend)
     }
+    @Test fun explicitScanBindingMatchesNamedStadiaStartEvent() {
+        val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)});val backend=Recording()
+        val node=MappingNode("start",.4f,.4f,boundKey="START",inputKeyCode=KeyEvent.KEYCODE_UNKNOWN,inputScanCode=315,buttonBehavior=ButtonBehavior.HOLD)
+        val event=KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_START,0,0,16,315,0,InputDevice.SOURCE_GAMEPAD)
+        try {
+            assertTrue(runtime.handleKeyEvent(event,config(node),backend))
+            runtime.awaitIdle()
+            assertEquals(1,backend.calls.count { it.first=="down" })
+        } finally { runtime.shutdown(backend) }
+    }
+
     @Test fun invalidMotionSamplesFailExplicitlyAndStickNeutralReleasesContacts() {
         val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
         val c=config(MappingNode("ls",.2f,.7f,.12f,NodeType.JOYSTICK_ZONE,"LS"))

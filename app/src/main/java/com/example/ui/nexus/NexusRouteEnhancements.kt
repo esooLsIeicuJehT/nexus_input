@@ -68,7 +68,7 @@ fun NexusMapperRoute(viewModel: MainAppViewModel) {
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${config.buttons.size} bindings • ${privilege.badgeLabel}",
+                        text = "${config.buttons.size} bindings • ${privilege?.badgeLabel ?: "No backend"}",
                         color = TextMuted,
                         fontSize = 9.sp
                     )

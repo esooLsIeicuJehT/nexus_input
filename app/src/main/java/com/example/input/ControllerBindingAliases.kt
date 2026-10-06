@@ -4,6 +4,23 @@ import android.view.KeyEvent
 
 /** Canonical mapper labels accepted for Android controller key events. */
 object ControllerBindingAliases {
+    private const val STADIA_VENDOR_ID = 6353
+    private const val STADIA_PRODUCT_ID = 37888
+
+    fun forEvent(event: KeyEvent): Set<String> {
+        val standard = forKeyCode(event.keyCode)
+        if (standard.isNotEmpty()) return standard
+        val device = event.device
+        if (device?.vendorId != STADIA_VENDOR_ID || device.productId != STADIA_PRODUCT_ID) return emptySet()
+        return when (event.scanCode) {
+            314 -> setOf("SELECT", "BACK")
+            315 -> setOf("START")
+            317 -> setOf("L3")
+            318 -> setOf("R3")
+            else -> emptySet()
+        }
+    }
+
     fun forKeyCode(keyCode: Int): Set<String> = when (keyCode) {
         KeyEvent.KEYCODE_BUTTON_A -> setOf("A", "CROSS")
         KeyEvent.KEYCODE_BUTTON_B -> setOf("B", "CIRCLE")
