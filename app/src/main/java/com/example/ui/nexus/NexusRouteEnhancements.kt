@@ -123,7 +123,9 @@ fun NexusDevicesRoute(
         LiveInputStrip(
             sourceName = live.connectedEventSource,
             axes = live.axes,
-            pressedButtons = live.pressedButtons
+            pressedButtons = live.pressedButtons,
+            lastKey = listOfNotNull(live.lastKeyName, live.lastKeyCode?.let { "code=$it" }, live.lastScanCode?.let { "scan=$it" }, live.lastSource?.let { "src=0x${it.toString(16)}" }).joinToString(" · "),
+            eventLog = live.eventLog
         )
     }
 }
@@ -132,7 +134,9 @@ fun NexusDevicesRoute(
 private fun LiveInputStrip(
     sourceName: String?,
     axes: Map<String, Float>,
-    pressedButtons: Set<String>
+    pressedButtons: Set<String>,
+    lastKey: String,
+    eventLog: List<String>
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -167,24 +171,26 @@ private fun LiveInputStrip(
                     fontSize = 9.sp
                 )
             } else {
-                val primaryAxes = listOf("LX", "LY", "RX", "RY", "LT", "RT", "HAT_X", "HAT_Y")
+                listOf("LX", "LY", "RX", "RY", "LT", "RT", "BRAKE", "GAS", "HAT_X", "HAT_Y")
                     .mapNotNull { name -> axes[name]?.let { name to it } }
-                    .take(4)
+                    .forEach { (name, value) -> LiveAxisRow(name, value) }
+                axes.filterKeys { it.startsWith("AXIS_") }.toSortedMap().forEach { (name,value) -> LiveAxisRow(name,value) }
 
-                primaryAxes.forEach { (name, value) ->
-                    LiveAxisRow(name, value)
-                }
-
-                if (pressedButtons.isNotEmpty()) {
+                if (pressedButtons.isNotEmpty() || lastKey.isNotBlank()) {
                     Spacer(Modifier.height(5.dp))
                     Text(
-                        text = "Pressed: ${pressedButtons.sorted().joinToString(" • ")}",
+                        text = buildString { if(pressedButtons.isNotEmpty()) append("Pressed: ${pressedButtons.sorted().joinToString(" • ")}"); if(lastKey.isNotBlank()) { if(isNotEmpty()) append("\n"); append("Last key: $lastKey") } },
                         color = NexusVioletLight,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+                if(eventLog.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("RAW EVENT LOG",color=NexusCyan,fontSize=8.sp,fontWeight=FontWeight.ExtraBold)
+                    Text(eventLog.takeLast(8).joinToString("\n"),color=TextMuted,fontSize=7.sp,maxLines=8,overflow=TextOverflow.Ellipsis)
                 }
             }
         }
