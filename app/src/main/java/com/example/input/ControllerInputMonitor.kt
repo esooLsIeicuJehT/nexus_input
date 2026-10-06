@@ -22,7 +22,12 @@ data class ControllerLiveState(
     val normalizedAxes: Map<String, Float> = emptyMap(),
     val pressedButtons: Set<String> = emptySet(),
     val lastEventUptimeMs: Long = 0L,
-    val observedEventSequence: Long = 0L
+    val observedEventSequence: Long = 0L,
+    val lastKeyCode: Int? = null,
+    val lastScanCode: Int? = null,
+    val lastKeyName: String? = null,
+    val lastSource: Int? = null,
+    val eventLog: List<String> = emptyList()
 )
 
 object ControllerInputMonitor {
@@ -39,7 +44,7 @@ object ControllerInputMonitor {
         val normalized = linkedMapOf<String, Float>()
 
         fun capture(axis: Int, label: String) {
-            val range=ranges.firstOrNull { it.axis==axis && it.source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK } ?: return
+            val range=ranges.firstOrNull { it.axis==axis } ?: return
             val raw=event.getAxisValue(axis)
             if(!raw.isFinite() || !range.min.isFinite() || !range.max.isFinite() || range.min>=range.max) {
                 android.util.Log.e("NexusInput","Invalid observed controller axis $axis on device ${event.deviceId}")
@@ -61,12 +66,20 @@ object ControllerInputMonitor {
         capture(MotionEvent.AXIS_GAS, "GAS")
         capture(MotionEvent.AXIS_HAT_X, "HAT_X")
         capture(MotionEvent.AXIS_HAT_Y, "HAT_Y")
+        ranges.distinctBy { it.axis }.forEach { range ->
+            val label = "AXIS_${range.axis}"
+            if (label !in axes) capture(range.axis, label)
+        }
+        val motionLine = "MOTION dev=${event.deviceId} src=0x${event.source.toString(16)} " +
+            axes.entries.joinToString(" ") { "${it.key}=${"%.3f".format(it.value)}" }
 
         _state.value = _state.value.copy(
             connectedEventSource = device?.name,
             deviceId = device?.id,
             axes = axes,
             normalizedAxes = normalized,
+            lastSource = event.source,
+            eventLog = (_state.value.eventLog + motionLine).takeLast(64),
             lastEventUptimeMs = event.eventTime,
             observedEventSequence = observedEvents.incrementAndGet()
         )
@@ -83,10 +96,17 @@ object ControllerInputMonitor {
             else -> return
         }
 
+        val actionName = if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"
+        val line = "$actionName dev=${event.deviceId} src=0x${event.source.toString(16)} key=${event.keyCode} ${KeyEvent.keyCodeToString(event.keyCode)} scan=${event.scanCode}"
         _state.value = _state.value.copy(
             connectedEventSource = event.device?.name,
             deviceId = event.device?.id,
             pressedButtons = updated,
+            lastKeyCode = event.keyCode,
+            lastScanCode = event.scanCode,
+            lastKeyName = KeyEvent.keyCodeToString(event.keyCode),
+            lastSource = event.source,
+            eventLog = (_state.value.eventLog + line).takeLast(64),
             lastEventUptimeMs = event.eventTime,
             observedEventSequence = observedEvents.incrementAndGet()
         )
