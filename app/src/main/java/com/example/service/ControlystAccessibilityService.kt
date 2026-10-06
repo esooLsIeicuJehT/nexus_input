@@ -162,7 +162,13 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        reconnectForGeometryChange()
+        // Do not tear down a live privileged backend during Android's rotation/relaunch
+        // sequence. The mapping coordinates are normalized and screenSize() follows the
+        // current window metrics, while destroying the RootService here removes the
+        // virtual touchscreen in the middle of the target game's configuration change.
+        // A backend is recreated only by an explicit mapper session/backend transition.
+        Log.i(TAG, "Configuration changed; preserving active mapper backend for session " +
+            MappingRuntimeBridge.state.value.sessionId)
     }
 
     override fun onInterrupt() {
@@ -303,24 +309,6 @@ class ControlystAccessibilityService : AccessibilityService() {
         activeInjector = null
         backendExecutor.execute {
             cleanupRuntime(current)
-        }
-    }
-
-    private fun reconnectForGeometryChange() {
-        if (backendExecutor.isShutdown) return
-        val current = activeInjector
-        activeInjector = null
-        val method = current?.method
-        if (method != null) {
-            MappingRuntimeBridge.setBackend(method, false, null)
-        }
-        backendExecutor.execute {
-            if (current != null) {
-                cleanupRuntime(current)
-            }
-            runtimePreparing = false
-            val state = MappingRuntimeBridge.state.value
-            if (state.armed && state.targetForeground) prepareRuntimeAsync()
         }
     }
 
