@@ -447,7 +447,7 @@ fun FeatureHighlightCard(
 fun StepRootDetection(
     viewModel: MainAppViewModel,
     results: List<com.example.injector.PrivilegeProbeResult>,
-    selectedMethod: PrivilegeMethod,
+    selectedMethod: PrivilegeMethod?,
     onSelectMethod: (PrivilegeMethod) -> Unit,
     onOpenWebUi: () -> Unit
 ) {
