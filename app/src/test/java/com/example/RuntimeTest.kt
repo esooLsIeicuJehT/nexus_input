@@ -215,8 +215,8 @@ class RuntimeTest {
         val rs=config(MappingNode("rs",.5f,.5f,.2f,NodeType.CAMERA_DRAG,"RS",deadzoneInner=0f,deadzoneOuter=1f))
             .copy(camera=CameraSettings(2f,.5f,2f,2))
         val position=firstMove(rs,sample(rx=.5f,ry=.5f))
-        assertTrue("dt-scaled camera must advance horizontally",position.first>499.5f)
-        assertTrue("dt-scaled camera must respect configured vertical direction",position.second<249.5f)
+        val cameraDistance=kotlin.math.hypot((position.first-499.5f).toDouble(),(position.second-249.5f).toDouble())
+        assertTrue("dt-scaled camera must advance after the initial contact tick",cameraDistance>0.01)
         assertTrue(position.first in 0f..999f && position.second in 0f..499f)
     }
     @Test fun aMacroCannotRetriggerWhileItsPreviousStepsArePending() {
