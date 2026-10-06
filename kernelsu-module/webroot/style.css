@@ -4,13 +4,13 @@
   --sidebar:#050b13;
   --panel:#081421;
   --panel-2:#0b1a2a;
-  --stroke:#173149;
-  --stroke-bright:#1e6f94;
+  --stroke:#155073;
+  --stroke-bright:#16e6ff;
   --text:#eef7ff;
   --muted:#7890a7;
-  --cyan:#18e6ff;
-  --blue:#3c7cff;
-  --violet:#8a4dff;
+  --cyan:#16f1ff;
+  --blue:#246bff;
+  --violet:#a13dff;
   --green:#19ef9f;
   --amber:#f6c453;
   --red:#ff5b72;
@@ -124,14 +124,14 @@ p { color:var(--muted); line-height:1.55; margin-bottom:0; font-size:12px; }
   display:flex;
   align-items:center;
   gap:18px;
-  border:1px solid #215879;
+  border:1px solid rgba(22,241,255,.78);
   border-radius:21px;
   padding:19px;
   overflow:hidden;
   background:
     radial-gradient(circle at 85% -10%,rgba(138,77,255,.24),transparent 42%),
     linear-gradient(115deg,rgba(12,43,61,.96),rgba(12,18,50,.96) 58%,rgba(8,20,33,.96));
-  box-shadow:0 18px 45px rgba(0,0,0,.22),inset 0 0 40px rgba(60,124,255,.04);
+  box-shadow:0 18px 45px rgba(0,0,0,.28),0 0 24px rgba(22,241,255,.12),0 0 42px rgba(161,61,255,.08),inset 0 0 40px rgba(36,107,255,.07);
 }
 .hero-orb {
   flex:0 0 auto;
@@ -152,7 +152,7 @@ p { color:var(--muted); line-height:1.55; margin-bottom:0; font-size:12px; }
 .metric-card,.card {
   border:1px solid var(--stroke);
   background:linear-gradient(155deg,rgba(10,24,38,.97),rgba(5,14,24,.98));
-  box-shadow:inset 0 1px rgba(255,255,255,.025),0 12px 34px rgba(0,0,0,.18);
+  box-shadow:inset 0 1px rgba(255,255,255,.04),0 12px 34px rgba(0,0,0,.22),0 0 18px rgba(22,241,255,.06);
 }
 .metric-card { border-radius:15px; padding:13px; min-height:104px; }
 .metric-card.wide { grid-column:span 4; min-height:auto; }
@@ -241,3 +241,19 @@ p { color:var(--muted); line-height:1.55; margin-bottom:0; font-size:12px; }
 }
 
 #capabilities-panel label{display:block;margin:10px 0;color:#b5c2d5}#capabilities-panel select,#capabilities-panel input{display:block;max-width:100%;width:100%;padding:9px;background:#0b1829;color:#eaf2ff;border:1px solid #29405d;border-radius:8px}#capabilities-panel pre{max-height:260px;overflow:auto;white-space:pre-wrap;font-size:11px}#capabilities-panel .detail-grid{margin-bottom:18px}
+
+/* Reference-sheet finish: cyan/violet edge light without changing WebUI behavior. */
+.card,.metric-card,.version-box,.status-console,#capabilities-panel select,#capabilities-panel input {
+  position:relative;
+}
+.card:hover,.metric-card:hover {
+  border-color:rgba(22,241,255,.52);
+  box-shadow:inset 0 1px rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.24),0 0 20px rgba(22,241,255,.09),0 0 26px rgba(161,61,255,.05);
+}
+.button.primary {
+  border-color:rgba(22,241,255,.9);
+  box-shadow:0 0 18px rgba(22,241,255,.22),0 0 30px rgba(161,61,255,.10);
+}
+.side-nav a.active {
+  box-shadow:inset 0 0 18px rgba(22,241,255,.06),0 0 16px rgba(22,241,255,.05);
+}

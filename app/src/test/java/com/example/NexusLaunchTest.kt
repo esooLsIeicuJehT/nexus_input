@@ -18,6 +18,6 @@ class NexusLaunchTest {
     @Test fun actualLaunchDisplaysNexusBrandAndStartupStatus() {
         compose.mainClock.autoAdvance = false
         compose.onNodeWithText("NEXUS INPUT").assertIsDisplayed()
-        compose.onNodeWithText("Starting Nexus Input").assertIsDisplayed()
+        compose.onNodeWithText("INITIALIZING SYSTEM…").assertIsDisplayed()
     }
 }
