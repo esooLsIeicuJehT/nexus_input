@@ -104,11 +104,13 @@ class ControlystRepository(
             json.put("joystick", JSONObject().apply {
                 put("innerDeadzone", config.joystick.innerDeadzone); put("outerDeadzone", config.joystick.outerDeadzone)
                 put("runThresholdNorm", config.joystick.runThresholdNorm); put("sprintLockEnabled", config.joystick.sprintLockEnabled)
+                put("walkRadiusScale", config.joystick.walkRadiusScale); put("runRadiusScale", config.joystick.runRadiusScale)
                 put("curveExponent", config.joystick.curveExponent)
             })
             json.put("camera", JSONObject().apply {
                 put("horizontalSensitivity", config.camera.horizontalSensitivity); put("verticalSensitivity", config.camera.verticalSensitivity)
                 put("accelerationCurve", config.camera.accelerationCurve); put("smoothingFrames", config.camera.smoothingFrames)
+                put("verticalRatio", config.camera.verticalRatio); put("fastTurnBoost", config.camera.fastTurnBoost)
                 put("invertY", config.camera.invertY); put("mouseDpiScale", config.camera.mouseDpiScale)
             })
             json.put("antiRecoilEnabled", config.antiRecoilEnabled); json.put("antiRecoilVerticalPull", config.antiRecoilVerticalPull)
@@ -253,9 +255,11 @@ class ControlystRepository(
                 preferredBackend = if (json.has("preferredBackend") && !json.isNull("preferredBackend")) PrivilegeMethod.valueOf(json.getString("preferredBackend")) else null,
                 controllerProfileId = if (json.has("controllerProfileId") && !json.isNull("controllerProfileId")) json.getString("controllerProfileId") else null,
                 joystick = JoystickSettings(joystick.optDouble("innerDeadzone", .15).toFloat(), joystick.optDouble("outerDeadzone", .95).toFloat(),
-                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", false), joystick.optDouble("curveExponent", 1.0).toFloat()),
+                    joystick.optDouble("runThresholdNorm", .75).toFloat(), joystick.optBoolean("sprintLockEnabled", false),
+                    joystick.optDouble("walkRadiusScale", .62).toFloat(), joystick.optDouble("runRadiusScale", 1.0).toFloat(), joystick.optDouble("curveExponent", 1.0).toFloat()),
                 camera = CameraSettings(camera.optDouble("horizontalSensitivity", 1.0).toFloat(), camera.optDouble("verticalSensitivity", .85).toFloat(),
-                    camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
+                    camera.optDouble("accelerationCurve", 1.2).toFloat(), camera.optInt("smoothingFrames", 3),
+                    camera.optDouble("verticalRatio", 1.0).toFloat(), camera.optDouble("fastTurnBoost", 1.0).toFloat(), camera.optBoolean("invertY", false), camera.optDouble("mouseDpiScale", 1.0).toFloat()),
                 antiRecoilEnabled = json.optBoolean("antiRecoilEnabled", false), antiRecoilVerticalPull = json.optDouble("antiRecoilVerticalPull", 0.0).toFloat(),
                 tags = json.optJSONArray("tags")?.let { array -> (0 until array.length()).map { array.getString(it) } } ?: emptyList(),
                 schemaVersion = schemaVersion,
