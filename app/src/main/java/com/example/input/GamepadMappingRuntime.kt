@@ -66,7 +66,7 @@ class GamepadMappingRuntime(
 
     fun handleKeyEvent(event: KeyEvent, config: MappingConfig, injector: InputInjector): Boolean {
         if (!isControllerSource(event.source)) return false
-        val aliases = ControllerBindingAliases.forKeyCode(event.keyCode)
+        val aliases = ControllerBindingAliases.forEvent(event)
         val nodes = config.buttons.filter { node ->
             val physicalMatches = when {
                 node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN -> node.inputKeyCode == event.keyCode
@@ -491,20 +491,23 @@ class GamepadMappingRuntime(
                     val deltaY=sy*speed*dt*config.camera.verticalSensitivity
                     var nextX = current.first + deltaX
                     var nextY = current.second + deltaY
-                    val outside = abs(nextX - anchor.x) > radius || abs(nextY - anchor.y) > radius
-                    if (outside) {
-                        if (!injector.endTouch(slot)) { onError("Camera release failed for slot $slot"); return@forEach }
-                        if (!injector.beginTouch(slot, anchor.x, anchor.y)) {
-                            activeSlots.remove(slot)
-                            cameraPositions.remove(slot)
-                            onError("Camera touch reset failed")
+                    val margin = max(24f, minDimension * .04f)
+                    val outsideSafeBounds =
+                        nextX < margin || nextX > width - 1f - margin ||
+                        nextY < margin || nextY > height - 1f - margin
+                    if (outsideSafeBounds) {
+                        if (!injector.endTouch(slot)) {
+                            onError("Camera release failed for slot $slot")
                             return@forEach
                         }
-                        nextX = anchor.x + deltaX
-                        nextY = anchor.y + deltaY
+                        activeSlots.remove(slot)
+                        cameraPositions.remove(slot)
+                        smoothedCamera.remove(slot)
+                        cameraLastTickNanos.remove(slot)
+                        return@forEach
                     }
-                    nextX = nextX.coerceIn(0f, width - 1f)
-                    nextY = nextY.coerceIn(0f, height - 1f)
+                    nextX = nextX.coerceIn(margin, width - 1f - margin)
+                    nextY = nextY.coerceIn(margin, height - 1f - margin)
                     if (!injector.moveTouch(slot, nextX, nextY)) onError("Camera touch move failed")
                     cameraPositions[slot] = nextX to nextY
                 }
