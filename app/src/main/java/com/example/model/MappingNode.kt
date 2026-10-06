@@ -34,9 +34,7 @@ data class MappingNode(
     val touchSlot: Int? = null,
     val axisX: Int? = null,
     val axisY: Int? = null,
-    val invertX: Boolean = false,
     val invertY: Boolean = false,
-    val swapAxes: Boolean = false,
     val triggerPressThreshold: Float = .55f,
     val triggerReleaseThreshold: Float = .35f
 )
