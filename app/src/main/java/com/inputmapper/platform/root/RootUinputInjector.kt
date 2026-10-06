@@ -27,7 +27,8 @@ internal class RootUinputInjector(
     private val width: Int,
     private val height: Int,
     private val maxSlots: Int,
-    override val backendName: String
+    override val backendName: String,
+    private val useInputManager: Boolean = false
 ) : InputInjector {
     private val appContext = context.applicationContext
     private val lock = Any()
@@ -77,7 +78,7 @@ internal class RootUinputInjector(
             )
         }
 
-        service?.let { return@synchronized createDevices(it) }
+        service?.let { return@synchronized prepareBackend(it) }
 
         val latch = CountDownLatch(1)
         pendingBind = latch
@@ -110,7 +111,7 @@ internal class RootUinputInjector(
                 "Root service did not connect within ${timeoutMillis}ms. Confirm this app is granted root in KernelSU/Magisk. Last state: $lastStatus"
             )
         }
-        createDevices(connected)
+        prepareBackend(connected)
     }
 
     fun health(): String = synchronized(lock) {
@@ -182,7 +183,8 @@ internal class RootUinputInjector(
             return@synchronized InjectionResult.Failure(InjectionErrorCode.INVALID_ARGUMENT, "pointerId=$pointerId outside 0..${maxSlots - 1}")
         }
         val remote = service ?: return@synchronized notReady()
-        callRemote("touch down") { remote.touchDown(pointerId, nextTrackingId(), x.toInt(), y.toInt()) }
+        if (useInputManager) callRemote("touch down") { remote.inputManagerTouchDown(pointerId, x, y) }
+        else callRemote("touch down") { remote.touchDown(pointerId, nextTrackingId(), x.toInt(), y.toInt()) }
     }
 
     override fun moveTouch(pointerId: Int, x: Float, y: Float): InjectionResult = synchronized(lock) {
@@ -192,7 +194,8 @@ internal class RootUinputInjector(
             return@synchronized InjectionResult.Failure(InjectionErrorCode.INVALID_ARGUMENT, "pointerId=$pointerId outside 0..${maxSlots - 1}")
         }
         val remote = service ?: return@synchronized notReady()
-        callRemote("touch move") { remote.touchMove(pointerId, x.toInt(), y.toInt()) }
+        if (useInputManager) callRemote("touch move") { remote.inputManagerTouchMove(pointerId, x, y) }
+        else callRemote("touch move") { remote.touchMove(pointerId, x.toInt(), y.toInt()) }
     }
 
     override fun endTouch(pointerId: Int): InjectionResult = synchronized(lock) {
@@ -200,12 +203,14 @@ internal class RootUinputInjector(
             return@synchronized InjectionResult.Failure(InjectionErrorCode.INVALID_ARGUMENT, "pointerId=$pointerId outside 0..${maxSlots - 1}")
         }
         val remote = service ?: return@synchronized notReady()
-        callRemote("touch up") { remote.touchUp(pointerId) }
+        if (useInputManager) callRemote("touch up") { remote.inputManagerTouchUp(pointerId) }
+        else callRemote("touch up") { remote.touchUp(pointerId) }
     }
 
     override fun injectKeyEvent(keyCode: Int, action: Int): InjectionResult = synchronized(lock) {
         validateKeyAction(action)?.let { return@synchronized it }
         val remote = service ?: return@synchronized notReady()
+        if (useInputManager) return@synchronized callRemote("key") { remote.inputManagerKey(keyCode, action) }
         val linuxCode = LinuxKeyCodeMapper.fromAndroid(keyCode)
             ?: return@synchronized InjectionResult.Failure(
                 InjectionErrorCode.UNSUPPORTED,
@@ -228,7 +233,8 @@ internal class RootUinputInjector(
         val destroyResult = if (remote == null) {
             InjectionResult.Success
         } else {
-            callRemote("destroy devices") { remote.destroyDevices() }
+            if (useInputManager) callRemote("release InputManager contacts") { remote.inputManagerReleaseAll() }
+            else callRemote("destroy devices") { remote.destroyDevices() }
         }
 
         service = null
@@ -252,6 +258,20 @@ internal class RootUinputInjector(
                 failure.cause
             )
         }
+    }
+
+    private fun prepareBackend(remote: IRootInputService): InjectionResult {
+        if (useInputManager) return prepareInputManager(remote)
+        return createDevices(remote)
+    }
+
+    private fun prepareInputManager(remote: IRootInputService): InjectionResult = try {
+        lastStatus = remote.status()
+        parseReply("prepare InputManager", remote.prepareInputManager(maxSlots)).also {
+            if (it is InjectionResult.Success) lastStatus = remote.status()
+        }
+    } catch (t: Throwable) {
+        InjectionResult.Failure(InjectionErrorCode.REMOTE_FAILURE, "Root InputManager prepare failed: ${remoteMessage(t)}", t)
     }
 
     private fun createDevices(remote: IRootInputService): InjectionResult {

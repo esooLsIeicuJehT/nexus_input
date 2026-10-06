@@ -17,6 +17,9 @@ class RootInputService : RootService() {
     @Volatile
     private var devicesCreated = false
 
+    @Volatile
+    private var inputManagerEngine: PrivilegedInputManagerEngine? = null
+
     private val binder = object : IRootInputService.Stub() {
         override fun readSurfaceLayers(): String = com.inputmapper.platform.core.SurfaceFrameProbe.layers()
         override fun readSurfaceLatency(layer: String): String = com.inputmapper.platform.core.SurfaceFrameProbe.latency(layer)
@@ -66,6 +69,38 @@ class RootInputService : RootService() {
             reply("KEY", NativeUinputBridge.nativeKey(linuxKeyCode, value))
         }
 
+        override fun prepareInputManager(maxPointers: Int): String = synchronized(this@RootInputService) {
+            rootGuard()?.let { return@synchronized it }
+            val engine = PrivilegedInputManagerEngine(maxPointers)
+            val reply = engine.prepare()
+            if (reply.startsWith("OK")) {
+                inputManagerEngine?.releaseAll()
+                inputManagerEngine = engine
+                Log.i(TAG, "privileged InputManager backend prepared")
+            } else {
+                Log.e(TAG, "privileged InputManager prepare failed: $reply")
+            }
+            reply
+        }
+
+        override fun inputManagerTouchDown(pointerId: Int, x: Float, y: Float): String =
+            inputManagerEngine?.down(pointerId, x, y) ?: "ERROR NOT_READY InputManager backend is not prepared"
+
+        override fun inputManagerTouchMove(pointerId: Int, x: Float, y: Float): String =
+            inputManagerEngine?.move(pointerId, x, y) ?: "ERROR NOT_READY InputManager backend is not prepared"
+
+        override fun inputManagerTouchUp(pointerId: Int): String =
+            inputManagerEngine?.up(pointerId) ?: "ERROR NOT_READY InputManager backend is not prepared"
+
+        override fun inputManagerKey(keyCode: Int, action: Int): String =
+            inputManagerEngine?.key(keyCode, action) ?: "ERROR NOT_READY InputManager backend is not prepared"
+
+        override fun inputManagerReleaseAll(): String = synchronized(this@RootInputService) {
+            val reply = inputManagerEngine?.releaseAll() ?: "OK"
+            inputManagerEngine = null
+            reply
+        }
+
         override fun publishState(state: String): String = synchronized(this@RootInputService) {
             rootGuard()?.let { return@synchronized it }
             if (state.length > 8192) return@synchronized "ERROR INVALID_ARGUMENT state too large"
@@ -91,7 +126,7 @@ class RootInputService : RootService() {
                 "unavailable:${it.javaClass.simpleName}"
             }
             val load = nativeLoadError?.let { "error:$it" } ?: "ok"
-            "OK uid=$uid created=$devicesCreated native=$load uinput=$uinput uhid=$uhid selinux=$selinux"
+            "OK uid=$uid created=$devicesCreated inputManager=${inputManagerEngine?.status() ?: "not-prepared"} native=$load uinput=$uinput uhid=$uhid selinux=$selinux"
         }
 
         override fun destroyDevices(): String = synchronized(this@RootInputService) {
@@ -112,6 +147,8 @@ class RootInputService : RootService() {
 
     override fun onDestroy() {
         Log.i(TAG, "RootInputService destroying; devicesCreated=$devicesCreated")
+        inputManagerEngine?.releaseAll()
+        inputManagerEngine = null
         synchronized(this) {
             if (devicesCreated) {
                 NativeUinputBridge.nativeDestroy()
