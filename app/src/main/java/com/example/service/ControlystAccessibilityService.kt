@@ -249,20 +249,30 @@ class ControlystAccessibilityService : AccessibilityService() {
                     }
 
                     val liveState = MappingRuntimeBridge.state.value
-                    if (!liveState.armed || !liveState.targetForeground || liveState.sessionId != expectedState.sessionId) {
+                    if (!liveState.armed || liveState.sessionId != expectedState.sessionId) {
                         cleanupCandidate(candidate)
                         return@execute
                     }
 
+                    // Backend preparation can take several seconds on a cold libsu/KernelSU
+                    // launch. During that time SplashActivity -> GameActivity and rotation
+                    // can transiently make targetForeground false. Do not destroy a
+                    // successfully prepared uinput backend for the still-armed session.
                     activeInjector?.let(::cleanupRuntime)
                     activeInjector = candidate
                     val notices = listOfNotNull(
                         failures.takeIf { it.isNotEmpty() }?.joinToString("; ")?.let { "Auto selected $method after: $it" },
-                        candidate.readinessDetails()
+                        candidate.readinessDetails(),
+                        if (!liveState.targetForeground) "Backend prepared; waiting for target game foreground" else null
                     )
                     MappingRuntimeBridge.setBackend(method, true, null,
                         notices.takeIf { it.isNotEmpty() }?.joinToString("; "))
-                    Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}")
+                    if (liveState.targetForeground) {
+                        cancelPendingForegroundTeardown()
+                    } else {
+                        scheduleForegroundTeardown(liveState.sessionId)
+                    }
+                    Log.i(TAG, "Mapper backend ready: $method for ${liveState.gamePackage}; targetForeground=${liveState.targetForeground}")
                     return@execute
                 }
 
@@ -443,6 +453,7 @@ class ControlystAccessibilityService : AccessibilityService() {
     }
 
     private fun isTransientSystemPackage(pkg: String): Boolean = pkg in setOf(
+        packageName,
         "android",
         "com.android.systemui",
         "com.android.permissioncontroller",
@@ -451,7 +462,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "NexusAccessibility"
-        private const val FOREGROUND_EXIT_GRACE_MS = 1_000L
+        private const val FOREGROUND_EXIT_GRACE_MS = 8_000L
 
         @Volatile
         private var currentInstance: ControlystAccessibilityService? = null
