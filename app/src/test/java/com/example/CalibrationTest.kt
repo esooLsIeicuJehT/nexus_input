@@ -55,6 +55,13 @@ class CalibrationTest {
         transport.cleanupFails = true
         assertTrue(manager.measureTouchLatency(transport).grade.contains("backend cleanup"));assertEquals(3,transport.cleaned)
     }
+    @Test fun unavailableBackendIsRecordedAsAFailureInsteadOfFakeTiming() {
+        val manager=manager()
+        val result=manager.reportLatencyUnavailable("no backend available")
+        assertEquals("FAILED: no backend available",result.grade)
+        assertEquals(result,manager.latencyResult.value)
+        assertEquals(0L,result.roundTripMs)
+    }
     @Test fun timingDoesNotPrepareOrCloseAnArmedBackend() = kotlinx.coroutines.runBlocking {
         val transport=TimingTransport()
         com.example.service.MappingRuntimeBridge.arm("com.test.game",com.example.model.MappingConfig(id="timing",profileName="Timing",gamePackage="com.test.game",buttons=listOf(com.example.model.MappingNode("a",.2f,.3f))))
