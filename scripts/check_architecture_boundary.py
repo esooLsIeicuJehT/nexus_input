@@ -31,7 +31,8 @@ def kernelsu_inputmanager_violations():
     for token in ('.touchDown(', '.touchMove(', '.touchUp(', '.create('):
         if token in client_text:
             found.append(f'KernelSU InputManager client must not call legacy uinput RPC {token}')
-    for token in ('DisplayMetrics', 'WindowManager', 'virtual touchscreen', 'KernelSU/uinput'):
+    # Check concrete stale implementation dependencies, not explanatory comments.
+    for token in ('import android.util.DisplayMetrics', 'import android.view.WindowManager', 'resolveDisplayGeometry(', 'RootUinputInjector', 'KernelSU/uinput'):
         if token in adapter_text:
             found.append(f'KernelSU app adapter retains stale uinput/geometry dependency: {token}')
     return found
