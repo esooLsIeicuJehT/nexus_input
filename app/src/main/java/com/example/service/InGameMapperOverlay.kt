@@ -50,12 +50,12 @@ class InGameMapperOverlay(private val context: Context) {
         val metrics=android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
         return metrics.widthPixels to metrics.heightPixels
     }
-    private fun safeControlInsets(): android.graphics.Insets =
+    private fun safeControlInsets(): Pair<Int,Int> =
         if (Build.VERSION.SDK_INT >= 30) {
             wm.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(
                 WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
-            )
-        } else android.graphics.Insets.NONE
+            ).let { it.top to it.bottom }
+        } else 0 to 0
 
     private fun clamp(layout: WindowManager.LayoutParams, width: Int, height: Int) {
         val (w,h)=displaySize()
@@ -176,14 +176,14 @@ class InGameMapperOverlay(private val context: Context) {
         val safeInsets=safeControlInsets()
         root.addView(scroll,FrameLayout.LayoutParams(-1,(52*density).roundToInt()).apply {
             gravity=Gravity.BOTTOM
-            bottomMargin=safeInsets.bottom
+            bottomMargin=safeInsets.second
         })
         root.addView(TextView(context).apply {
             text="Mapping paused · drag a binding over the real game · tap to select"
             setTextColor(Color.WHITE);setBackgroundColor(0xDC071827.toInt());textSize=11f
         },FrameLayout.LayoutParams(-1,(26*density).roundToInt()).apply {
             gravity=Gravity.TOP
-            topMargin=safeInsets.top
+            topMargin=safeInsets.first
         })
         try { wm.addView(root,params(-1,-1));editor=root } catch(error:Exception) { fail("In-game mapper window failed: ${error.message}",error);finishEdit(null) }
     }
