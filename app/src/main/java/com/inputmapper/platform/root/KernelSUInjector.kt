@@ -7,11 +7,9 @@ import com.inputmapper.platform.core.TimedTouchPoint
 
 class KernelSUInjector(
     context: Context,
-    width: Int,
-    height: Int,
     maxSlots: Int = 10
 ) : InputInjector {
-    private val delegate = RootUinputInjector(context, width, height, maxSlots, "KernelSU/InputManager", useInputManager = true)
+    private val delegate = RootInputManagerInjector(context, maxSlots)
     override val backendName: String get() = delegate.backendName
     fun connect(): InjectionResult = delegate.connect()
     fun readSurfaceLayers() = delegate.readSurfaceLayers()
