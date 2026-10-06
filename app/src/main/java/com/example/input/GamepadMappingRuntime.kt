@@ -116,7 +116,7 @@ class GamepadMappingRuntime(
                         try { handleSticks(sample, profile, backend) }
                         catch (error: Exception) { onError("Stick mapping failed: ${error.message}") }
                     }
-                }, 0, 8, TimeUnit.MILLISECONDS)
+                }, 8, 8, TimeUnit.MILLISECONDS)
             }
         }
     }
