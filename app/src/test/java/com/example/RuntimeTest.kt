@@ -39,7 +39,7 @@ class RuntimeTest {
             }
             val runtime=GamepadMappingRuntime({1000 to 500},{fail(it)})
             try {
-                if(sticks) runtime.handleMotionSnapshot(sample(lx=1f),config(MappingNode("ls",.2f,.7f,.12f,NodeType.JOYSTICK_ZONE,"LS")),backend)
+                if(sticks) runtime.handleMotionSnapshot(sample(rx=1f),config(MappingNode("rs",.7f,.5f,.12f,NodeType.CAMERA_DRAG,"RS")),backend)
                 else runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(MappingNode("turbo",.2f,.3f,type=NodeType.TURBO,boundKey="A",turboHz=30)),backend)
                 assertTrue(entered.await(1,java.util.concurrent.TimeUnit.SECONDS))
                 Thread.sleep(120)
@@ -123,14 +123,15 @@ class RuntimeTest {
         assertFalse(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_B),config(node),b))
         b.failDown=true;assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(node),b));r.awaitIdle()
         assertTrue(errors.any { it.contains("down failed") });assertEquals(999f,b.calls.first().third.first,0f)
-        assertEquals(31,b.calls.first().second);r.shutdown(b)
+        assertEquals(31,backend.calls.first().second);r.shutdown(b)
     }
     @Test fun persistentTouchRequirementsExcludeAccessibilityForSticksAndHold() {
         val r=GamepadMappingRuntime({1000 to 500},{})
         assertTrue(r.requiresPersistentTouch(config(MappingNode("a",.2f,.3f,boundKey="RT"))))
         assertFalse(r.requiresPersistentTouch(config(MappingNode("a",.2f,.3f,boundKey="A"))))
         r.shutdown(null)
-    }    @Test fun failedTapReleaseRetainsItsSlotForPanicRetryAndMacroCornersStayInBounds() {
+    }
+    @Test fun failedTapReleaseRetainsItsSlotForPanicRetryAndMacroCornersStayInBounds() {
         val errors=CopyOnWriteArrayList<String>();val runtime=GamepadMappingRuntime({1000 to 500},errors::add);val backend=Recording()
         val tap=MappingNode("tap",1f,1f,boundKey="A",touchSlot=31)
         backend.failUp=true;runtime.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_A),config(tap),backend)
