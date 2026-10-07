@@ -82,8 +82,10 @@ class ControlystAccessibilityService : AccessibilityService() {
             AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
             AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            info.motionEventSources = InputDevice.SOURCE_JOYSTICK or
-                InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD
+            // AccessibilityServiceInfo.motionEventSources only accepts motion-capable sources.
+            // Controller buttons are captured separately through FLAG_REQUEST_FILTER_KEY_EVENTS
+            // and ControllerSourceClassifier, which also checks the originating device's sources.
+            info.motionEventSources = InputDevice.SOURCE_JOYSTICK
         }
         serviceInfo = info
 
