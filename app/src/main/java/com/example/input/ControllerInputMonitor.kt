@@ -1,6 +1,5 @@
 package com.example.input
 
-import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,9 +45,8 @@ object ControllerInputMonitor {
         val source: Int
     )
 
-
     fun onMotionEvent(event: MotionEvent) {
-        if (!isControllerSource(event.source)) return
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
 
         val device = event.device
         val ranges = device?.motionRanges.orEmpty()
@@ -98,7 +96,7 @@ object ControllerInputMonitor {
     }
 
     fun onKeyEvent(event: KeyEvent) {
-        if (!isControllerSource(event.source)) return
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
         val identity = KeyIdentity(event.deviceId,event.eventTime,event.action,event.keyCode,event.scanCode,event.source)
         synchronized(eventLock) {
             // The foreground Activity and AccessibilityService can both observe the same
@@ -136,13 +134,6 @@ object ControllerInputMonitor {
         if(_state.value.deviceId==id) {
             _state.value=ControllerLiveState(observedEventSequence = observedEvents.incrementAndGet())
         }
-    }
-
-    private fun isControllerSource(source: Int): Boolean {
-        val gamepad = source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
-        val joystick = source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
-        val dpad = source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
-        return gamepad || joystick || dpad
     }
 }
 

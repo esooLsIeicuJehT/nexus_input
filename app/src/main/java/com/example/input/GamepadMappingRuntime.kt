@@ -65,7 +65,7 @@ class GamepadMappingRuntime(
     internal fun awaitIdle() { executor.submit {}.get(2, TimeUnit.SECONDS) }
 
     fun handleKeyEvent(event: KeyEvent, config: MappingConfig, injector: InputInjector): Boolean {
-        if (!isControllerSource(event.source)) return false
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return false
         val aliases = ControllerBindingAliases.forEvent(event)
         val nodes = config.buttons.filter { node ->
             val physicalMatches = when {
@@ -85,7 +85,7 @@ class GamepadMappingRuntime(
     }
 
     fun handleMotionEvent(event: MotionEvent, config: MappingConfig, injector: InputInjector) {
-        if (!isControllerSource(event.source)) return
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
         handleMotionSnapshot(MotionSnapshot.from(event), config, injector)
     }
 
@@ -107,18 +107,57 @@ class GamepadMappingRuntime(
             handleDigital("hat_right", hatX > 0.5f, ControllerBindingAliases.dpadRight(), config, injector)
             handleDigital("hat_up", hatY < -0.5f, ControllerBindingAliases.dpadUp(), config, injector)
             handleDigital("hat_down", hatY > 0.5f, ControllerBindingAliases.dpadDown(), config, injector)
+
             latestMotion = Triple(snapshot, config, injector)
-            if (config.buttons.any { it.type in setOf(NodeType.JOYSTICK_ZONE, NodeType.CAMERA_DRAG) } && motionTask == null) {
-                val token = generation
-                // Resume at the configured delay; never replay missed ticks in a burst.
-                motionTask = executor.scheduleWithFixedDelay({
-                    if (token == generation) latestMotion?.let { (sample, profile, backend) ->
-                        try { handleSticks(sample, profile, backend) }
-                        catch (error: Exception) { onError("Stick mapping failed: ${error.message}") }
-                    }
-                }, 8, 8, TimeUnit.MILLISECONDS)
+            val hasJoystick = config.buttons.any { it.type == NodeType.JOYSTICK_ZONE }
+            val hasCamera = config.buttons.any { it.type == NodeType.CAMERA_DRAG }
+            if (hasJoystick || hasCamera) {
+                // LS is position-based: one update per real MotionEvent is sufficient to
+                // leave the touch held at its last position. RS camera drag is velocity-
+                // based, so it keeps the 8 ms driver only while the camera stick is active.
+                val cameraActive = handleSticks(
+                    snapshot,
+                    config,
+                    injector,
+                    processJoystick = hasJoystick,
+                    processCamera = hasCamera
+                )
+                if (hasCamera && cameraActive) ensureCameraLoop()
+                else if (!cameraActive) stopCameraLoop()
             }
         }
+    }
+
+    private fun ensureCameraLoop() {
+        if (motionTask != null) return
+        val token = generation
+        motionTask = executor.scheduleWithFixedDelay({
+            if (token == generation) {
+                val current = latestMotion
+                if (current == null) {
+                    stopCameraLoop()
+                } else {
+                    val (sample, profile, backend) = current
+                    try {
+                        val active = handleSticks(
+                            sample,
+                            profile,
+                            backend,
+                            processJoystick = false,
+                            processCamera = true
+                        )
+                        if (!active) stopCameraLoop()
+                    } catch (error: Exception) {
+                        onError("Stick mapping failed: ${error.message}")
+                    }
+                }
+            }
+        }, 8, 8, TimeUnit.MILLISECONDS)
+    }
+
+    private fun stopCameraLoop() {
+        motionTask?.cancel(false)
+        motionTask = null
     }
 
     fun requiresPersistentTouch(config: MappingConfig): Boolean = config.buttons.any { node ->
@@ -134,7 +173,6 @@ class GamepadMappingRuntime(
     fun releaseAll(injector: InputInjector, timeoutMillis: Long = 1_500): Boolean {
         if (executor.isShutdown) { onError("Cannot confirm release: mapper executor is shut down"); return false }
         generation++
-        // Cancel queued macro steps, pulses, stick ticks and unprocessed controller events.
         executor.queue.toList().forEach { (it as? java.util.concurrent.Future<*>)?.cancel(false) }
         executor.purge()
         val latch = CountDownLatch(1)
@@ -144,7 +182,7 @@ class GamepadMappingRuntime(
                 executor.queue.toList().forEach { (it as? java.util.concurrent.Future<*>)?.cancel(false) }
                 executor.purge()
                 turboTasks.values.forEach { it.cancel(false) }; turboTasks.clear()
-                motionTask?.cancel(false); motionTask = null; latestMotion = null
+                stopCameraLoop(); latestMotion = null
                 activeSlots.toList().asReversed().forEach { slot ->
                     val released = runCatching { injector.endTouch(slot) }.getOrElse {
                         onError("Panic release threw for slot $slot: ${it.message}"); false
@@ -269,8 +307,8 @@ class GamepadMappingRuntime(
         turboTasks.remove(node.id)?.cancel(false)
         val slot = slotForNode(config, node) ?: return
         if (activeSlots.contains(slot)) {
-                    if (injector.endTouch(slot)) activeSlots.remove(slot) else onError("Touch release failed for slot $slot")
-                }
+            if (injector.endTouch(slot)) activeSlots.remove(slot) else onError("Touch release failed for slot $slot")
+        }
     }
 
     private fun runMacro(node: MappingNode, config: MappingConfig, injector: InputInjector) {
@@ -395,7 +433,6 @@ class GamepadMappingRuntime(
         if (previous == pressed) return
         digitalAxisState[id] = pressed
         val nodes = matchingNodes(config, aliases)
-        val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
         nodes.forEach { handleOwnedInput(id, it, pressed, config, injector) }
     }
 
@@ -408,14 +445,29 @@ class GamepadMappingRuntime(
             if (isPressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP, 0, config, injector)
     }
 
-    private fun handleSticks(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
-        val size = screenSizeProvider() ?: run { onError("Stick geometry is unavailable");return }
+    /**
+     * Applies the latest stick sample. Joystick zones are position based and are
+     * updated only for real MotionEvents. Camera drag is velocity based and may
+     * be called by the 8 ms camera loop while the right stick remains deflected.
+     * Returns true when at least one processed camera node remains active.
+     */
+    private fun handleSticks(
+        snapshot: MotionSnapshot,
+        config: MappingConfig,
+        injector: InputInjector,
+        processJoystick: Boolean,
+        processCamera: Boolean
+    ): Boolean {
+        val size = screenSizeProvider() ?: run { onError("Stick geometry is unavailable");return false }
         val width = size.first.toFloat()
         val height = size.second.toFloat()
         val minDimension = min(width, height)
-        if (width <= 0f || height <= 0f) { onError("Invalid stick screen geometry");return }
+        if (width <= 0f || height <= 0f) { onError("Invalid stick screen geometry");return false }
+        var cameraActive = false
 
         config.buttons.forEach { node ->
+            if (node.type == NodeType.JOYSTICK_ZONE && !processJoystick) return@forEach
+            if (node.type == NodeType.CAMERA_DRAG && !processCamera) return@forEach
             if (node.type != NodeType.JOYSTICK_ZONE && node.type != NodeType.CAMERA_DRAG) return@forEach
             if (injector.method == PrivilegeMethod.ACCESSIBILITY) {
                 onError("${node.label.ifBlank { node.boundKey }} requires persistent touch, which Accessibility cannot provide")
@@ -467,6 +519,7 @@ class GamepadMappingRuntime(
                     if (!injector.moveTouch(slot, tx, ty)) onError("Left-stick touch move failed")
                 }
                 NodeType.CAMERA_DRAG -> {
+                    cameraActive = true
                     if (activateSlot(slot)) {
                         if (!injector.beginTouch(slot, anchor.x, anchor.y)) {
                             activeSlots.remove(slot)
@@ -514,6 +567,7 @@ class GamepadMappingRuntime(
                 else -> Unit
             }
         }
+        return cameraActive
     }
 
     private fun normalizeStickVector(xAxis: AxisValue, yAxis: AxisValue, node: MappingNode, exponent: Float, fastTurnBoost: Float, verticalRatio: Float): Pair<Float,Float> {
@@ -563,13 +617,6 @@ class GamepadMappingRuntime(
             return null
         }
         return PointF(node.xNorm * (size.first - 1), node.yNorm * (size.second - 1))
-    }
-
-    private fun isControllerSource(source: Int): Boolean {
-        val gamepad = source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
-        val joystick = source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
-        val dpad = source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
-        return gamepad || joystick || dpad
     }
 
     internal data class AxisValue(

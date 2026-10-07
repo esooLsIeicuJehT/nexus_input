@@ -21,6 +21,7 @@ import com.example.injector.InputInjectorFactory
 import com.example.injector.PrivilegeDetector
 import com.example.input.ControllerInputMonitor
 import com.example.input.ControllerSessionDevices
+import com.example.input.ControllerSourceClassifier
 import com.example.injector.PrivilegeBackendSelector
 import com.example.input.GamepadMappingRuntime
 import com.example.model.PrivilegeMethod
@@ -81,6 +82,9 @@ class ControlystAccessibilityService : AccessibilityService() {
             AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
             AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // AccessibilityServiceInfo.motionEventSources only accepts motion-capable sources.
+            // Controller buttons are captured separately through FLAG_REQUEST_FILTER_KEY_EVENTS
+            // and ControllerSourceClassifier, which also checks the originating device's sources.
             info.motionEventSources = InputDevice.SOURCE_JOYSTICK
         }
         serviceInfo = info
@@ -137,7 +141,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         ControllerInputMonitor.onKeyEvent(event)
-        if (!isControllerSource(event.source)) return false
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return false
 
         val state = MappingRuntimeBridge.state.value
         val config = MappingRuntimeBridge.config.value
@@ -154,7 +158,7 @@ class ControlystAccessibilityService : AccessibilityService() {
 
     override fun onMotionEvent(event: MotionEvent) {
         ControllerInputMonitor.onMotionEvent(event)
-        if (!isControllerSource(event.source)) return
+        if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
 
         val state = MappingRuntimeBridge.state.value
         val config = MappingRuntimeBridge.config.value
@@ -170,9 +174,8 @@ class ControlystAccessibilityService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // Android can deliver several configuration changes while a landscape game is
-        // relaunching. Tearing down here destroys the live /dev/uinput touchscreen and
-        // stops the libsu RootService mid-transition. Keep the prepared backend for the
-        // armed session; normalized mapping coordinates continue to use current metrics.
+        // relaunching. Keep the prepared backend for the still-armed session; normalized
+        // mapping coordinates continue to use current metrics.
         Log.i(TAG, "Configuration changed; preserving active mapper backend for session " +
             MappingRuntimeBridge.state.value.sessionId)
     }
@@ -256,10 +259,10 @@ class ControlystAccessibilityService : AccessibilityService() {
                         return@execute
                     }
 
-                    // Backend preparation can take several seconds on a cold libsu/KernelSU
-                    // launch. During that time SplashActivity -> GameActivity and rotation
-                    // can transiently make targetForeground false. Do not destroy a
-                    // successfully prepared uinput backend for the still-armed session.
+                    // Backend preparation can take several seconds on a cold privileged
+                    // launch. During SplashActivity -> GameActivity and rotation,
+                    // targetForeground may wobble briefly. Keep the prepared backend for
+                    // the still-armed session instead of forcing a reconnect mid-launch.
                     activeInjector?.let(::cleanupRuntime)
                     activeInjector = candidate
                     val notices = listOfNotNull(
@@ -445,13 +448,6 @@ class ControlystAccessibilityService : AccessibilityService() {
             wm.defaultDisplay.getRealMetrics(metrics)
             if (metrics.widthPixels > 0 && metrics.heightPixels > 0) metrics.widthPixels to metrics.heightPixels else null
         }
-    }
-
-    private fun isControllerSource(source: Int): Boolean {
-        val gamepad = source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD
-        val joystick = source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
-        val dpad = source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
-        return gamepad || joystick || dpad
     }
 
     private fun isTransientSystemPackage(pkg: String): Boolean = pkg in setOf(
