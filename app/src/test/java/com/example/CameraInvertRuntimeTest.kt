@@ -36,6 +36,7 @@ class CameraInvertRuntimeTest {
     }
 
     private fun axis(value: Float) = GamepadMappingRuntime.AxisValue(value, -1f, 1f, 0f)
+    private fun trigger(value: Float) = GamepadMappingRuntime.AxisValue(value, 0f, 1f, 0f)
 
     private fun firstCameraMove(invertY: Boolean): PointF {
         val runtime = GamepadMappingRuntime({ 1000 to 500 }) { error(it) }
@@ -65,12 +66,12 @@ class CameraInvertRuntimeTest {
             )
         )
         val snapshot = GamepadMappingRuntime.MotionSnapshot(
-            lx = axis(0f),
-            ly = axis(0f),
-            rx = axis(0f),
-            ry = axis(.8f),
-            lt = GamepadMappingRuntime.AxisValue(0f, 0f, 1f, 0f),
-            rt = GamepadMappingRuntime.AxisValue(0f, 0f, 1f, 0f),
+            leftX = axis(0f),
+            leftY = axis(0f),
+            rightX = axis(0f),
+            rightY = axis(.8f),
+            leftTrigger = trigger(0f),
+            rightTrigger = trigger(0f),
             hatX = axis(0f),
             hatY = axis(0f)
         )
@@ -90,7 +91,9 @@ class CameraInvertRuntimeTest {
         val normal = firstCameraMove(invertY = false)
         val inverted = firstCameraMove(invertY = true)
         val anchorY = .5f * 499f
-        assertTrue("Normal and inverted camera motion must land on opposite sides of the anchor",
-            (normal.y - anchorY) * (inverted.y - anchorY) < 0f)
+        assertTrue(
+            "Normal and inverted camera motion must land on opposite sides of the anchor",
+            (normal.y - anchorY) * (inverted.y - anchorY) < 0f
+        )
     }
 }
