@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.input.ControllerBindingAliases
 import com.example.model.*
@@ -26,13 +28,21 @@ import com.example.ui.MainAppViewModel
 import com.example.ui.theme.*
 import kotlin.math.hypot
 
-/** Portrait and landscape editor over an actual imported/captured screenshot. */
+/**
+ * NEXUS screenshot mapper.
+ *
+ * The mapper edits the real saved profile. No preview-only state is used for bindings,
+ * stick tuning, trigger thresholds, sizing, or camera inversion.
+ */
 @Composable
 fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     val config by viewModel.activeConfig.collectAsState()
     val screenshot by viewModel.screenshot.collectAsState()
     val candidates by viewModel.aiHudCandidates.collectAsState()
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(viewModel::importScreenshot) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
+        it?.let(viewModel::importScreenshot)
+    }
+
     var selected by remember(config.id) { mutableStateOf<String?>(null) }
     var showBinding by remember { mutableStateOf(false) }
     var binding by remember { mutableStateOf("A") }
@@ -40,143 +50,840 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var turbo by remember { mutableStateOf(false) }
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
-    val currentConfig by rememberUpdatedState(config)
-    val node=config.buttons.firstOrNull { it.id==selected }
-    val density=LocalDensity.current
 
-    Column(Modifier.fillMaxSize().background(GraphiteFoundation)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),verticalAlignment=Alignment.CenterVertically) {
-            TextButton(onClick={ picker.launch(arrayOf("image/*")) }) { Text("Import screenshot") }
-            TextButton(onClick=viewModel::captureScreenshot) { Text("Capture screen") }
-            TextButton(onClick=viewModel::runAiHudScan,enabled=screenshot!=null) { Text("Find regions") }
-            TextButton(onClick={ binding="A";behavior=ButtonBehavior.TAP;turbo=false;selected=null;showBinding=true },enabled=config.gamePackage.isNotBlank()) { Text("Add input") }
-            TextButton(onClick={ snap=!snap }) { Text(if(snap) "Grid on" else "Grid off") }
-            TextButton(onClick={ viewModel.selectTab("macro") },enabled=config.gamePackage.isNotBlank()) { Text("Macro") }
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).background(Color(0xFF070B14))) {
-            val ratio=screenshot?.let { it.width.toFloat()/it.height } ?: 16f/9f
-            val frameWidth=minOf(maxWidth,maxHeight*ratio)
-            val frameHeight=frameWidth/ratio
-            Box(Modifier.size(frameWidth,frameHeight).align(Alignment.Center).border(1.dp,DarkSurfaceBorder)) {
-                screenshot?.let { Image(it.asImageBitmap(),"Real game screenshot",Modifier.fillMaxSize(),contentScale=ContentScale.FillBounds) }
-                if(screenshot==null) Text("Import a game screenshot, capture a screen, or place inputs manually",color=TextMuted,modifier=Modifier.align(Alignment.Center).padding(16.dp))
-                Canvas(Modifier.fillMaxSize()
-                    .pointerInput(config.id) {
-                        detectTapGestures { point ->
-                            selected=currentConfig.buttons.minByOrNull { hypot(it.xNorm*(size.width-1)-point.x,it.yNorm*(size.height-1)-point.y) }
-                                ?.takeIf { hypot(it.xNorm*(size.width-1)-point.x,it.yNorm*(size.height-1)-point.y)<32*density.density }?.id
-                        }
+    val currentConfig by rememberUpdatedState(config)
+    val node = config.buttons.firstOrNull { it.id == selected }
+    val density = LocalDensity.current
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        GraphiteFoundation,
+                        Color(0xFF020812),
+                        Color(0xFF050816)
+                    )
+                )
+            )
+    ) {
+        NexusMapperHeader(
+            profileName = config.profileName,
+            gameTitle = config.gameTitle.ifBlank { config.gamePackage.ifBlank { "NO GAME SELECTED" } },
+            nodeCount = config.buttons.size,
+            hasScreenshot = screenshot != null,
+            gridEnabled = snap,
+            invertedY = config.camera.invertY,
+            onImport = { picker.launch(arrayOf("image/*")) },
+            onCapture = viewModel::captureScreenshot,
+            onFindRegions = viewModel::runAiHudScan,
+            onAddInput = {
+                binding = "A"
+                behavior = ButtonBehavior.TAP
+                turbo = false
+                selected = null
+                showBinding = true
+            },
+            onToggleGrid = { snap = !snap },
+            onMacro = { viewModel.selectTab("macro") },
+            onToggleInvertY = {
+                viewModel.updateActiveConfig(
+                    config.copy(camera = config.camera.copy(invertY = !config.camera.invertY))
+                )
+            },
+            canEdit = config.gamePackage.isNotBlank(),
+            canScan = screenshot != null
+        )
+
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            val ratio = screenshot?.let { it.width.toFloat() / it.height } ?: 16f / 9f
+            val frameWidth = minOf(maxWidth, maxHeight * ratio)
+            val frameHeight = frameWidth / ratio
+            val frameShape = RoundedCornerShape(18.dp)
+
+            Box(
+                Modifier
+                    .size(frameWidth, frameHeight)
+                    .align(Alignment.Center)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                NexusViolet.copy(alpha = .78f),
+                                NexusCyan.copy(alpha = .86f),
+                                Color(0xFF246BFF).copy(alpha = .72f)
+                            )
+                        ),
+                        frameShape
+                    )
+                    .padding(1.dp)
+                    .background(Color(0xFF040914), frameShape)
+                    .padding(3.dp)
+                    .border(1.dp, DarkSurfaceBorder, RoundedCornerShape(15.dp))
+            ) {
+                screenshot?.let {
+                    Image(
+                        it.asImageBitmap(),
+                        "Real game screenshot",
+                        Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds
+                    )
+                }
+
+                if (screenshot == null) {
+                    Column(
+                        Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "NEXUS MAPPING CANVAS",
+                            color = NexusCyan,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Import a screenshot, capture the game, or place controls manually.",
+                            color = TextMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
-                    .pointerInput(config.id,snap) {
-                        detectDragGestures(onDragStart={ point ->
-                            selected=currentConfig.buttons.minByOrNull { hypot(it.xNorm*(size.width-1)-point.x,it.yNorm*(size.height-1)-point.y) }
-                                ?.takeIf { hypot(it.xNorm*(size.width-1)-point.x,it.yNorm*(size.height-1)-point.y)<32*density.density }?.id
-                            drag=selected?.let { id -> currentConfig.buttons.first { it.id==id }.let { Offset(it.xNorm,it.yNorm) } }
-                        },onDragEnd={
-                            val position=drag
-                            currentConfig.buttons.firstOrNull { it.id==selected }?.let { target ->
-                                if(position!=null) viewModel.updateNode(target.copy(xNorm=position.x,yNorm=position.y))
-                            };drag=null
-                        },onDragCancel={drag=null}) { change,amount ->
-                            change.consume();drag=drag?.let {
-                                var x=(it.x+amount.x/(size.width-1)).coerceIn(0f,1f)
-                                var y=(it.y+amount.y/(size.height-1)).coerceIn(0f,1f)
-                                if(snap) { x=kotlin.math.round(x*20)/20;y=kotlin.math.round(y*20)/20 }
-                                Offset(x,y)
+                }
+
+                Canvas(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(config.id) {
+                            detectTapGestures { point ->
+                                selected = currentConfig.buttons.minByOrNull {
+                                    hypot(
+                                        it.xNorm * (size.width - 1) - point.x,
+                                        it.yNorm * (size.height - 1) - point.y
+                                    )
+                                }?.takeIf {
+                                    hypot(
+                                        it.xNorm * (size.width - 1) - point.x,
+                                        it.yNorm * (size.height - 1) - point.y
+                                    ) < 32 * density.density
+                                }?.id
                             }
                         }
-                    }) {
-                    if(snap) for(i in 1..19) {
-                        drawLine(NexusCyan.copy(alpha=.15f),Offset(size.width*i/20,0f),Offset(size.width*i/20,size.height))
-                        drawLine(NexusCyan.copy(alpha=.15f),Offset(0f,size.height*i/20),Offset(size.width,size.height*i/20))
+                        .pointerInput(config.id, snap) {
+                            detectDragGestures(
+                                onDragStart = { point ->
+                                    selected = currentConfig.buttons.minByOrNull {
+                                        hypot(
+                                            it.xNorm * (size.width - 1) - point.x,
+                                            it.yNorm * (size.height - 1) - point.y
+                                        )
+                                    }?.takeIf {
+                                        hypot(
+                                            it.xNorm * (size.width - 1) - point.x,
+                                            it.yNorm * (size.height - 1) - point.y
+                                        ) < 32 * density.density
+                                    }?.id
+                                    drag = selected?.let { id ->
+                                        currentConfig.buttons.first { it.id == id }.let {
+                                            Offset(it.xNorm, it.yNorm)
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    val position = drag
+                                    currentConfig.buttons.firstOrNull { it.id == selected }?.let { target ->
+                                        if (position != null) {
+                                            viewModel.updateNode(
+                                                target.copy(xNorm = position.x, yNorm = position.y)
+                                            )
+                                        }
+                                    }
+                                    drag = null
+                                },
+                                onDragCancel = { drag = null }
+                            ) { change, amount ->
+                                change.consume()
+                                drag = drag?.let {
+                                    var x = (it.x + amount.x / (size.width - 1)).coerceIn(0f, 1f)
+                                    var y = (it.y + amount.y / (size.height - 1)).coerceIn(0f, 1f)
+                                    if (snap) {
+                                        x = kotlin.math.round(x * 20) / 20
+                                        y = kotlin.math.round(y * 20) / 20
+                                    }
+                                    Offset(x, y)
+                                }
+                            }
+                        }
+                ) {
+                    if (snap) {
+                        for (i in 1..19) {
+                            drawLine(
+                                NexusCyan.copy(alpha = .12f),
+                                Offset(size.width * i / 20, 0f),
+                                Offset(size.width * i / 20, size.height)
+                            )
+                            drawLine(
+                                NexusCyan.copy(alpha = .12f),
+                                Offset(0f, size.height * i / 20),
+                                Offset(size.width, size.height * i / 20)
+                            )
+                        }
                     }
-                    val textPaint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color=android.graphics.Color.WHITE;textSize=12*density.density;textAlign=android.graphics.Paint.Align.CENTER }
+
+                    val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color = android.graphics.Color.WHITE
+                        textSize = 12 * density.density
+                        textAlign = android.graphics.Paint.Align.CENTER
+                        isFakeBoldText = true
+                    }
+
                     config.buttons.forEach { item ->
-                        val norm=if(item.id==selected) drag ?: Offset(item.xNorm,item.yNorm) else Offset(item.xNorm,item.yNorm)
-                        val center=Offset(norm.x*(size.width-1),norm.y*(size.height-1))
-                        val radius=maxOf(18*density.density,item.radiusNorm*minOf(size.width,size.height))
-                        drawCircle(NexusViolet.copy(alpha=.4f),radius,center)
-                        drawCircle(if(item.id==selected) Color.White else NexusCyan,radius,center,style=Stroke(2*density.density))
-                        drawContext.canvas.nativeCanvas.drawText(item.boundKey,center.x,center.y+4*density.density,textPaint)
+                        val norm = if (item.id == selected) {
+                            drag ?: Offset(item.xNorm, item.yNorm)
+                        } else {
+                            Offset(item.xNorm, item.yNorm)
+                        }
+                        val center = Offset(norm.x * (size.width - 1), norm.y * (size.height - 1))
+                        val radius = maxOf(
+                            18 * density.density,
+                            item.radiusNorm * minOf(size.width, size.height)
+                        )
+                        val selectedNow = item.id == selected
+
+                        drawCircle(
+                            if (selectedNow) NexusViolet.copy(alpha = .42f) else Color(0xFF071B2A).copy(alpha = .58f),
+                            radius + if (selectedNow) 5 * density.density else 2 * density.density,
+                            center
+                        )
+                        drawCircle(
+                            if (selectedNow) Color.White else NexusCyan,
+                            radius,
+                            center,
+                            style = Stroke(if (selectedNow) 3 * density.density else 2 * density.density)
+                        )
+                        if (selectedNow) {
+                            drawCircle(
+                                NexusCyan.copy(alpha = .34f),
+                                radius + 7 * density.density,
+                                center,
+                                style = Stroke(1 * density.density)
+                            )
+                        }
+                        drawContext.canvas.nativeCanvas.drawText(
+                            item.boundKey,
+                            center.x,
+                            center.y + 4 * density.density,
+                            textPaint
+                        )
+                    }
+                }
+
+                Row(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    MapperPill(if (snap) "GRID 5%" else "FREE MOVE", snap)
+                    MapperPill("${config.buttons.size} INPUTS", true)
+                }
+
+                if (config.camera.invertY) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                        MapperPill("RS Y INVERTED", true, accent = NexusViolet)
                     }
                 }
             }
         }
-        if(node!=null) {
-            Column(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(4.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Text("${node.boundKey} · ${node.type} · ${node.buttonBehavior}",color=TextPrimary)
-                    TextButton(onClick={binding=node.boundKey;behavior=node.buttonBehavior;turbo=node.type==NodeType.TURBO;showBinding=true}) { Text("Rebind") }
-                    TextButton(onClick={viewModel.removeNode(node.id);selected=null}) { Text("Delete") }
-                    TextButton(onClick={viewModel.updateNode(node.copy(radiusNorm=(node.radiusNorm-.01f).coerceAtLeast(.02f)))}) { Text("− Size") }
-                    Text("${(node.radiusNorm*100).toInt()}%",color=TextSecondary)
-                    TextButton(onClick={viewModel.updateNode(node.copy(radiusNorm=(node.radiusNorm+.01f).coerceAtMost(.3f)))}) { Text("+ Size") }
-                    Slider(value=node.radiusNorm,onValueChange={viewModel.updateNode(node.copy(radiusNorm=it))},valueRange=.02f.. .3f,modifier=Modifier.width(140.dp))
-                }
-                if(node.type==NodeType.JOYSTICK_ZONE) {
-                    Text("Walk / run tuning",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text("Walk ${(config.joystick.walkRadiusScale*100).toInt()}%",color=TextMuted)
-                        Slider(config.joystick.walkRadiusScale,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(walkRadiusScale=value))) },valueRange=.1f.. .95f,modifier=Modifier.width(130.dp))
-                        Text("Run ${(config.joystick.runRadiusScale*100).toInt()}%",color=TextMuted)
-                        Slider(config.joystick.runRadiusScale,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(runRadiusScale=value))) },valueRange=.2f..1.5f,modifier=Modifier.width(130.dp))
-                        Text("Run at ${(config.joystick.runThresholdNorm*100).toInt()}%",color=TextMuted)
-                        Slider(config.joystick.runThresholdNorm,{ value -> viewModel.updateActiveConfig(config.copy(joystick=config.joystick.copy(runThresholdNorm=value))) },valueRange=.05f.. .99f,modifier=Modifier.width(130.dp))
-                    }
-                }
-                if(node.type==NodeType.CAMERA_DRAG) {
-                    Text("Right-stick camera",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text("H ${"%.2f".format(config.camera.horizontalSensitivity)}",color=TextMuted)
-                        Slider(config.camera.horizontalSensitivity,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(horizontalSensitivity=value))) },valueRange=.1f..3f,modifier=Modifier.width(130.dp))
-                        Text("V ${"%.2f".format(config.camera.verticalSensitivity)}",color=TextMuted)
-                        Slider(config.camera.verticalSensitivity,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(verticalSensitivity=value))) },valueRange=.1f..3f,modifier=Modifier.width(130.dp))
-                        Text("Smooth ${config.camera.smoothingFrames}",color=TextMuted)
-                        Slider(config.camera.smoothingFrames.toFloat(),{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(smoothingFrames=value.toInt().coerceIn(1,12)))) },valueRange=1f..12f,steps=10,modifier=Modifier.width(130.dp))
-                        Text("Fast turn ${"%.2f".format(config.camera.fastTurnBoost)}x",color=TextMuted)
-                        Slider(config.camera.fastTurnBoost,{ value -> viewModel.updateActiveConfig(config.copy(camera=config.camera.copy(fastTurnBoost=value))) },valueRange=1f..3f,modifier=Modifier.width(130.dp))
-                    }
-                }
-                if(ControllerBindingAliases.canonical(node.boundKey) in setOf("LT","RT")) {
-                    Text("Trigger hysteresis",color=TextSecondary,modifier=Modifier.padding(horizontal=8.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text("Press ${"%.2f".format(node.triggerPressThreshold)}",color=TextMuted)
-                        Slider(node.triggerPressThreshold,{ value ->
-                            val release=node.triggerReleaseThreshold.coerceAtMost(value-.05f)
-                            viewModel.updateNode(node.copy(triggerPressThreshold=value,triggerReleaseThreshold=release))
-                        },valueRange=.1f..1f,modifier=Modifier.width(140.dp))
-                        Text("Release ${"%.2f".format(node.triggerReleaseThreshold)}",color=TextMuted)
-                        Slider(node.triggerReleaseThreshold,{ value ->
-                            viewModel.updateNode(node.copy(triggerReleaseThreshold=value.coerceAtMost(node.triggerPressThreshold-.05f)))
-                        },valueRange=0f.. .9f,modifier=Modifier.width(140.dp))
-                    }
-                }
-            }
+
+        if (node != null) {
+            SelectedControlInspector(
+                config = config,
+                node = node,
+                onRebind = {
+                    binding = node.boundKey
+                    behavior = node.buttonBehavior
+                    turbo = node.type == NodeType.TURBO
+                    showBinding = true
+                },
+                onDelete = {
+                    viewModel.removeNode(node.id)
+                    selected = null
+                },
+                onResize = { newRadius ->
+                    viewModel.updateNode(node.copy(radiusNorm = newRadius.coerceIn(.02f, .30f)))
+                },
+                onUpdateJoystick = { settings ->
+                    viewModel.updateActiveConfig(config.copy(joystick = settings))
+                },
+                onUpdateCamera = { settings ->
+                    viewModel.updateActiveConfig(config.copy(camera = settings))
+                },
+                onUpdateNode = viewModel::updateNode
+            )
+        } else {
+            NexusHintBar(
+                "Tap a mapped control to edit it. Drag directly on the screenshot to reposition it."
+            )
         }
-        Text("Changes save to the selected game profile. Global stick capture requires Android 14+. Live testing is available over the game through the floating mapper.",color=TextMuted,modifier=Modifier.padding(8.dp),style=MaterialTheme.typography.bodySmall)
     }
-    if(showBinding) AlertDialog(onDismissRequest={showBinding=false},title={Text(if(selected==null) "Add physical input" else "Rebind input")},text={
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            ControllerBindingAliases.supported.sorted().chunked(4).forEach { keys -> Row { keys.forEach { key ->
-                FilterChip(selected=binding==key,onClick={binding=key;behavior=if(key in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP},label={Text(key)})
-            } } }
-            if(binding !in setOf("LS","RS") && node?.type!=NodeType.MACRO) Row { Text("Turbo repeat (${node?.turboHz ?: 10} Hz)");Switch(turbo,{turbo=it}) }
-            Row { ButtonBehavior.entries.forEach { value -> FilterChip(selected=behavior==value,onClick={behavior=value},label={Text(value.name)}) } }
-        }
-    },confirmButton={TextButton(onClick={
-        val type=when(binding) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> if(node?.type==NodeType.MACRO) NodeType.MACRO else if(turbo) NodeType.TURBO else NodeType.BUTTON }
-        val updated=node?.copy(boundKey=binding,type=type,buttonBehavior=behavior,inputKeyCode=null,inputScanCode=null,axisX=null,axisY=null)
-            ?: MappingNode(java.util.UUID.randomUUID().toString(),.5f,.5f,radiusNorm=if(type==NodeType.BUTTON) .05f else .12f,type=type,boundKey=binding,buttonBehavior=behavior)
-        if(node==null) viewModel.addNode(updated) else viewModel.updateNode(updated)
-        selected=updated.id;showBinding=false
-    }) { Text("Save input") }},dismissButton={TextButton(onClick={showBinding=false}) { Text("Cancel") }})
-    if(candidates.isNotEmpty()) AlertDialog(onDismissRequest=viewModel::dismissAiHudCandidates,title={Text("Review image contrast regions")},text={
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("These regions may be scenery. Assign an input only to regions you recognize as controls.")
-            candidates.forEach { candidate ->
-                Text("${(candidate.xNorm*100).toInt()}%, ${(candidate.yNorm*100).toInt()}% · edge coverage ${(candidate.confidence*100).toInt()}%")
-                OutlinedTextField(candidate.recommendedKey,{viewModel.assignHudCandidateInput(candidate.id,it)},label={Text("Physical input, e.g. A, RT, LS")},singleLine=true)
+
+    if (showBinding) {
+        AlertDialog(
+            onDismissRequest = { showBinding = false },
+            containerColor = Color(0xFF07111D),
+            title = {
+                Text(
+                    if (selected == null) "ADD PHYSICAL INPUT" else "REBIND INPUT",
+                    color = NexusCyan,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Choose the controller input that will drive this touch target.",
+                        color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    ControllerBindingAliases.supported.sorted().chunked(4).forEach { keys ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            keys.forEach { key ->
+                                FilterChip(
+                                    selected = binding == key,
+                                    onClick = {
+                                        binding = key
+                                        behavior = if (key in setOf("LT", "RT")) {
+                                            ButtonBehavior.HOLD
+                                        } else {
+                                            ButtonBehavior.TAP
+                                        }
+                                    },
+                                    label = { Text(key) }
+                                )
+                            }
+                        }
+                    }
+                    if (binding !in setOf("LS", "RS") && node?.type != NodeType.MACRO) {
+                        MapperToggleRow(
+                            label = "Turbo repeat",
+                            detail = "${node?.turboHz ?: 10} Hz",
+                            checked = turbo,
+                            onCheckedChange = { turbo = it }
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ButtonBehavior.entries.forEach { value ->
+                            FilterChip(
+                                selected = behavior == value,
+                                onClick = { behavior = value },
+                                label = { Text(value.name) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val type = when (binding) {
+                        "LS" -> NodeType.JOYSTICK_ZONE
+                        "RS" -> NodeType.CAMERA_DRAG
+                        else -> if (node?.type == NodeType.MACRO) {
+                            NodeType.MACRO
+                        } else if (turbo) {
+                            NodeType.TURBO
+                        } else {
+                            NodeType.BUTTON
+                        }
+                    }
+                    val updated = node?.copy(
+                        boundKey = binding,
+                        type = type,
+                        buttonBehavior = behavior,
+                        inputKeyCode = null,
+                        inputScanCode = null,
+                        axisX = null,
+                        axisY = null
+                    ) ?: MappingNode(
+                        java.util.UUID.randomUUID().toString(),
+                        .5f,
+                        .5f,
+                        radiusNorm = if (type == NodeType.BUTTON) .05f else .12f,
+                        type = type,
+                        boundKey = binding,
+                        buttonBehavior = behavior
+                    )
+                    if (node == null) viewModel.addNode(updated) else viewModel.updateNode(updated)
+                    selected = updated.id
+                    showBinding = false
+                }) {
+                    Text("SAVE INPUT", color = NexusCyan)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBinding = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (candidates.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAiHudCandidates,
+            containerColor = Color(0xFF07111D),
+            title = { Text("REVIEW DETECTED REGIONS", color = NexusCyan) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "These are image-contrast candidates, not guaranteed controls. Assign only regions you recognize.",
+                        color = TextMuted
+                    )
+                    candidates.forEach { candidate ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "${(candidate.xNorm * 100).toInt()}%, ${(candidate.yNorm * 100).toInt()}% · edge ${(candidate.confidence * 100).toInt()}%",
+                            color = TextSecondary
+                        )
+                        OutlinedTextField(
+                            candidate.recommendedKey,
+                            { viewModel.assignHudCandidateInput(candidate.id, it) },
+                            label = { Text("Physical input, e.g. A, RT, LS") },
+                            singleLine = true
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmAiHudCandidates(candidates) }) {
+                    Text("APPLY ASSIGNED", color = NexusCyan)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAiHudCandidates) { Text("Discard") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun NexusMapperHeader(
+    profileName: String,
+    gameTitle: String,
+    nodeCount: Int,
+    hasScreenshot: Boolean,
+    gridEnabled: Boolean,
+    invertedY: Boolean,
+    onImport: () -> Unit,
+    onCapture: () -> Unit,
+    onFindRegions: () -> Unit,
+    onAddInput: () -> Unit,
+    onToggleGrid: () -> Unit,
+    onMacro: () -> Unit,
+    onToggleInvertY: () -> Unit,
+    canEdit: Boolean,
+    canScan: Boolean
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(Color(0xFF07111D), Color(0xFF091329), Color(0xFF07111D))
+                ),
+                shape
+            )
+            .border(1.dp, DarkSurfaceBorder, shape)
+            .padding(10.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "NEXUS MAPPER",
+                    color = NexusCyan,
+                    fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    "$profileName  •  $gameTitle",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MapperPill("$nodeCount MAPS", true)
+                MapperPill(if (hasScreenshot) "HUD READY" else "NO HUD", hasScreenshot)
+                MapperPill(if (invertedY) "RS Y INV" else "RS Y NORMAL", invertedY, accent = NexusViolet)
             }
         }
-    },confirmButton={TextButton(onClick={viewModel.confirmAiHudCandidates(candidates)}) { Text("Apply assigned regions") }},dismissButton={TextButton(onClick=viewModel::dismissAiHudCandidates) { Text("Discard") }})
+
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MapperActionButton("IMPORT HUD", onImport)
+            MapperActionButton("CAPTURE", onCapture)
+            MapperActionButton("SCAN", onFindRegions, canScan)
+            MapperActionButton("+ INPUT", onAddInput, canEdit, strong = true)
+            MapperActionButton(if (gridEnabled) "GRID ON" else "GRID OFF", onToggleGrid)
+            MapperActionButton("MACROS", onMacro, canEdit)
+            MapperActionButton(
+                if (invertedY) "RS Y: INVERTED" else "RS Y: NORMAL",
+                onToggleInvertY,
+                canEdit,
+                strong = invertedY
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectedControlInspector(
+    config: MappingConfig,
+    node: MappingNode,
+    onRebind: () -> Unit,
+    onDelete: () -> Unit,
+    onResize: (Float) -> Unit,
+    onUpdateJoystick: (JoystickSettings) -> Unit,
+    onUpdateCamera: (CameraSettings) -> Unit,
+    onUpdateNode: (MappingNode) -> Unit
+) {
+    val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(listOf(Color(0xFF091422), Color(0xFF050B14))),
+                shape
+            )
+            .border(1.dp, DarkSurfaceBorder, shape)
+            .padding(10.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    "SELECTED  •  ${node.boundKey}",
+                    color = NexusCyan,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    "${node.type}  •  ${node.buttonBehavior}",
+                    color = TextMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                MapperActionButton("REBIND", onRebind)
+                MapperActionButton("DELETE", onDelete)
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Text("TOUCH TARGET SIZE", color = TextSecondary, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SmallSquareButton("−") { onResize(node.radiusNorm - .01f) }
+            Text("${(node.radiusNorm * 100).toInt()}%", color = TextPrimary, fontWeight = FontWeight.Bold)
+            Slider(
+                value = node.radiusNorm,
+                onValueChange = onResize,
+                valueRange = .02f.. .30f,
+                modifier = Modifier.weight(1f)
+            )
+            SmallSquareButton("+") { onResize(node.radiusNorm + .01f) }
+        }
+
+        if (node.type == NodeType.JOYSTICK_ZONE) {
+            InspectorSectionTitle("LEFT STICK  •  WALK / RUN")
+            LabeledMapperSlider(
+                "Walk radius",
+                config.joystick.walkRadiusScale,
+                .10f.. .95f,
+                "${(config.joystick.walkRadiusScale * 100).toInt()}%"
+            ) {
+                onUpdateJoystick(config.joystick.copy(walkRadiusScale = it))
+            }
+            LabeledMapperSlider(
+                "Run radius",
+                config.joystick.runRadiusScale,
+                .20f..1.50f,
+                "${(config.joystick.runRadiusScale * 100).toInt()}%"
+            ) {
+                onUpdateJoystick(config.joystick.copy(runRadiusScale = it))
+            }
+            LabeledMapperSlider(
+                "Run threshold",
+                config.joystick.runThresholdNorm,
+                .05f.. .99f,
+                "${(config.joystick.runThresholdNorm * 100).toInt()}%"
+            ) {
+                onUpdateJoystick(config.joystick.copy(runThresholdNorm = it))
+            }
+        }
+
+        if (node.type == NodeType.CAMERA_DRAG) {
+            InspectorSectionTitle("RIGHT STICK  •  CAMERA")
+            MapperToggleRow(
+                label = "Invert vertical aim",
+                detail = if (config.camera.invertY) "UP = DOWN  •  DOWN = UP" else "UP = UP  •  DOWN = DOWN",
+                checked = config.camera.invertY,
+                onCheckedChange = { enabled ->
+                    onUpdateCamera(config.camera.copy(invertY = enabled))
+                }
+            )
+            LabeledMapperSlider(
+                "Horizontal sensitivity",
+                config.camera.horizontalSensitivity,
+                .10f..3f,
+                "%.2f".format(config.camera.horizontalSensitivity)
+            ) {
+                onUpdateCamera(config.camera.copy(horizontalSensitivity = it))
+            }
+            LabeledMapperSlider(
+                "Vertical sensitivity",
+                config.camera.verticalSensitivity,
+                .10f..3f,
+                "%.2f".format(config.camera.verticalSensitivity)
+            ) {
+                onUpdateCamera(config.camera.copy(verticalSensitivity = it))
+            }
+            LabeledMapperSlider(
+                "Smoothing",
+                config.camera.smoothingFrames.toFloat(),
+                1f..12f,
+                "${config.camera.smoothingFrames} frames",
+                steps = 10
+            ) {
+                onUpdateCamera(config.camera.copy(smoothingFrames = it.toInt().coerceIn(1, 12)))
+            }
+            LabeledMapperSlider(
+                "Fast turn boost",
+                config.camera.fastTurnBoost,
+                1f..3f,
+                "%.2fx".format(config.camera.fastTurnBoost)
+            ) {
+                onUpdateCamera(config.camera.copy(fastTurnBoost = it))
+            }
+        }
+
+        if (ControllerBindingAliases.canonical(node.boundKey) in setOf("LT", "RT")) {
+            InspectorSectionTitle("TRIGGER HYSTERESIS")
+            LabeledMapperSlider(
+                "Press threshold",
+                node.triggerPressThreshold,
+                .10f..1f,
+                "%.2f".format(node.triggerPressThreshold)
+            ) { value ->
+                val release = node.triggerReleaseThreshold.coerceAtMost(value - .05f)
+                onUpdateNode(
+                    node.copy(
+                        triggerPressThreshold = value,
+                        triggerReleaseThreshold = release
+                    )
+                )
+            }
+            LabeledMapperSlider(
+                "Release threshold",
+                node.triggerReleaseThreshold,
+                0f.. .90f,
+                "%.2f".format(node.triggerReleaseThreshold)
+            ) { value ->
+                onUpdateNode(
+                    node.copy(
+                        triggerReleaseThreshold = value.coerceAtMost(node.triggerPressThreshold - .05f)
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapperActionButton(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    strong: Boolean = false
+) {
+    val shape = RoundedCornerShape(9.dp)
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .background(
+                if (strong) NexusCyan.copy(alpha = .12f) else Color(0xFF0A1927),
+                shape
+            )
+            .border(
+                1.dp,
+                if (strong) NexusCyan.copy(alpha = .70f) else DarkSurfaceBorder,
+                shape
+            ),
+        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text,
+            color = when {
+                !enabled -> TextMuted.copy(alpha = .45f)
+                strong -> NexusCyan
+                else -> TextSecondary
+            },
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
+private fun SmallSquareButton(text: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(38.dp)
+            .background(Color(0xFF0A1927), shape)
+            .border(1.dp, NexusCyan.copy(alpha = .46f), shape),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Text(text, color = NexusCyan, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun MapperPill(
+    text: String,
+    active: Boolean,
+    accent: Color = NexusCyan
+) {
+    val shape = RoundedCornerShape(50)
+    Box(
+        Modifier
+            .background(
+                if (active) accent.copy(alpha = .12f) else Color(0xFF09121D),
+                shape
+            )
+            .border(
+                1.dp,
+                if (active) accent.copy(alpha = .56f) else DarkSurfaceBorder,
+                shape
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text,
+            color = if (active) accent else TextMuted,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun InspectorSectionTitle(text: String) {
+    Spacer(Modifier.height(10.dp))
+    Text(
+        text,
+        color = NexusViolet,
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelLarge
+    )
+    Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun LabeledMapperSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    displayValue: String,
+    steps: Int = 0,
+    onValueChange: (Float) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            Text(displayValue, color = NexusCyan, style = MaterialTheme.typography.bodySmall)
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = range,
+            steps = steps,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun MapperToggleRow(
+    label: String,
+    detail: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .background(
+                if (checked) NexusViolet.copy(alpha = .10f) else Color(0xFF07111D),
+                shape
+            )
+            .border(
+                1.dp,
+                if (checked) NexusViolet.copy(alpha = .50f) else DarkSurfaceBorder,
+                shape
+            )
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun NexusHintBar(text: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF06101A))
+            .border(BorderStroke(1.dp, DarkSurfaceBorder))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("NEXUS", color = NexusCyan, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+    }
 }

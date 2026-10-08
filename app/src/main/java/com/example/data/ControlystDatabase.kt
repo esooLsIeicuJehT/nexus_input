@@ -37,6 +37,13 @@ abstract class ControlystDatabase : RoomDatabase() {
             }
         }
 
+        private val BUILT_IN_PROFILE_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                BuiltInProfiles.seed(db)
+            }
+        }
+
         @Volatile
         private var INSTANCE: ControlystDatabase? = null
 
@@ -46,7 +53,10 @@ abstract class ControlystDatabase : RoomDatabase() {
                     context.applicationContext,
                     ControlystDatabase::class.java,
                     "controlyst_database"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+                )
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addCallback(BUILT_IN_PROFILE_CALLBACK)
+                    .build()
                 INSTANCE = instance
                 instance
             }
