@@ -83,7 +83,7 @@ object BuiltInProfiles {
             """INSERT OR IGNORE INTO config_profiles
                 (id, gamePackage, profileName, jsonBlob, isDefault, updatedAt, author, isOfficialVerified, rating, downloads)
                 VALUES (?, ?, ?, ?, 0, ?, ?, 0, 0.0, 0)""".trimIndent(),
-            arrayOf(
+            arrayOf<Any?>(
                 profile.id,
                 profile.gamePackage,
                 profile.profileName,
