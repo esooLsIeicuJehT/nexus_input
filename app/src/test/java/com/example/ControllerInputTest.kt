@@ -78,6 +78,18 @@ class ControllerInputTest {
         assertEquals(afterFirst+1,ControllerInputMonitor.state.value.observedEventSequence)
     }
 
+    @Test fun quickPressReleaseRetainsObservedPressForLearning() {
+        device()
+        val down=KeyEvent(100,320,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_SELECT,0,0,41,314,0,InputDevice.SOURCE_GAMEPAD)
+        ControllerInputMonitor.onKeyEvent(down)
+        val pressed=ControllerInputMonitor.state.value.lastPress
+        assertNotNull(pressed)
+        ControllerInputMonitor.onKeyEvent(KeyEvent.changeAction(down,KeyEvent.ACTION_UP))
+        assertEquals(pressed,ControllerInputMonitor.state.value.lastPress)
+        assertEquals(KeyEvent.KEYCODE_BUTTON_SELECT,pressed!!.keyCode)
+        assertEquals(314,pressed.scanCode)
+    }
+
     @Test fun actualMotionEventsDriveBothCalibrationPhases() = runBlocking {
         val manager=CalibrationManager(device())
         val calibration=async(Dispatchers.Default) { manager.runStickCalibration {} }

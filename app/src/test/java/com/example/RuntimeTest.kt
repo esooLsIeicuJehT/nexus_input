@@ -93,6 +93,66 @@ class RuntimeTest {
         r.handleMotionSnapshot(sample(),c,b);r.awaitIdle()
         assertEquals(2,b.calls.count { it.first=="up" });r.shutdown(b)
     }
+    @Test fun learnedScanDpadAcceptsHatAndKeyWithoutDuplicateOrEarlyRelease() {
+        for (method in listOf(PrivilegeMethod.KERNELSU, PrivilegeMethod.SHIZUKU)) {
+            val b=object : InputInjector by Recording() {
+                val recording=Recording()
+                override val method=method
+                override fun beginTouch(pointerId:Int,x:Float,y:Float)=recording.beginTouch(pointerId,x,y)
+                override fun endTouch(pointerId:Int)=recording.endTouch(pointerId)
+            }
+            val r=GamepadMappingRuntime({1000 to 500},{ fail(it) })
+            val c=config(MappingNode("left",.2f,.3f,boundKey="DPAD_LEFT",inputKeyCode=KeyEvent.KEYCODE_UNKNOWN,
+                inputScanCode=105,buttonBehavior=ButtonBehavior.HOLD,touchSlot=31))
+            try {
+                r.handleMotionSnapshot(sample(hx=-1f),c,b);r.awaitIdle()
+                val down=KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,0,0,16,105,0,InputDevice.SOURCE_GAMEPAD)
+                assertTrue(r.handleKeyEvent(down,c,b));r.awaitIdle()
+                assertEquals(1,b.recording.calls.count { it.first=="down" })
+                r.handleMotionSnapshot(sample(),c,b);r.awaitIdle()
+                assertEquals(0,b.recording.calls.count { it.first=="up" })
+                r.handleKeyEvent(KeyEvent.changeAction(down,KeyEvent.ACTION_UP),c,b);r.awaitIdle()
+                assertEquals(listOf("down","up"),b.recording.calls.map { it.first })
+                assertEquals(31,b.recording.calls.first().second)
+            } finally { r.shutdown(b) }
+        }
+    }
+
+    @Test fun allCenterControlsReachTouchBackendAndLegacyEventLabelsMatch() {
+        val controls=listOf("KEYCODE_BUTTON_START" to KeyEvent.KEYCODE_BUTTON_START,
+            "BUTTON_SELECT" to KeyEvent.KEYCODE_BUTTON_SELECT, "HOME" to KeyEvent.KEYCODE_BUTTON_MODE,
+            "CAPTURE" to KeyEvent.KEYCODE_SYSRQ, "ASSISTANT" to KeyEvent.KEYCODE_ASSIST)
+        for (method in listOf(PrivilegeMethod.KERNELSU,PrivilegeMethod.SHIZUKU)) {
+            val recording=Recording()
+            val b=object : InputInjector by recording { override val method=method }
+            val r=GamepadMappingRuntime({1000 to 500},{ fail(it) })
+            val c=config(*controls.mapIndexed { index,(label,_) -> MappingNode("center$index",.2f+index*.1f,.4f,
+                boundKey=label,buttonBehavior=ButtonBehavior.HOLD,touchSlot=20+index) }.toTypedArray())
+            try {
+                controls.forEach { (_,code) -> assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,code),c,b)) }
+                r.awaitIdle()
+                assertEquals(5,recording.calls.count { it.first=="down" })
+                assertEquals((20..24).toSet(),recording.calls.map { it.second }.toSet())
+                controls.forEach { (_,code) -> assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_UP,code),c,b)) }
+                r.awaitIdle()
+                assertEquals(5,recording.calls.count { it.first=="up" })
+            } finally { r.shutdown(b) }
+        }
+    }
+
+    @Test fun learnedMenuKeyStillMatchesStandardStartAndSavedScanHandlesUnknownTranslation() {
+        val r=GamepadMappingRuntime({1000 to 500},{ fail(it) });val b=Recording()
+        val node=MappingNode("start",.2f,.3f,boundKey="START",inputKeyCode=KeyEvent.KEYCODE_MENU,
+            inputScanCode=315,buttonBehavior=ButtonBehavior.HOLD)
+        try {
+            assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_BUTTON_START),config(node),b));r.awaitIdle()
+            assertTrue(r.handleKeyEvent(key(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_BUTTON_START),config(node),b));r.awaitIdle()
+            val unknown=KeyEvent(0,0,KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_UNKNOWN,0,0,16,315,0,InputDevice.SOURCE_GAMEPAD)
+            assertTrue(r.handleKeyEvent(unknown,config(node),b));r.awaitIdle()
+            assertEquals(2,b.calls.count { it.first=="down" })
+        } finally { r.shutdown(b) }
+    }
+
     @Test fun leftAndRightStickKeepSeparateSlotsAndStayWithinScreen() {
         val r=GamepadMappingRuntime({1000 to 500},{ fail(it) });val b=Recording()
         val c=config(MappingNode("ls",.15f,.75f,.15f,NodeType.JOYSTICK_ZONE,"LS",touchSlot=3),

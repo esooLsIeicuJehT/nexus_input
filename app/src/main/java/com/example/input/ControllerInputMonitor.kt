@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicLong
  * manufacture values for axes a device does not expose. The Devices tester and calibration
  * can therefore distinguish real Android events from configured profile values.
  */
+data class ObservedControllerKey(val keyCode: Int, val scanCode: Int, val sequence: Long, val aliases: Set<String>)
+
 data class ControllerLiveState(
     val connectedEventSource: String? = null,
     val deviceId: Int? = null,
@@ -26,6 +28,9 @@ data class ControllerLiveState(
     val lastScanCode: Int? = null,
     val lastKeyName: String? = null,
     val lastSource: Int? = null,
+    val lastKeyAction: Int? = null,
+    val lastKeySequence: Long = 0L,
+    val lastPress: ObservedControllerKey? = null,
     val eventLog: List<String> = emptyList()
 )
 
@@ -116,6 +121,7 @@ object ControllerInputMonitor {
 
         val actionName = if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"
         val line = "$actionName dev=${event.deviceId} src=0x${event.source.toString(16)} key=${event.keyCode} ${KeyEvent.keyCodeToString(event.keyCode)} scan=${event.scanCode}"
+        val sequence = observedEvents.incrementAndGet()
         _state.value = _state.value.copy(
             connectedEventSource = event.device?.name,
             deviceId = event.device?.id,
@@ -124,9 +130,16 @@ object ControllerInputMonitor {
             lastScanCode = event.scanCode,
             lastKeyName = KeyEvent.keyCodeToString(event.keyCode),
             lastSource = event.source,
+            lastKeyAction = event.action,
+            lastKeySequence = sequence,
+            // Retain the last down through its up. Compose may coalesce a fast
+            // tap's state updates before the binding dialog gets a frame.
+            lastPress = if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
+                ObservedControllerKey(event.keyCode, event.scanCode, sequence, ControllerBindingAliases.forEvent(event))
+                else _state.value.lastPress,
             eventLog = (_state.value.eventLog + line).takeLast(64),
             lastEventUptimeMs = event.eventTime,
-            observedEventSequence = observedEvents.incrementAndGet()
+            observedEventSequence = sequence
         )
     }
 

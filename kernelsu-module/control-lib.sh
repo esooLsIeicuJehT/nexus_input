@@ -51,7 +51,12 @@ nexus_cpu_frequencies() {
         nexus_write_checked "$nexus_dir/scaling_min_freq" "$2" || return 1
         nexus_write_checked "$nexus_dir/scaling_max_freq" "$3" || nexus_failed=true
     fi
-    if [ "${nexus_failed:-false}" = true ]; then
+    # A driver can change either bound between writes; verify the final pair
+    # and use the same recovery path even when individual writes succeeded.
+    if [ "${nexus_failed:-false}" = true ] ||
+        [ "$(cat "$nexus_dir/scaling_min_freq")" != "$2" ] ||
+        [ "$(cat "$nexus_dir/scaling_max_freq")" != "$3" ]; then
+        echo 'ERROR CPU interval write/final read-back failed; restoring original interval'
         nexus_current_min=$(cat "$nexus_dir/scaling_min_freq")
         if [ "$nexus_current_min" -gt "$nexus_max" ]; then
             printf '%s\n' "$nexus_min" > "$nexus_dir/scaling_min_freq"
@@ -64,7 +69,6 @@ nexus_cpu_frequencies() {
         else echo 'ERROR CPU interval rollback could not be verified'; fi
         return 1
     fi
-    [ "$(cat "$nexus_dir/scaling_min_freq")" = "$2" ] && [ "$(cat "$nexus_dir/scaling_max_freq")" = "$3" ] || { echo 'ERROR final CPU interval read-back changed'; return 1; }
     echo "CPU_INTERVAL_READ_BACK=$2 $3"
 }
 

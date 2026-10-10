@@ -9,37 +9,11 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand-lockup">
-        <div class="brand-mark">N</div>
-        <div>
-          <div class="brand-name">NEXUS</div>
-          <div class="brand-sub">INPUT</div>
-        </div>
-      </div>
-
-      <div class="module-badge"><i></i> KernelSU companion</div>
-
-      <nav class="side-nav" aria-label="KernelSU sections">
-        <a href="#overview" class="active"><span>◈</span> Overview</a>
-        <a href="#capabilities-panel"><span>⚙</span> Device controls</a>
-        <a href="#devices-panel"><span>⌁</span> Devices</a>
-        <a href="#runtime-panel"><span>▣</span> Runtime</a>
-        <a href="#update-panel"><span>↻</span> Updates</a>
-        <a href="#log-panel"><span>›_</span> Logs</a>
-      </nav>
-
-      <div class="sidebar-foot">
-        <span>ROOT CONTROL PLANE</span>
-        <small>Live values only. Failed probes stay failed.</small>
-      </div>
-    </aside>
-
     <main class="workspace">
       <header class="topbar" id="overview">
         <div>
-          <div class="eyebrow">SYSTEM / ROOT COMPANION</div>
-          <h1>KernelSU Control Center</h1>
+          <div class="eyebrow">KERNELSU / CONTROL CENTER</div>
+          <h1>NEXUS <em>INPUT</em></h1>
           <p>Device capabilities, guarded root controls, input backend health, and module updates.</p>
         </div>
         <div class="top-actions">
@@ -48,6 +22,7 @@
         </div>
       </header>
 
+      <div class="view-page" data-page="overview">
       <section class="hero-panel">
         <div class="hero-orb"><span>N</span></div>
         <div class="hero-copy">
@@ -60,60 +35,64 @@
       <section class="status-grid" aria-label="Live diagnostics">
         <article class="metric-card">
           <span>ANDROID APK</span>
-          <strong id="apk">Checking…</strong>
+          <strong id="apk">Not read</strong>
           <small>Installed package state</small>
         </article>
         <article class="metric-card">
           <span>/DEV/UINPUT</span>
-          <strong id="uinput">Checking…</strong>
+          <strong id="uinput">Not read</strong>
           <small>Virtual input capability</small>
         </article>
         <article class="metric-card">
           <span>/DEV/UHID</span>
-          <strong id="uhid">Checking…</strong>
+          <strong id="uhid">Not read</strong>
           <small>HID capability</small>
         </article>
         <article class="metric-card">
           <span>SELINUX</span>
-          <strong id="selinux">Checking…</strong>
+          <strong id="selinux">Not read</strong>
           <small>Current enforcement mode</small>
         </article>
         <article class="metric-card wide">
           <span>NEXUS PROCESSES</span>
-          <strong id="processes">Checking…</strong>
+          <strong id="processes">Not read</strong>
           <small>Matching live process contexts</small>
         </article>
       </section>
 
+      </div>
+      <div class="view-page" data-page="controls" hidden>
       <section class="card" id="capabilities-panel">
         <div class="card-heading"><div><div class="eyebrow">DEVICE CAPABILITIES</div><h3>Root controls and safeguards</h3></div><button id="refreshCapabilities" class="button ghost">Read device capabilities</button></div>
         <p>Only values exposed by this device populate the controls. Every change checks actual read-back. Tuning is refused when Android battery state is unavailable, charge is below 20%, or battery temperature is 45°C or above. Kernel thermal protections remain active.</p>
         <div class="detail-grid">
-          <article><h3>CPU policies</h3><pre id="cpuCapabilities">Not read</pre>
+          <details class="control-group"><summary>CPU policies</summary><pre id="cpuCapabilities">Not read</pre>
             <label>Observed policy <select id="cpuPolicy" disabled></select></label>
             <label>Available governor <select id="cpuGovernor" disabled></select></label>
             <button id="applyCpuGovernor" class="button ghost" disabled>Apply governor with read-back</button>
             <label>Available minimum kHz <select id="cpuMinimum" disabled></select></label>
             <label>Available maximum kHz <select id="cpuMaximum" disabled></select></label>
             <button id="applyCpuFrequencies" class="button ghost" disabled>Apply frequency interval</button>
-          </article>
-          <article><h3>GPU / devfreq devices</h3><pre id="devfreqCapabilities">Not read</pre>
+          </details>
+          <details class="control-group"><summary>GPU / devfreq devices</summary><pre id="devfreqCapabilities">Not read</pre>
             <label>Observed devfreq device <select id="devfreqDevice" disabled></select></label>
             <label>Available governor <select id="devfreqGovernor" disabled></select></label>
             <button id="applyDevfreqGovernor" class="button ghost" disabled>Apply devfreq governor</button>
-          </article>
-          <article><h3>Thermal state</h3><pre id="thermalCapabilities">Not read</pre></article>
-          <article><h3>ZRAM / memory / sysctl</h3><pre id="memoryCapabilities">Not read</pre>
+          </details>
+          <details class="control-group"><summary>Thermal state</summary><pre id="thermalCapabilities">Not read</pre></details>
+          <details class="control-group"><summary>ZRAM / memory / sysctl</summary><pre id="memoryCapabilities">Not read</pre>
             <label>vm.swappiness (0..100) <input id="swappiness" type="number" min="0" max="100" disabled></label>
             <button id="applySwappiness" class="button ghost" disabled>Apply with read-back</button>
-          </article>
-          <article><h3>Battery safeguards</h3><pre id="batteryCapabilities">Not read</pre></article>
-          <article><h3>Performance presets</h3><pre id="presetCapabilities">Not read</pre></article>
+          </details>
+          <details class="control-group"><summary>Battery safeguards</summary><pre id="batteryCapabilities">Not read</pre></details>
+          <details class="control-group"><summary>Performance presets</summary><pre id="presetCapabilities">Not read</pre></details>
         </div>
         <pre id="controlStatus">Device capabilities are not scanned automatically. Use the button above when you want live hardware values.</pre>
         <button id="readControlLog" class="button ghost">Read root control log</button>
       </section>
 
+      </div>
+      <div class="view-page" data-page="updates" hidden>
       <section class="card update-card" id="update-panel">
         <div class="card-heading">
           <div>
@@ -123,7 +102,7 @@
           <span class="secure-chip">SHA-256 VERIFIED</span>
         </div>
         <div class="update-grid">
-          <div class="version-box"><span>INSTALLED</span><strong id="installedVersion">Checking…</strong></div>
+          <div class="version-box"><span>INSTALLED</span><strong id="installedVersion">Not read</strong></div>
           <div class="version-arrow">→</div>
           <div class="version-box"><span>GITHUB</span><strong id="remoteVersion">Not checked</strong></div>
         </div>
@@ -134,6 +113,8 @@
         <pre id="updateStatus" class="status-console">Updates are verified with SHA-256 before KernelSU stages them. A reboot is required after installation.</pre>
       </section>
 
+      </div>
+      <div class="view-page" data-page="runtime" hidden>
       <section class="detail-grid">
         <article class="card" id="runtime-panel">
           <div class="card-heading compact">
@@ -148,7 +129,7 @@
             <div><div class="eyebrow">LINUX INPUT</div><h3>Devices & Controllers</h3></div>
             <span class="icon-chip">HID</span>
           </div>
-          <pre id="devices">Checking…</pre>
+          <pre id="devices">Not read</pre>
         </article>
 
         <article class="card">
@@ -156,7 +137,7 @@
             <div><div class="eyebrow">KERNELSU</div><h3>Module Config</h3></div>
             <span class="icon-chip">CFG</span>
           </div>
-          <pre id="moduleConfig">Checking…</pre>
+          <pre id="moduleConfig">Not read</pre>
         </article>
 
         <article class="card">
@@ -164,10 +145,12 @@
             <div><div class="eyebrow">BOOT</div><h3>Boot Probe</h3></div>
             <span class="icon-chip">SYS</span>
           </div>
-          <pre id="bootStatus">Checking…</pre>
+          <pre id="bootStatus">Not read</pre>
         </article>
       </section>
 
+      </div>
+      <div class="view-page" data-page="logs" hidden>
       <section class="card log-card" id="log-panel">
         <div class="card-heading compact">
           <div><div class="eyebrow">TERMINAL</div><h3>Last Command</h3></div>
@@ -175,8 +158,16 @@
         </div>
         <pre id="log">Ready.</pre>
       </section>
+      </div>
     </main>
   </div>
+  <nav class="bottom-nav" aria-label="KernelSU sections">
+    <button data-route="overview" aria-current="page"><span>◈</span>Overview</button>
+    <button data-route="controls"><span>⚙</span>Controls</button>
+    <button data-route="runtime"><span>▣</span>Runtime</button>
+    <button data-route="updates"><span>↻</span>Updates</button>
+    <button data-route="logs"><span>›_</span>Logs</button>
+  </nav>
   <script src="app.js"></script>
 </body>
 </html>

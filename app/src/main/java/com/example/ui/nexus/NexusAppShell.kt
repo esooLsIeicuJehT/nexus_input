@@ -60,133 +60,135 @@ fun NexusAppShell(
         runtime.error?.let { snackbarHostState.showSnackbar(it) }
         runtime.notice?.let { snackbarHostState.showSnackbar(it) }
     }
-    Scaffold(
-        modifier = Modifier.fillMaxSize().background(GraphiteFoundation),
-        topBar = {
-            if (!immersiveLandscape) {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                modifier = Modifier.size(34.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFF071827),
-                                border = BorderStroke(1.dp, NexusCyan)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text("N", color = NexusCyan, fontWeight = FontWeight.Black, fontSize = 18.sp)
+    Box(Modifier.fillMaxSize()) {
+        NexusAtmosphere()
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                if (!immersiveLandscape) {
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    modifier = Modifier.size(34.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF071827),
+                                    border = BorderStroke(1.dp, NexusCyan)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("N", color = NexusCyan, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                                    }
+                                }
+                                Spacer(Modifier.width(9.dp))
+                                Column {
+                                    Text(
+                                        "NEXUS",
+                                        color = TextPrimary,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Black,
+                                        letterSpacing = 2.sp
+                                    )
+                                    Text(
+                                        "INPUT",
+                                        color = NexusCyan,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 4.sp
+                                    )
+                                }
+                                Spacer(Modifier.width(9.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(7.dp),
+                                    color = NexusCyan.copy(alpha = 0.1f),
+                                    border = BorderStroke(1.dp, NexusCyan.copy(alpha = 0.35f))
+                                ) {
+                                    Text(
+                                        runtime.backend?.let { if (runtime.backendReady) "$it READY" else "$it NOT READY" } ?: "DISARMED",
+                                        color = NexusCyan,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
                                 }
                             }
-                            Spacer(Modifier.width(9.dp))
-                            Column {
-                                Text(
-                                    "NEXUS",
-                                    color = TextPrimary,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 2.sp
-                                )
-                                Text(
-                                    "INPUT",
-                                    color = NexusCyan,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 4.sp
-                                )
-                            }
-                            Spacer(Modifier.width(9.dp))
-                            Surface(
-                                shape = RoundedCornerShape(7.dp),
-                                color = NexusCyan.copy(alpha = 0.1f),
-                                border = BorderStroke(1.dp, NexusCyan.copy(alpha = 0.35f))
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = onPanicKill,
+                                modifier = Modifier.testTag("appbar_panic_button")
                             ) {
-                                Text(
-                                    runtime.backend?.let { if (runtime.backendReady) "$it READY" else "$it NOT READY" } ?: "DISARMED",
-                                    color = NexusCyan,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                )
+                                Icon(Icons.Default.PowerSettingsNew, contentDescription = "Panic kill", tint = AccentRose)
                             }
-                        }
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = onPanicKill,
-                            modifier = Modifier.testTag("appbar_panic_button")
-                        ) {
-                            Icon(Icons.Default.PowerSettingsNew, contentDescription = "Panic kill", tint = AccentRose)
-                        }
-                        IconButton(
-                            onClick = { viewModel.restartOnboarding() },
-                            modifier = Modifier.testTag("appbar_help_button")
-                        ) {
-                            Icon(Icons.Default.HelpOutline, contentDescription = "Setup guide", tint = TextSecondary)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = GraphiteFoundation)
-                )
-            }
-        },
-        bottomBar = {
-            if (!immersiveLandscape) {
-                NavigationBar(
-                    containerColor = Color(0xFF06121F),
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.navigationBarsPadding()
-                ) {
-                    nexusNavItems.forEach { item ->
-                        val selected = routeBelongsToTab(currentTab, item.route)
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { viewModel.selectTab(item.route) },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NexusCyan,
-                                selectedTextColor = NexusCyan,
-                                unselectedIconColor = TextMuted,
-                                unselectedTextColor = TextMuted,
-                                indicatorColor = NexusViolet.copy(alpha = 0.22f)
-                            ),
-                            modifier = Modifier.testTag("tab_${item.route}")
-                        )
-                    }
+                            IconButton(
+                                onClick = { viewModel.restartOnboarding() },
+                                modifier = Modifier.testTag("appbar_help_button")
+                            ) {
+                                Icon(Icons.Default.HelpOutline, contentDescription = "Setup guide", tint = TextSecondary)
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    )
                 }
-            }
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = GraphiteFoundation
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            when (currentTab) {
-                "home" -> NexusHomeScreen(viewModel, viewModel::selectTab)
-                "profiles", "library" -> NexusProfilesScreen(viewModel, viewModel::selectTab)
-                "profile_detail" -> NexusProfileDetailRoute(viewModel, viewModel::selectTab)
-                "mapper" -> NexusMapperRoute(viewModel)
-                "devices" -> NexusDevicesRoute(viewModel, viewModel::selectTab)
-                "system" -> NexusSystemScreen(viewModel, viewModel::selectTab)
-                "fps" -> com.example.ui.frames.FrameOverlayScreen(viewModel)
-                "crosshair" -> CrosshairStudioScreen(viewModel)
-                "calibration" -> CalibrationScreen(viewModel)
-                "profile_files" -> LocalProfileFilesScreen(viewModel)
-                "root_webui" -> KernelSuWebUiScreen(
-                    viewModel = viewModel,
-                    onBack = { viewModel.selectTab("system") }
-                )
-                "macro" -> MacroTimelineEditor(
-                    viewModel = viewModel,
-                    onBack = { viewModel.selectTab("mapper") }
-                )
-                "safety" -> GameSafetyScreen(onBack = { viewModel.selectTab("system") })
-                else -> NexusHomeScreen(viewModel, viewModel::selectTab)
-            }
+            },
+            bottomBar = {
+                    NavigationBar(
+                        containerColor = Color(0xC0081423),
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.nexusGlass(24.dp).padding(horizontal = 6.dp),
+                        windowInsets = WindowInsets.navigationBars
+                    ) {
+                        nexusNavItems.forEach { item ->
+                            val selected = routeBelongsToTab(currentTab, item.route)
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { viewModel.selectTab(item.route) },
+                                icon = { Icon(item.icon, contentDescription = item.label) },
+                                label = { Text(item.label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = NexusCyan,
+                                    selectedTextColor = NexusCyan,
+                                    unselectedIconColor = TextMuted,
+                                    unselectedTextColor = TextMuted,
+                                    indicatorColor = NexusViolet.copy(alpha = 0.22f)
+                                ),
+                                modifier = Modifier.testTag("tab_${item.route}")
+                            )
+                        }
+                    }
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                when (currentTab) {
+                    "home" -> NexusHomeScreen(viewModel, viewModel::selectTab)
+                    "profiles", "library" -> NexusProfilesScreen(viewModel, viewModel::selectTab)
+                    "profile_detail" -> NexusProfileDetailRoute(viewModel, viewModel::selectTab)
+                    "mapper" -> NexusMapperRoute(viewModel)
+                    "devices" -> NexusDevicesRoute(viewModel, viewModel::selectTab)
+                    "system" -> NexusSystemScreen(viewModel, viewModel::selectTab)
+                    "fps" -> com.example.ui.frames.FrameOverlayScreen(viewModel)
+                    "crosshair" -> CrosshairStudioScreen(viewModel)
+                    "calibration" -> CalibrationScreen(viewModel)
+                    "profile_files" -> LocalProfileFilesScreen(viewModel)
+                    "root_webui" -> KernelSuWebUiScreen(
+                        viewModel = viewModel,
+                        onBack = { viewModel.selectTab("system") }
+                    )
+                    "macro" -> MacroTimelineEditor(
+                        viewModel = viewModel,
+                        onBack = { viewModel.selectTab("mapper") }
+                    )
+                    "safety" -> GameSafetyScreen(onBack = { viewModel.selectTab("system") })
+                    else -> NexusHomeScreen(viewModel, viewModel::selectTab)
+                }
 
 
+            }
         }
     }
 }

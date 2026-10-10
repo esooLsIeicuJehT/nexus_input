@@ -2,9 +2,17 @@
 
 
 
-# NEXUS INPUT 1.0.0
+# NEXUS INPUT 1.1.0-dev
 
 Android gamepad-to-touch mapping for Android with per-game profiles, screenshot mapping, in-game editing, controller diagnostics, crosshair/presented-frame overlays, Shizuku support and a KernelSU `/dev/uinput` backend. Version 1.0.0 is under active device validation; CI success does not by itself establish production hardware acceptance.
+
+## Neon glass upgrade candidate
+
+The current source includes one persistent bottom navigation, glass/neon styling across the APK, screenshot mapper, floating editor and KernelSU WebUI, compact expandable settings, bounded diagnostic/log windows and controller-binding repairs. See [the two-pass audit](docs/AUDIT_NEON_UPGRADE_2026-10-10.md), [the verified pre-change backup](backups/README.md) and [review previews](docs/previews/phone-overview.png).
+
+The module updater's public development channel now points to the real checked-in [1.1.0-dev ZIP](releases/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip) with matching `update.json` SHA-256. Source version and published asset are kept distinct; this is a **device-test candidate**. The APK signing certificate and profile database identities are retained. Install an APK upgrade only with the existing certificate; never uninstall/clear profiles merely to install a debug build.
+
+The user reports that all Stadia buttons appear in the Devices event area. The fixes target saved-input matching and touch routing: prefixed Android labels, equivalent center-key translations, untranslated-key scan fallbacks and D-pad HAT mappings with scan-bound nodes. New test cases exercise these through both root and Shizuku interfaces. Actual in-game acceptance on rooted Moto G 2026 and non-root Moto G 4G 2025 remains required; this workspace has no connected phone.
 
 ## Current status
 
@@ -53,7 +61,7 @@ CI **#149** produced the latest installable debug-signed test APK from commit `d
 
 ## Upgrade and release gates
 
-The package remains `com.inputmapper.platform`, the existing Room filename remains `controlyst_database`, and the module ID remains `gamepad.pro.root`. App and module share `version.properties`: version 1.0.0, code 1000. Legacy profiles from the exact preserved 0.6.2 contract migrate transactionally into Room without clearing the original preferences. Imported enabled intent never auto-arms mapping. See [source lineage](docs/SOURCE_LINEAGE.md).
+The package remains `com.inputmapper.platform`, the existing Room filename remains `controlyst_database`, and the module ID remains `gamepad.pro.root`. App and module share `version.properties`: development version 1.1.0-dev, code 1100. Legacy profiles from the exact preserved 0.6.2 contract migrate transactionally into Room without clearing the original preferences. Imported enabled intent never auto-arms mapping. See [source lineage](docs/SOURCE_LINEAGE.md).
 
 Release signing uses the **existing** keystore and alias `upload`, with `KEYSTORE_PATH`, `STORE_PASSWORD` and `KEY_PASSWORD`. No replacement key is generated. The manual signed workflow requires secure GitHub environment secrets; no signed APK/AAB can be claimed until it passes. See [release gates](docs/RELEASE_V1.md).
 

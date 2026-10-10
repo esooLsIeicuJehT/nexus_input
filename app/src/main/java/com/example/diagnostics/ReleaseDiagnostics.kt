@@ -15,7 +15,7 @@ import org.json.JSONObject
 
 /** Read-only observations. This report does not assert device injection or hardware verification. */
 object ReleaseDiagnostics {
-    suspend fun collect(context: Context): String {
+    suspend fun collect(context: Context, selectedProfile: com.example.model.MappingConfig? = null): String {
         val config = MappingRuntimeBridge.config.value
         val runtime = MappingRuntimeBridge.state.value
         val panic = PanicKillSwitch.state.value
@@ -33,6 +33,8 @@ object ReleaseDiagnostics {
         val storage = runCatching { db.openHelper.readableDatabase.query("PRAGMA user_version").use { cursor ->
             check(cursor.moveToFirst()); cursor.getInt(0)
         } }
+        val live = ControllerInputMonitor.state.value
+        val profile = selectedProfile ?: config
         return JSONObject().put("app",BuildConfig.APPLICATION_ID).put("version",BuildConfig.VERSION_NAME)
             .put("versionCode",BuildConfig.VERSION_CODE).put("sdk",Build.VERSION.SDK_INT)
             .put("manufacturer",Build.MANUFACTURER).put("model",Build.MODEL).put("abis",JSONArray(Build.SUPPORTED_ABIS.toList()))
@@ -59,6 +61,15 @@ object ReleaseDiagnostics {
                 .put("status",com.example.frames.FrameMonitor.state.value.status)
                 .put("error",com.example.frames.FrameMonitor.state.value.error ?: JSONObject.NULL)
                 .put("presentedFps",com.example.frames.FrameMonitor.state.value.stats?.fps ?: JSONObject.NULL))
-            .put("lastControllerEventUptimeMs",ControllerInputMonitor.state.value.lastEventUptimeMs).toString(2)
+            .put("lastControllerEventUptimeMs",live.lastEventUptimeMs)
+            .put("controllerRouting",JSONObject().put("deviceId",live.deviceId ?: JSONObject.NULL)
+                .put("keyCode",live.lastKeyCode ?: JSONObject.NULL).put("scanCode",live.lastScanCode ?: JSONObject.NULL)
+                .put("source",live.lastSource ?: JSONObject.NULL).put("axes",JSONObject(live.axes))
+                .put("events",JSONArray(live.eventLog)).put("selectedProfile",profile?.id ?: JSONObject.NULL)
+                .put("bindings",JSONArray().apply { profile?.buttons?.forEach { node ->
+                    put(JSONObject().put("id",node.id).put("binding",node.boundKey).put("type",node.type.name)
+                        .put("keyCode",node.inputKeyCode ?: JSONObject.NULL).put("scanCode",node.inputScanCode ?: JSONObject.NULL)
+                        .put("slot",node.touchSlot ?: JSONObject.NULL).put("x",node.xNorm).put("y",node.yNorm))
+                } })).toString(2)
     }
 }

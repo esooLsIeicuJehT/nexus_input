@@ -50,7 +50,13 @@ object LinuxKeyCodeMapper {
         KeyEvent.KEYCODE_DPAD_DOWN -> 108
         KeyEvent.KEYCODE_DPAD_LEFT -> 105
         KeyEvent.KEYCODE_DPAD_RIGHT -> 106
-        KeyEvent.KEYCODE_HOME -> 102
+        // Android HOME is Linux KEY_HOMEPAGE, while KEY_HOME is MOVE_HOME.
+        KeyEvent.KEYCODE_HOME -> 172
+        KeyEvent.KEYCODE_MOVE_HOME -> 102
+        KeyEvent.KEYCODE_SYSRQ -> 99
+        KeyEvent.KEYCODE_MEDIA_RECORD -> 167
+        KeyEvent.KEYCODE_ASSIST -> 583
+        KeyEvent.KEYCODE_VOICE_ASSIST -> 582
         KeyEvent.KEYCODE_MOVE_END -> 107
         KeyEvent.KEYCODE_PAGE_UP -> 104
         KeyEvent.KEYCODE_PAGE_DOWN -> 109

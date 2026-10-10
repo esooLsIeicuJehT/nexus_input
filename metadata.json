@@ -1,8 +1,8 @@
 {
   "name": "NEXUS INPUT",
   "description": "NEXUS INPUT v1 candidate. See docs/RELEASE_V1.md for build evidence and hardware release gates.",
-  "versionName": "1.0.0",
-  "versionCode": 1000,
+  "versionName": "1.1.0-dev",
+  "versionCode": 1100,
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

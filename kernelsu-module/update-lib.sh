@@ -21,7 +21,7 @@ fetch_file() {
     BB=$(find_busybox 2>/dev/null || true)
     if [ -n "$BB" ]; then
         echo "MESSAGE=Fetching through BusyBox wget" >&2
-        "$BB" wget -q -O "$dest" "$url" && [ -s "$dest" ] && return 0
+        "$BB" wget -q -T 30 -O "$dest" "$url" && [ -s "$dest" ] && return 0
     fi
 
     CURL=$(command -v curl 2>/dev/null || true)
@@ -34,9 +34,10 @@ fetch_file() {
     WGET=$(command -v wget 2>/dev/null || true)
     if [ -n "$WGET" ]; then
         echo "MESSAGE=Fetching through wget after earlier transports were unavailable or failed" >&2
-        "$WGET" -q -O "$dest" "$url" && [ -s "$dest" ] && return 0
+        "$WGET" -q -T 30 -O "$dest" "$url" && [ -s "$dest" ] && return 0
     fi
 
+    rm -f "$dest"
     return 1
 }
 
@@ -64,3 +65,19 @@ verify_sha256() {
     }
 }
 
+
+verify_module_zip() {
+    archive=$1 expected_version=$2 expected_code=$3
+    BB=$(find_busybox 2>/dev/null || true)
+    if [ -n "$BB" ] && "$BB" --list 2>/dev/null | grep -qx unzip; then
+        prop=$("$BB" unzip -p "$archive" module.prop 2>/dev/null) || return 1
+    elif command -v unzip >/dev/null 2>&1; then
+        prop=$(unzip -p "$archive" module.prop 2>/dev/null) || return 1
+    else
+        echo 'ERROR=No unzip tool is available to verify module identity'
+        return 1
+    fi
+    [ "$(printf '%s\n' "$prop" | sed -n 's/^id=//p')" = 'gamepad.pro.root' ] &&
+    [ "$(printf '%s\n' "$prop" | sed -n 's/^version=//p')" = "$expected_version" ] &&
+    [ "$(printf '%s\n' "$prop" | sed -n 's/^versionCode=//p')" = "$expected_code" ]
+}

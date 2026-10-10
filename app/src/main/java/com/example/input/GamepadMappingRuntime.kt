@@ -69,15 +69,30 @@ class GamepadMappingRuntime(
         val aliases = ControllerBindingAliases.forEvent(event)
         val nodes = config.buttons.filter { node ->
             val physicalMatches = when {
-                node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN -> node.inputKeyCode == event.keyCode
+                node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN ->
+                    node.inputKeyCode == event.keyCode ||
+                        ControllerBindingAliases.forKeyCode(node.inputKeyCode).any { saved ->
+                            aliases.any { ControllerBindingAliases.canonical(it) == ControllerBindingAliases.canonical(saved) }
+                        } ||
+                        // A firmware may stop translating a previously learned scan.
+                        // Use its saved physical scan only when no known logical key
+                        // translation is available, preserving explicit key identity.
+                        (aliases.isEmpty() && node.inputScanCode != null && node.inputScanCode > 0 && node.inputScanCode == event.scanCode)
                 node.inputScanCode != null -> node.inputScanCode == event.scanCode
                 else -> aliases.any { ControllerBindingAliases.canonical(it) == ControllerBindingAliases.canonical(node.boundKey) }
             }
             physicalMatches && node.type in setOf(NodeType.BUTTON, NodeType.TURBO, NodeType.MACRO)
         }
-        if (nodes.isEmpty()) return false
+        if (nodes.isEmpty()) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
+                aliases.any { ControllerBindingAliases.canonical(it) in setOf("START", "SELECT", "GUIDE", "CAPTURE", "ASSISTANT", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT") }) {
+                android.util.Log.w("NexusRouting", "No saved touch target for $aliases key=${event.keyCode} scan=${event.scanCode} profile=${config.id}")
+            }
+            return false
+        }
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
         if (event.repeatCount > 0) return true
+        android.util.Log.d("NexusRouting", "key=${event.keyCode} scan=${event.scanCode} action=${event.action} targets=${nodes.map { it.boundKey }} backend=${injector.method}")
         val pressed = event.action == KeyEvent.ACTION_DOWN
         val channel = if(event.keyCode != KeyEvent.KEYCODE_UNKNOWN) "key_${event.deviceId}_${event.keyCode}" else "scan_${event.deviceId}_${event.scanCode}"
         enqueue { nodes.forEach { handleOwnedInput(channel, it, pressed, config, injector) } }
@@ -208,7 +223,11 @@ class GamepadMappingRuntime(
         return config.buttons.filter { node ->
             (if(node.inputKeyCode != null && node.inputKeyCode != KeyEvent.KEYCODE_UNKNOWN)
                 ControllerBindingAliases.forKeyCode(node.inputKeyCode).any { ControllerBindingAliases.canonical(it) in normalizedAliases }
-             else if(node.inputScanCode != null) false
+             // A learned scan fallback still names a logical D-pad/trigger.
+             // Stadia delivers D-pad as HAT motion, which has no scanCode.
+             else if(node.inputScanCode != null)
+                 ControllerBindingAliases.canonical(node.boundKey) in normalizedAliases &&
+                     ControllerBindingAliases.canonical(node.boundKey) in setOf("DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT", "LT", "RT")
              else ControllerBindingAliases.canonical(node.boundKey) in normalizedAliases) &&
                 node.type in setOf(NodeType.BUTTON, NodeType.TURBO, NodeType.MACRO)
         }

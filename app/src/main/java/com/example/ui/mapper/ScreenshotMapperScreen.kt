@@ -37,6 +37,13 @@ import kotlin.math.hypot
 @Composable
 fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     val config by viewModel.activeConfig.collectAsState()
+    val live by com.example.input.ControllerInputMonitor.state.collectAsState()
+    var learning by remember { mutableStateOf(false) }
+    var learnAfter by remember { mutableStateOf(0L) }
+    var learnedKey by remember { mutableStateOf<Int?>(null) }
+    var learnedScan by remember { mutableStateOf<Int?>(null) }
+    val inspectorHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .30f)
+        .coerceIn(100f, 220f).dp
     val screenshot by viewModel.screenshot.collectAsState()
     val candidates by viewModel.aiHudCandidates.collectAsState()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
@@ -51,6 +58,20 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
 
+    LaunchedEffect(showBinding, learning, live.lastPress?.sequence) {
+        val press = live.lastPress
+        if (showBinding && learning && press != null && press.sequence > learnAfter &&
+            (press.keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN || press.scanCode > 0)) {
+            val code = press.keyCode
+            val aliases = press.aliases
+            if (aliases.isNotEmpty()) binding = ControllerBindingAliases.canonical(aliases.first())
+            // Preserve raw identity for vendor keys rather than assigning a guessed code.
+            learnedKey = code
+            learnedScan = press.scanCode.takeIf { it > 0 }
+            learning = false
+        }
+    }
+
     val currentConfig by rememberUpdatedState(config)
     val node = config.buttons.firstOrNull { it.id == selected }
     val density = LocalDensity.current
@@ -58,15 +79,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        GraphiteFoundation,
-                        Color(0xFF020812),
-                        Color(0xFF050816)
-                    )
-                )
-            )
+            .background(Color.Transparent)
     ) {
         NexusMapperHeader(
             profileName = config.profileName,
@@ -79,6 +92,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             onCapture = viewModel::captureScreenshot,
             onFindRegions = viewModel::runAiHudScan,
             onAddInput = {
+                learnedKey = null; learnedScan = null; learning = false
                 binding = "A"
                 behavior = ButtonBehavior.TAP
                 turbo = false
@@ -304,9 +318,11 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
 
         if (node != null) {
             SelectedControlInspector(
+                modifier = Modifier.heightIn(max = inspectorHeight),
                 config = config,
                 node = node,
                 onRebind = {
+                    learnedKey = node.inputKeyCode; learnedScan = node.inputScanCode; learning = false
                     binding = node.boundKey
                     behavior = node.buttonBehavior
                     turbo = node.type == NodeType.TURBO
@@ -359,6 +375,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                                 FilterChip(
                                     selected = binding == key,
                                     onClick = {
+                                        learnedKey = null; learnedScan = null; learning = false
                                         binding = key
                                         behavior = if (key in setOf("LT", "RT")) {
                                             ButtonBehavior.HOLD
@@ -371,6 +388,16 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                             }
                         }
                     }
+                    OutlinedButton(onClick = {
+                        learnAfter = live.lastPress?.sequence ?: 0L
+                        learning = true
+                        learnedKey = null; learnedScan = null
+                    }, enabled = binding !in setOf("LS", "RS")) {
+                        Text(if (learning) "Press the physical button…" else "Learn physical button")
+                    }
+                    learnedKey?.let { Text("Observed key $it · scan ${learnedScan ?: "none"}", color = NexusCyan) }
+                    Text("Home/Assistant may be reserved by Android or controller firmware. Learn uses only events received from your controller.",
+                        color = TextMuted, style = MaterialTheme.typography.bodySmall)
                     if (binding !in setOf("LS", "RS") && node?.type != NodeType.MACRO) {
                         MapperToggleRow(
                             label = "Turbo repeat",
@@ -407,8 +434,8 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         boundKey = binding,
                         type = type,
                         buttonBehavior = behavior,
-                        inputKeyCode = null,
-                        inputScanCode = null,
+                        inputKeyCode = learnedKey,
+                        inputScanCode = learnedScan,
                         axisX = null,
                         axisY = null
                     ) ?: MappingNode(
@@ -418,7 +445,9 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         radiusNorm = if (type == NodeType.BUTTON) .05f else .12f,
                         type = type,
                         boundKey = binding,
-                        buttonBehavior = behavior
+                        buttonBehavior = behavior,
+                        inputKeyCode = learnedKey,
+                        inputScanCode = learnedScan
                     )
                     if (node == null) viewModel.addNode(updated) else viewModel.updateNode(updated)
                     selected = updated.id
@@ -489,70 +518,41 @@ private fun NexusMapperHeader(
     canEdit: Boolean,
     canScan: Boolean
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-            .background(
-                Brush.horizontalGradient(
-                    listOf(Color(0xFF07111D), Color(0xFF091329), Color(0xFF07111D))
-                ),
-                shape
-            )
-            .border(1.dp, DarkSurfaceBorder, shape)
-            .padding(10.dp)
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+    var more by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(8.dp).nexusGlass(16.dp).padding(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    "NEXUS MAPPER",
-                    color = NexusCyan,
-                    fontWeight = FontWeight.ExtraBold,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    "$profileName  •  $gameTitle",
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text("MAPPING STUDIO", color = NexusCyan, fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleSmall)
+                Text("$profileName · $nodeCount maps", color = TextSecondary, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MapperPill("$nodeCount MAPS", true)
-                MapperPill(if (hasScreenshot) "HUD READY" else "NO HUD", hasScreenshot)
-                MapperPill(if (invertedY) "RS Y INV" else "RS Y NORMAL", invertedY, accent = NexusViolet)
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            MapperActionButton("IMPORT HUD", onImport)
-            MapperActionButton("CAPTURE", onCapture)
-            MapperActionButton("SCAN", onFindRegions, canScan)
+            MapperActionButton("IMPORT", onImport)
+            Spacer(Modifier.width(6.dp))
             MapperActionButton("+ INPUT", onAddInput, canEdit, strong = true)
-            MapperActionButton(if (gridEnabled) "GRID ON" else "GRID OFF", onToggleGrid)
-            MapperActionButton("MACROS", onMacro, canEdit)
-            MapperActionButton(
-                if (invertedY) "RS Y: INVERTED" else "RS Y: NORMAL",
-                onToggleInvertY,
-                canEdit,
-                strong = invertedY
-            )
+            Box {
+                TextButton(onClick = { more = true }) { Text("•••", color = NexusCyan) }
+                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                    Text(gameTitle, Modifier.padding(12.dp), color = TextSecondary, maxLines = 2)
+                    DropdownMenuItem(text = { Text("Capture game screen") }, onClick = { more = false; onCapture() })
+                    DropdownMenuItem(text = { Text("Scan HUD regions") }, enabled = canScan,
+                        onClick = { more = false; onFindRegions() })
+                    DropdownMenuItem(text = { Text(if (gridEnabled) "Turn grid off" else "Turn grid on") },
+                        onClick = { more = false; onToggleGrid() })
+                    DropdownMenuItem(text = { Text("Macro editor") }, enabled = canEdit,
+                        onClick = { more = false; onMacro() })
+                    DropdownMenuItem(text = { Text(if (invertedY) "Restore camera Y" else "Invert camera Y") }, enabled = canEdit,
+                        onClick = { more = false; onToggleInvertY() })
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun SelectedControlInspector(
+    modifier: Modifier = Modifier,
     config: MappingConfig,
     node: MappingNode,
     onRebind: () -> Unit,
@@ -562,16 +562,9 @@ private fun SelectedControlInspector(
     onUpdateCamera: (CameraSettings) -> Unit,
     onUpdateNode: (MappingNode) -> Unit
 ) {
-    val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     Column(
-        Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xFF091422), Color(0xFF050B14))),
-                shape
-            )
-            .border(1.dp, DarkSurfaceBorder, shape)
-            .padding(10.dp)
+        modifier.fillMaxWidth().nexusGlass(18.dp)
+            .verticalScroll(rememberScrollState()).padding(10.dp)
     ) {
         Row(
             Modifier.fillMaxWidth(),
