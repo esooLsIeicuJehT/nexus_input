@@ -10,7 +10,7 @@ function sandbox(ksu) {
   const context = { window: { ksu }, document: { getElementById(id) {
     if (!elements.has(id)) elements.set(id,{textContent:'',className:'',disabled:false,dataset:{},value:'',children:[],addEventListener(){},replaceChildren(){this.children=[];this.value=''},appendChild(child){this.children.push(child);if(!this.value)this.value=child.value}});
     return elements.get(id);
-  },createElement(){return {value:'',textContent:''}} }, setTimeout(fn){const id=++counter;timers.set(id,fn);return id},clearTimeout(id){timers.delete(id)} };
+  },querySelectorAll(){return []},createElement(){return {value:'',textContent:''}} }, setTimeout(fn){const id=++counter;timers.set(id,fn);return id},clearTimeout(id){timers.delete(id)} };
   vm.createContext(context);vm.runInContext(source,context);
   return {context,elements,timers};
 }
@@ -105,4 +105,17 @@ test('failed capability fields never manufacture selectable governor names',()=>
   const {context}=sandbox({exec(){}});
   assert.deepEqual([...context.exposedWords('UNAVAILABLE: file is not readable',/^[a-zA-Z0-9_-]+$/)],[]);
   assert.deepEqual([...context.exposedWords('schedutil powersave',/^[a-zA-Z0-9_-]+$/)],['schedutil','powersave']);
+});
+
+test('switching bottom navigation keeps one page visible and performs no root calls', () => {
+  const calls=[];const {context}=sandbox({exec(...args){calls.push(args)}});
+  const pages=['overview','controls','runtime','updates','logs'].map(page=>({dataset:{page},hidden:false}));
+  const buttons=pages.map(page=>({dataset:{route:page.dataset.page},attributes:{},
+    setAttribute(key,value){this.attributes[key]=value},removeAttribute(key){delete this.attributes[key]}}));
+  context.document.querySelectorAll=selector=>selector==='[data-page]'?pages:buttons;
+  context.window.scrollTo=()=>{};
+  context.showPage('updates');
+  assert.deepEqual(pages.filter(page=>!page.hidden).map(page=>page.dataset.page),['updates']);
+  assert.equal(buttons.filter(button=>button.attributes['aria-current']==='page').length,1);
+  assert.equal(calls.length,0);
 });

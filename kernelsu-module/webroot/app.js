@@ -370,3 +370,16 @@ document.getElementById('applyDevfreqGovernor').addEventListener('click',() => a
 document.getElementById('applySwappiness').addEventListener('click',() => applyRootControl('swappiness',[document.getElementById('swappiness').value]));
 document.getElementById('readControlLog').addEventListener('click',readControlLog);
 state('controlStatus','No root commands run automatically. Use Refresh diagnostics, Read device capabilities, or Check GitHub when needed.','');
+
+// Route switching is presentation-only: it never runs root probes or tuning.
+function showPage(route) {
+  document.querySelectorAll('[data-page]').forEach(page => { page.hidden = page.dataset.page !== route; });
+  document.querySelectorAll('[data-route]').forEach(button => {
+    if (button.dataset.route === route) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+document.querySelectorAll('[data-route]').forEach(button => {
+  button.addEventListener('click', () => showPage(button.dataset.route));
+});

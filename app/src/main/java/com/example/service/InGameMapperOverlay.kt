@@ -78,8 +78,16 @@ class InGameMapperOverlay(private val context: Context) {
     }
     private fun remove(view: View?) { if (view != null) try { wm.removeView(view) } catch(error:Exception) { fail("Overlay removal failed: ${error.message}",error) } }
     private fun closePanel() { remove(panel);panel=null;panelStatus=null }
+    // Translucent static gradients keep the overlay lightweight over a live game.
+    private fun glass(oval: Boolean = false) = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(0xC51B3049.toInt(), 0xC0091526.toInt(), 0xB0291D4D.toInt())
+    ).apply {
+        if (oval) shape = GradientDrawable.OVAL else cornerRadius = 16*density
+        setStroke(maxOf(1, density.roundToInt()), 0xB016F1FF.toInt())
+    }
     private fun button(label: String, action: () -> Unit) = Button(context).apply {
-        text = label; textSize = 11f; setTextColor(Color.WHITE); setBackgroundColor(0xFF183247.toInt())
+        text = label; textSize = 11f; setTextColor(Color.WHITE); background = glass(); minHeight = (44*density).roundToInt(); setPadding((12*density).roundToInt(),0,(12*density).roundToInt(),0)
         setOnClickListener { action() }
     }
 
@@ -88,9 +96,9 @@ class InGameMapperOverlay(private val context: Context) {
         if (!Settings.canDrawOverlays(context)) { fail("Floating mapper requires Android overlay permission");return }
         val size = (52*density).roundToInt()
         val view = TextView(context).apply {
-            text="N";textSize=22f;gravity=Gravity.CENTER;setTextColor(0xFF00D9EE.toInt())
+            text="N";textSize=22f;gravity=Gravity.CENTER;setTextColor(0xFF16F1FF.toInt())
             contentDescription="NEXUS INPUT floating controls: tap for mapper, long-press to panic"
-            background=GradientDrawable().apply { shape=GradientDrawable.OVAL;setColor(0xFF071827.toInt());setStroke((2*density).roundToInt(),0xFF00D9EE.toInt()) }
+            background=glass(oval=true); elevation=8*density
         }
         val layout=params(size,size).apply { x=(12*density).roundToInt();y=(120*density).roundToInt() }
         clamp(layout,size,size)
@@ -115,7 +123,7 @@ class InGameMapperOverlay(private val context: Context) {
         try { wm.addView(view,layout);bubble=view;bubbleParams=layout } catch(error:Exception) { fail("Floating bubble failed: ${error.message}",error);return }
         bubbleObserver?.cancel()
         bubbleObserver=scope.launch { MappingRuntimeBridge.state.collect { state ->
-            view.setTextColor(if(state.backendReady) 0xFF20D5A4.toInt() else if(state.error!=null) 0xFFFF6588.toInt() else 0xFF00D9EE.toInt())
+            view.setTextColor(if(state.backendReady) 0xFF20D5A4.toInt() else if(state.error!=null) 0xFFFF6588.toInt() else 0xFF16F1FF.toInt())
             panelStatus?.text = MapperPanelStatus.text(state)
         } }
     }
@@ -127,7 +135,7 @@ class InGameMapperOverlay(private val context: Context) {
             textSize = 11f;setTextColor(Color.WHITE);setPadding(8,8,8,8)
         }
         val menu=LinearLayout(context).apply {
-            orientation=LinearLayout.VERTICAL;setPadding(8,8,8,8);setBackgroundColor(0xF5071827.toInt())
+            orientation=LinearLayout.VERTICAL;setPadding(8,8,8,8);background=glass();elevation=8*density
             addView(TextView(context).apply { text="NEXUS INPUT";setTextColor(Color.WHITE) })
             addView(status)
             addView(button("Edit game layout") { beginEdit() })
@@ -162,9 +170,10 @@ class InGameMapperOverlay(private val context: Context) {
         val canvas=EditorCanvas()
         root.addView(canvas,FrameLayout.LayoutParams(-1,-1))
         val bar=LinearLayout(context).apply {
-            orientation=LinearLayout.HORIZONTAL;setBackgroundColor(0xEC071827.toInt())
+            orientation=LinearLayout.HORIZONTAL;background=glass()
             addView(button("Add") { chooseBinding(true,canvas) })
             addView(button("Bind") { chooseBinding(false,canvas) })
+            addView(button("Learn") { learnBinding(canvas) })
             addView(button("Delete") { selected?.let { session?.remove(it);selected=null;canvas.invalidate() } })
             addView(button("− Size") { selected?.let { session?.resize(it,-.01f);canvas.invalidate() } })
             addView(button("+ Size") { selected?.let { session?.resize(it,.01f);canvas.invalidate() } })
@@ -180,7 +189,7 @@ class InGameMapperOverlay(private val context: Context) {
         })
         root.addView(TextView(context).apply {
             text="Mapping paused · drag a binding over the real game · tap to select"
-            setTextColor(Color.WHITE);setBackgroundColor(0xDC071827.toInt());textSize=11f
+            setTextColor(Color.WHITE);background=glass();textSize=11f
         },FrameLayout.LayoutParams(-1,(26*density).roundToInt()).apply {
             gravity=Gravity.TOP
             topMargin=safeInsets.first
@@ -190,7 +199,7 @@ class InGameMapperOverlay(private val context: Context) {
 
     private fun chooseBinding(add: Boolean, canvas: View) {
         if(saving || (!add && selected==null)) { Toast.makeText(context,"Select a binding first",Toast.LENGTH_SHORT).show();return }
-        val keys=arrayOf("A","B","X","Y","LB","RB","LT","RT","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","L3","R3","START","SELECT","LS","RS")
+        val keys=arrayOf("A","B","X","Y","LB","RB","LT","RT","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","L3","R3","START","SELECT","GUIDE","CAPTURE","ASSISTANT","LS","RS")
         val choice=AlertDialog.Builder(context).setTitle(if(add) "Add physical input" else "Bind physical input")
             .setItems(keys) { _, index ->
                 val binding=keys[index]
@@ -200,14 +209,36 @@ class InGameMapperOverlay(private val context: Context) {
                 if(binding !in setOf("LS","RS")) chooseBehavior(canvas)
             }.setNegativeButton("Cancel",null).create()
         choice.window?.setType(params(1,1).type);dialog=choice
-        try { choice.show() } catch(error:Exception) { fail("Binding dialog failed: ${error.message}",error) }
+        try { choice.show();choice.window?.setBackgroundDrawable(glass()) } catch(error:Exception) { fail("Binding dialog failed: ${error.message}",error) }
+    }
+    private fun learnBinding(canvas: View) {
+        val node=session?.draft?.buttons?.firstOrNull { it.id==selected }
+        if (node==null || node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)) {
+            Toast.makeText(context,"Select a button target first",Toast.LENGTH_SHORT).show();return
+        }
+        val choice=AlertDialog.Builder(context).setTitle("Learn ${node.boundKey}")
+            .setMessage("Press your controller button. Home/Assistant may be reserved by Android; only delivered events can be learned.")
+            .setNegativeButton("Cancel",null).create()
+        choice.setOnKeyListener { _, _, event ->
+            if (!com.example.input.ControllerSourceClassifier.accepts(event.source,event.device?.sources ?: 0)) false
+            else {
+                if (event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
+                    session?.bindObserved(node.id,event)
+                    canvas.invalidate();choice.dismiss()
+                }
+                true
+            }
+        }
+        choice.window?.setType(params(1,1).type);dialog=choice
+        try { choice.show();choice.window?.setBackgroundDrawable(glass()) }
+        catch(error:Exception) { fail("Learn dialog failed: ${error.message}",error) }
     }
     private fun chooseBehavior(canvas: View) {
         val node=session?.draft?.buttons?.firstOrNull { it.id==selected } ?: return
         val choice=AlertDialog.Builder(context).setTitle("Touch behavior for ${node.boundKey}")
             .setItems(arrayOf("TAP","HOLD")) { _,index -> session?.bind(node.id,node.boundKey,ButtonBehavior.entries[index]);canvas.invalidate() }.create()
         choice.window?.setType(params(1,1).type);dialog=choice
-        try { choice.show() } catch(error:Exception) { fail("Behavior dialog failed: ${error.message}",error) }
+        try { choice.show();choice.window?.setBackgroundDrawable(glass()) } catch(error:Exception) { fail("Behavior dialog failed: ${error.message}",error) }
     }
     private fun save() {
         if(saving) return
@@ -247,7 +278,8 @@ class InGameMapperOverlay(private val context: Context) {
                 val x=node.xNorm*(width-1);val y=node.yNorm*(height-1)
                 val radius=maxOf(18*density,node.radiusNorm*minOf(width,height))
                 paint.style=Paint.Style.FILL;paint.color=0x770B2440;canvas.drawCircle(x,y,radius,paint)
-                paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF00D9EE.toInt();canvas.drawCircle(x,y,radius,paint)
+                paint.style=Paint.Style.STROKE;paint.strokeWidth=7*density;paint.color=0x3016F1FF;canvas.drawCircle(x,y,radius,paint)
+                paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF16F1FF.toInt();canvas.drawCircle(x,y,radius,paint)
                 paint.style=Paint.Style.FILL;paint.textSize=12*density;paint.textAlign=Paint.Align.CENTER;canvas.drawText(node.boundKey,x,y+4*density,paint)
             }
         }

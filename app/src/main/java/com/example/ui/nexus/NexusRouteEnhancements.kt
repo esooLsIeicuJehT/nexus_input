@@ -14,6 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,82 +33,9 @@ import kotlin.math.abs
 
 @Composable
 fun NexusMapperRoute(viewModel: MainAppViewModel) {
-    val config by viewModel.activeConfig.collectAsState()
-    val controller by viewModel.controllerProfile.collectAsState()
-    val privilege by viewModel.activePrivilegeMethod.collectAsState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(GraphiteFoundation)
-    ) {
-        Surface(
-            color = Color(0xFF06121F),
-            border = BorderStroke(1.dp, DarkSurfaceBorder),
-            tonalElevation = 0.dp
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.CenterFocusStrong,
-                    contentDescription = null,
-                    tint = NexusCyan,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = config.profileName,
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${config.buttons.size} bindings • ${privilege?.badgeLabel ?: "No backend"}",
-                        color = TextMuted,
-                        fontSize = 9.sp
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(99.dp),
-                    color = if (controller.connected) AccentGreen.copy(alpha = 0.12f) else AccentAmber.copy(alpha = 0.12f),
-                    border = BorderStroke(
-                        1.dp,
-                        if (controller.connected) AccentGreen.copy(alpha = 0.55f) else AccentAmber.copy(alpha = 0.55f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.SportsEsports,
-                            contentDescription = null,
-                            tint = if (controller.connected) AccentGreen else AccentAmber,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (controller.connected) "INPUT LIVE" else "NO DEVICE",
-                            color = if (controller.connected) AccentGreen else AccentAmber,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
-            }
-        }
-
-        Box(modifier = Modifier.weight(1f)) {
-            ScreenshotMapperScreen(viewModel = viewModel)
-        }
-    }
+    // The screenshot workspace owns its one compact toolbar. Keep all primary
+    // navigation in the shell's bottom dock in both orientations.
+    ScreenshotMapperScreen(viewModel = viewModel)
 }
 
 @Composable
@@ -116,7 +45,7 @@ fun NexusDevicesRoute(
 ) {
     val live by ControllerInputMonitor.state.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().background(GraphiteFoundation)) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
         Box(modifier = Modifier.weight(1f)) {
             NexusDevicesScreen(viewModel = viewModel, onNavigate = onNavigate)
         }
@@ -139,12 +68,12 @@ private fun LiveInputStrip(
     eventLog: List<String>
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFF06121F),
+        modifier = Modifier.fillMaxWidth().heightIn(max = 190.dp),
+        color = DarkSurface,
         border = BorderStroke(1.dp, DarkSurfaceBorder),
         tonalElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+        Column(modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 12.dp, vertical = 9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "LIVE ANDROID INPUT",
@@ -174,7 +103,12 @@ private fun LiveInputStrip(
                 listOf("LX", "LY", "RX", "RY", "LT", "RT", "BRAKE", "GAS", "HAT_X", "HAT_Y")
                     .mapNotNull { name -> axes[name]?.let { name to it } }
                     .forEach { (name, value) -> LiveAxisRow(name, value) }
-                axes.filterKeys { it.startsWith("AXIS_") }.toSortedMap().forEach { (name,value) -> LiveAxisRow(name,value) }
+                var expandedAxes by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                TextButton(onClick = { expandedAxes = !expandedAxes }) {
+                    Text(if (expandedAxes) "Hide raw axes" else "All raw axes & events")
+                }
+                if (expandedAxes) axes.filterKeys { it.startsWith("AXIS_") }.toSortedMap()
+                    .forEach { (name, value) -> LiveAxisRow(name, value) }
 
                 if (pressedButtons.isNotEmpty() || lastKey.isNotBlank()) {
                     Spacer(Modifier.height(5.dp))
@@ -246,7 +180,7 @@ fun NexusProfileDetailRoute(
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .background(GraphiteFoundation)
+            .background(Color.Transparent)
             .padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {

@@ -26,6 +26,8 @@ data class ControllerLiveState(
     val lastScanCode: Int? = null,
     val lastKeyName: String? = null,
     val lastSource: Int? = null,
+    val lastKeyAction: Int? = null,
+    val lastKeySequence: Long = 0L,
     val eventLog: List<String> = emptyList()
 )
 
@@ -116,6 +118,7 @@ object ControllerInputMonitor {
 
         val actionName = if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"
         val line = "$actionName dev=${event.deviceId} src=0x${event.source.toString(16)} key=${event.keyCode} ${KeyEvent.keyCodeToString(event.keyCode)} scan=${event.scanCode}"
+        val sequence = observedEvents.incrementAndGet()
         _state.value = _state.value.copy(
             connectedEventSource = event.device?.name,
             deviceId = event.device?.id,
@@ -124,9 +127,11 @@ object ControllerInputMonitor {
             lastScanCode = event.scanCode,
             lastKeyName = KeyEvent.keyCodeToString(event.keyCode),
             lastSource = event.source,
+            lastKeyAction = event.action,
+            lastKeySequence = sequence,
             eventLog = (_state.value.eventLog + line).takeLast(64),
             lastEventUptimeMs = event.eventTime,
-            observedEventSequence = observedEvents.incrementAndGet()
+            observedEventSequence = sequence
         )
     }
 

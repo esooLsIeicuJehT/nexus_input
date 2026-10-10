@@ -38,21 +38,10 @@ private fun NexusPanel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .clip(NexusPanelShape)
-            .background(NexusGlowGradient)
-            .padding(1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(17.dp))
-                .background(NexusPanelGradient)
-                .padding(14.dp),
-            content = content
-        )
-    }
+    Column(
+        modifier = modifier.nexusGlass().padding(12.dp),
+        content = content
+    )
 }
 
 @Composable
@@ -117,7 +106,7 @@ fun NexusHomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GraphiteFoundation)
+            .background(Color.Transparent)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -135,17 +124,17 @@ fun NexusHomeScreen(
                             listOf(Color(0xFF11133D), Color(0xFF071827), Color(0xFF10143A))
                         )
                     )
-                    .padding(18.dp),
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
+                        .size(52.dp)
                         .clip(CircleShape)
                         .background(SignatureGradient),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("N", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                    Text("N", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -256,7 +245,7 @@ fun NexusHomeScreen(
             }
         }
 
-        SectionTitle("System integrations", "Backend status")
+        NexusExpandablePanel("Backend status", "${privilegeResults.count { it.isDetected }} available") {
         privilegeResults.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { result ->
@@ -279,12 +268,6 @@ fun NexusHomeScreen(
             }
         }
 
-        SectionTitle("Quick access", "Command center")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QuickAction("Profiles", Icons.Default.GridView, Modifier.weight(1f)) { onNavigate("profiles") }
-            QuickAction("Mapper", Icons.Default.CenterFocusStrong, Modifier.weight(1f)) { onNavigate("mapper") }
-            QuickAction("Devices", Icons.Default.SportsEsports, Modifier.weight(1f)) { onNavigate("devices") }
-            QuickAction("System", Icons.Default.Settings, Modifier.weight(1f)) { onNavigate("system") }
         }
         Spacer(Modifier.height(10.dp))
     }
@@ -329,7 +312,7 @@ fun NexusProfilesScreen(
 
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(GraphiteFoundation),
+        modifier = Modifier.fillMaxSize().background(Color.Transparent),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -443,7 +426,7 @@ fun NexusProfileDetailScreen(
     var newName by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
+        modifier = Modifier.fillMaxSize().background(Color.Transparent).verticalScroll(rememberScrollState()).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         TextButton(onClick = { onNavigate("profiles") }) {
@@ -460,7 +443,7 @@ fun NexusProfileDetailScreen(
             Column(
                 modifier = Modifier.background(
                     Brush.horizontalGradient(listOf(Color(0xFF0B3348), Color(0xFF211447), Color(0xFF071827)))
-                ).padding(18.dp)
+                ).padding(12.dp)
             ) {
                 Text("GAME PROFILE", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                 Text(game?.displayName ?: config.gameTitle.ifBlank { "No game selected" }, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Black)
@@ -546,7 +529,7 @@ fun NexusDevicesScreen(
     val controller by viewModel.controllerProfile.collectAsState()
 
     Column(
-        modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
+        modifier = Modifier.fillMaxSize().background(Color.Transparent).verticalScroll(rememberScrollState()).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SectionTitle("Devices", "Controller tester")
@@ -630,13 +613,12 @@ fun NexusSystemScreen(
     val context = LocalContext.current
 
     Column(
-        modifier = Modifier.fillMaxSize().background(GraphiteFoundation).verticalScroll(rememberScrollState()).padding(14.dp),
+        modifier = Modifier.fillMaxSize().background(Color.Transparent).verticalScroll(rememberScrollState()).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         SectionTitle("System", "Engine & integrations")
 
-        NexusPanel(Modifier.fillMaxWidth()) {
-            Text("REQUESTED INPUT BACKEND", color = NexusCyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+        NexusExpandablePanel("Backend selection", "${requestedBackend?.title ?: "Automatic"}") {
             Text(requestedBackend?.title ?: "Automatic", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
             Text("Profile: ${activeConfig.profileName}", color = TextSecondary, fontSize = 10.sp)
             Text(if (requestedBackend == null) "Automatic selection reports failed candidates before choosing an available backend."
@@ -653,8 +635,7 @@ fun NexusSystemScreen(
             }
         }
 
-        NexusPanel(Modifier.fillMaxWidth()) {
-            Text("MAPPING STATUS", color = NexusCyan, fontWeight = FontWeight.Bold)
+        NexusExpandablePanel("Mapping status", if (runtime.backendReady) "Ready" else "Disarmed", initiallyExpanded = true) {
             Text(if (runtime.backendReady) "Backend ready: ${runtime.backend}" else if (runtime.armed) "Armed; backend not ready" else "Disarmed", color = TextPrimary)
             Text("Target in foreground: ${runtime.targetForeground}", color = TextSecondary)
             runtime.notice?.let { Text(it, color = AccentAmber) }
@@ -664,8 +645,7 @@ fun NexusSystemScreen(
                 panic.error?.let { Text(it, color = AccentRose) }
             }
         }
-        NexusPanel(Modifier.fillMaxWidth()) {
-            Text("RELEASE SELF-CHECK", color = NexusCyan, fontWeight = FontWeight.Bold)
+        NexusExpandablePanel("Diagnostics", if (diagnostics == null) "Not collected" else "Report ready", initiallyExpanded = true) {
             Text("Reads device, permission, storage and backend observations. No test touches are injected.", color = TextSecondary)
             Button(onClick = viewModel::runSelfCheck) { Text("Collect diagnostics") }
             diagnostics?.let { report ->
@@ -674,10 +654,18 @@ fun NexusSystemScreen(
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NEXUS INPUT diagnostics",report))
                     viewModel.showSnack("Diagnostics copied")
                 }) { Text("Copy report") }
-                Text(report, color = TextSecondary, fontSize = 9.sp)
+                // Keep the complete report available without growing the page.
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Box(Modifier.fillMaxWidth().heightIn(max = 180.dp)
+                        .nexusGlass(12.dp).verticalScroll(rememberScrollState()).padding(10.dp)) {
+                        Text(report, color = TextSecondary, fontSize = 10.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
+                }
             }
         }
 
+        NexusExpandablePanel("Available backends", "${probes.count { it.isDetected }} detected") {
         probes.forEach { probe ->
             NexusPanel(Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -700,13 +688,15 @@ fun NexusSystemScreen(
             }
         }
 
-        SectionTitle("Tools", "System controls")
+        }
+        NexusExpandablePanel("System tools", "Overlays · files · setup") {
         SystemAction("KernelSU WebUI", "Open the module control center", Icons.Default.Terminal) { onNavigate("root_webui") }
         SystemAction("Frame overlay", "Presented FPS and measured frame intervals", Icons.Default.Speed) { onNavigate("fps") }
         SystemAction("Overlay studio", "Crosshair and floating HUD controls", Icons.Default.CenterFocusStrong) { onNavigate("crosshair") }
         SystemAction("Local profiles & backup", "Import, export and share saved profiles", Icons.Default.Archive) { onNavigate("profile_files") }
         SystemAction("Safety", "Anti-cheat and game safety information", Icons.Default.Security) { onNavigate("safety") }
         SystemAction("Onboarding", "Run setup and permission checks again", Icons.Default.HelpOutline) { viewModel.restartOnboarding() }
+        }
     }
 }
 
@@ -731,6 +721,32 @@ private fun SystemAction(
                 Text(subtitle, color = TextMuted, fontSize = 9.sp)
             }
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = TextMuted)
+        }
+    }
+}
+
+/** Details stay reachable; only open groups take screen space. */
+@Composable
+private fun NexusExpandablePanel(
+    title: String,
+    summary: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var expanded by remember(title) { mutableStateOf(initiallyExpanded) }
+    NexusPanel(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }
+            .heightIn(min = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(summary, color = NexusCyan, fontSize = 10.sp)
+            }
+            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse $title" else "Expand $title", tint = NexusCyan)
+        }
+        if (expanded) {
+            Spacer(Modifier.height(8.dp))
+            content()
         }
     }
 }
