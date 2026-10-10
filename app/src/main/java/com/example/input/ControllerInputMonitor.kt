@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicLong
  * manufacture values for axes a device does not expose. The Devices tester and calibration
  * can therefore distinguish real Android events from configured profile values.
  */
+data class ObservedControllerKey(val keyCode: Int, val scanCode: Int, val sequence: Long, val aliases: Set<String>)
+
 data class ControllerLiveState(
     val connectedEventSource: String? = null,
     val deviceId: Int? = null,
@@ -28,6 +30,7 @@ data class ControllerLiveState(
     val lastSource: Int? = null,
     val lastKeyAction: Int? = null,
     val lastKeySequence: Long = 0L,
+    val lastPress: ObservedControllerKey? = null,
     val eventLog: List<String> = emptyList()
 )
 
@@ -129,6 +132,11 @@ object ControllerInputMonitor {
             lastSource = event.source,
             lastKeyAction = event.action,
             lastKeySequence = sequence,
+            // Retain the last down through its up. Compose may coalesce a fast
+            // tap's state updates before the binding dialog gets a frame.
+            lastPress = if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
+                ObservedControllerKey(event.keyCode, event.scanCode, sequence, ControllerBindingAliases.forEvent(event))
+                else _state.value.lastPress,
             eventLog = (_state.value.eventLog + line).takeLast(64),
             lastEventUptimeMs = event.eventTime,
             observedEventSequence = sequence

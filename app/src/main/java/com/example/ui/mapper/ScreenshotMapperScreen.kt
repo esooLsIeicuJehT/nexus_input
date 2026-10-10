@@ -58,15 +58,16 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
 
-    LaunchedEffect(showBinding, learning, live.lastKeySequence) {
-        if (showBinding && learning && live.lastKeySequence > learnAfter &&
-            live.lastKeyAction == android.view.KeyEvent.ACTION_DOWN) {
-            val code = live.lastKeyCode ?: return@LaunchedEffect
-            val aliases = ControllerBindingAliases.forKeyCode(code)
+    LaunchedEffect(showBinding, learning, live.lastPress?.sequence) {
+        val press = live.lastPress
+        if (showBinding && learning && press != null && press.sequence > learnAfter &&
+            (press.keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN || press.scanCode > 0)) {
+            val code = press.keyCode
+            val aliases = press.aliases
             if (aliases.isNotEmpty()) binding = ControllerBindingAliases.canonical(aliases.first())
             // Preserve raw identity for vendor keys rather than assigning a guessed code.
             learnedKey = code
-            learnedScan = live.lastScanCode?.takeIf { it > 0 }
+            learnedScan = press.scanCode.takeIf { it > 0 }
             learning = false
         }
     }
@@ -388,7 +389,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         }
                     }
                     OutlinedButton(onClick = {
-                        learnAfter = live.lastKeySequence
+                        learnAfter = live.lastPress?.sequence ?: 0L
                         learning = true
                         learnedKey = null; learnedScan = null
                     }, enabled = binding !in setOf("LS", "RS")) {

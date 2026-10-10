@@ -223,8 +223,12 @@ class InGameMapperOverlay(private val context: Context) {
             if (!com.example.input.ControllerSourceClassifier.accepts(event.source,event.device?.sources ?: 0)) false
             else {
                 if (event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) {
-                    session?.bindObserved(node.id,event)
-                    canvas.invalidate();choice.dismiss()
+                    if (event.keyCode != KeyEvent.KEYCODE_UNKNOWN || event.scanCode > 0) {
+                        session?.bindObserved(node.id,event)
+                        canvas.invalidate();choice.dismiss()
+                    } else {
+                        Toast.makeText(context,"This event has no usable key or scan code",Toast.LENGTH_SHORT).show()
+                    }
                 }
                 true
             }
