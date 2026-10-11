@@ -123,7 +123,7 @@ The existing stick timing, camera movement, trigger thresholds, macros, turbo, p
 
 ## If a control still won’t work
 
-First check **Devices**. Each control also needs a saved target placed over a real game button; detecting a controller does not create those targets. The included Delta Force preset covers face buttons, triggers and sticks, so add any center-button or D-pad targets you want to use.
+First check **Devices**, then inspect your saved layout. Each control needs a target over a real game button; detecting a controller does not create one. Keep every target already saved—adding a second target with the same binding can trigger two touches. The starter Delta Force layout supplies face buttons, triggers and sticks, but your saved profile may already include D-pad and center targets. In the reported Moto profile, **START, SELECT and all four D-pad directions already exist**. Only add controls that are absent, such as **GUIDE, ASSISTANT and CAPTURE** in that profile, and place them over the game buttons you want them to press.
 
 If a mapped input still fails, launch the game through its profile, press that input, then open **System → Diagnostics**, select **Collect diagnostics**, and use **Copy input report**. Include which phone and backend you used. The follow-up build retains recent routing results after leaving the game: **unmapped** means no saved target matched, **blocked** explains a focus/backend gate, and **matched** means a touch request was routed. A matched request still needs a successful in-game check.
 
