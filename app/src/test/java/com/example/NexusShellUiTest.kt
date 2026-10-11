@@ -24,6 +24,7 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
 class NexusShellUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 

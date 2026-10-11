@@ -1,44 +1,64 @@
-[![Android v1 debug and release validation](https://github.com/esooLsIeicuJehT/nexus_input/actions/workflows/android-debug.yml/badge.svg)](https://github.com/esooLsIeicuJehT/nexus_input/actions/workflows/android-debug.yml)
+![Nexus Input — Play your way](docs/assets/nexus-input-banner.png)
 
+# Nexus Input
 
+Your controller. Your game. Your layout.
 
-# NEXUS INPUT 1.1.0-dev
+Nexus Input lets you turn your gamepad buttons and sticks into touch controls for Android games. Pick a game, place your controls over a screenshot, and adjust the layout while you play. Each game keeps its own profile, so you can get things feeling right without starting over every time.
 
-Android gamepad-to-touch mapping for Android with per-game profiles, screenshot mapping, in-game editing, controller diagnostics, crosshair/presented-frame overlays, Shizuku support and a KernelSU `/dev/uinput` backend. Version 1.0.0 is under active device validation; CI success does not by itself establish production hardware acceptance.
+The new look is dark glass, cyan light and violet glow. There’s one bottom navigation bar, a cleaner mapping workspace, and small scrollable windows for long reports. Your game stays the focus.
 
-## Neon glass upgrade candidate
+[Download Nexus Input](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.0-dev) · [See the changes](CHANGELOG.md) · [Phone testing guide](docs/DEVICE_TEST_NEON_UPGRADE.md)
 
-The current source includes one persistent bottom navigation, glass/neon styling across the APK, screenshot mapper, floating editor and KernelSU WebUI, compact expandable settings, bounded diagnostic/log windows and controller-binding repairs. See [the two-pass audit](docs/AUDIT_NEON_UPGRADE_2026-10-10.md), [the verified pre-change backup](backups/README.md) and [review previews](docs/previews/phone-overview.png).
+## Downloads
 
-The module updater's public development channel now points to the real checked-in [1.1.0-dev ZIP](releases/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip) with matching `update.json` SHA-256. Source version and published asset are kept distinct; this is a **device-test candidate**. The APK signing certificate and profile database identities are retained. Install an APK upgrade only with the existing certificate; never uninstall/clear profiles merely to install a debug build.
+**1.1.0-dev is a development candidate.** The Android builds and automated checks pass; the new controller fixes still need an in-game check on both Moto phones.
 
-The user reports that all Stadia buttons appear in the Devices event area. The fixes target saved-input matching and touch routing: prefixed Android labels, equivalent center-key translations, untranslated-key scan fallbacks and D-pad HAT mappings with scan-bound nodes. New test cases exercise these through both root and Shizuku interfaces. Actual in-game acceptance on rooted Moto G 2026 and non-root Moto G 4G 2025 remains required; this workspace has no connected phone.
+| Download | What it’s for |
+| --- | --- |
+| [Nexus Input-debug.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus%20Input-debug.apk) | An installable debug build for testing the new UI and mapping fixes. |
+| [Nexus Input.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus%20Input.apk) | The installable release build, signed with the same development key as the debug download. |
+| [KernelSU companion ZIP](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip) | The module for rooted KernelSU setups, including the matching WebUI and GitHub updater. |
 
-## Current status
+Already have Nexus installed? Keep your profiles. Export them using **System → System tools → Local profile files → Backup ZIP** before trying a test build. An APK update needs the same signing key as your installed copy. Older GitHub Actions debug APKs used temporary keys, so these downloads may not update them directly. If Android reports a signature mismatch, keep the installed app until your profile backup is safely exported and you have a restore path.
 
-CI run **#149** passed the complete Android v1 validation workflow for the latest Nexus Input candidate. It validated commit `d8c9b0a600826f1f908fd0d539291a8be345c01a`, including the controller/runtime fixes from PRs #12 and #13 plus the user-approved Nexus cyan/violet APK and KernelSU WebUI visual pass from PR #14. PR #14 merged into `main` as `738ff407f0a03ece7704717cb14554dc2202afad`.
+Both release-page APKs share one development signing key; the release build is not debuggable. These are installable development builds, not APKs signed with a recovered older GitHub key. Use the release-page downloads together rather than mixing APKs from separate Actions runs.
 
-Real-device diagnostics on the rooted moto g 2026 established that KernelSU, libsu RootService, JNI and `/dev/uinput` can successfully create and register the virtual touchscreen and keyboard. The previously observed failure was in Nexus lifecycle handling: the prepared backend was being released during the game's splash/activity/orientation handoff. The merged fix removes that preparation race, ignores Nexus's own overlay/activity package as a false foreground exit, retains a prepared backend for the armed session through transient launch focus changes, and uses an explicit foreground-exit grace while still gating injection on the target game's foreground state.
+## Get started
 
-Stadia Controller rev. A input is grounded in measured Android events rather than guessed mappings. Observed values include Start key 108/scan 315, Select key 109/scan 314, L3 key 106/scan 317, R3 key 107/scan 318, right-stick axes 11/14, and D-pad HAT axes 15/16. The runtime keeps standard Android keycode handling and adds a device-specific scan fallback only for the measured Stadia vendor/product pair. Controller diagnostics also deduplicate the same physical key event when Android delivers it through both the Activity and Accessibility observation paths.
+1. **Set up your backend.** On the rooted Moto G 2026, install the KernelSU companion and reboot. On the non-root Moto G 4G 2025, start Shizuku with wireless debugging and allow Nexus to use it.
+2. **Enable input capture and overlays.** Follow the setup guide in the app. Accessibility captures controller input; “Display over other apps” lets the floating mapper appear over your game.
+3. **Choose a game and a profile.** Import a screenshot or capture the game, then place each touch target where the game expects it. Tune your sticks and triggers to your liking.
+4. **Launch and test.** Use the profile’s Launch action. The floating Nexus button lets you edit, resize and save your controls in-game. Panic remains available if you need to stop mapping and release touches.
 
-The mapper exposes visible +/- target resizing, walk/run radius and threshold tuning, right-stick H/V sensitivity, smoothing and fast-turn tuning, trigger press/release hysteresis, and matching in-game resize controls. Right-stick camera motion uses continuous dt-scaled movement with smoothing and safe display-boundary restart behavior instead of resetting whenever the pointer merely reaches the mapping radius. In-game controls respect display cutouts/system bars without shifting the full-screen mapping coordinate system.
+For buttons with unusual Android names, select the target and use **Rebind → Learn physical button**. Nexus saves the button event your controller actually sends. This is especially useful for Stadia’s center controls.
 
-The APK and KernelSU WebUI now share the approved Nexus visual language: near-black/navy panels, luminous cyan edges, violet accents and the updated Nexus splash hierarchy. This visual pass did not replace live controller/backend/profile state with mock data.
+## What changed
 
-The Devices tester records real controller motion/key events including all reported axes, HAT X/Y, trigger representations, key code, scan code, source, device ID and a rolling raw event log. Backend selection fails visibly: if no real backend is available, the UI reports that state instead of silently pretending Accessibility was selected.
+- Glass panels and neon edges across the app, mapper, floating controls and KernelSU WebUI.
+- One bottom navigation, including landscape. Settings fold into sections; diagnostics and logs scroll inside their own windows.
+- Better D-pad key/HAT matching and Start, Select, Guide/Home, Capture and Assistant bindings. Both editors can learn physical buttons, including quick taps.
+- A real downloadable module update, with checksum and version checks. The updater no longer advertises the stale 0.6 candidate.
+- A root CPU frequency fix that restores the previous interval if final verification fails. Opening a WebUI page does not apply a performance preset.
 
-**Still requiring real-device acceptance:** rooted moto g 2026 + Delta Force backend persistence after the lifecycle fix, final Stadia Start/Select/D-pad/R3 behavior in-game, subjective right-stick tuning, and Shizuku in-game delivery after the combined upgrade. CI success establishes source/build/test validation, not those physical-device results.
+The existing stick timing, camera movement, trigger thresholds, macros, turbo, profile storage and touch cleanup remain in place. Vibration is being investigated separately; controller rumble is not currently implemented by the mapper.
 
-## Two products
+## If a control still won’t work
 
-The Android APK owns input mapping and talks to the privilege backend. KernelSU uses the existing libsu RootService/AIDL and JNI `/dev/uinput` architecture. JNI contains raw uinput primitives. Shizuku uses its real UserService/AIDL contract. APatch remains **UNVERIFIED and fail-closed**.
+First check **Devices**. If the button shows an event there, learn it against the intended touch target and try it in the game. If it still fails, collect and copy **System → Diagnostics** after pressing it. The report includes the selected profile, button identities and backend state, so we can follow the event to its touch target.
 
-CPU/devfreq, thermal and memory observations, guarded root tuning, module management and the GitHub updater belong exclusively to `kernelsu-module/webroot/`. The APK exposes backend readiness and an **Open KernelSU WebUI** action. Community, VIP, cloud account and performance-tuning navigation are absent from the production APK.
+[The focused checklist](docs/DEVICE_TEST_NEON_UPGRADE.md) covers both Moto setups, center buttons, D-pad diagonals, the floating editor and the updater. Android 14 or newer is needed for global stick capture. On older supported Android versions, activity input testing and key capture remain available.
 
-## Build and tests
+## Backups and notes
 
-Use Java 17, Gradle 9.3.1, Android SDK 36/36.1, NDK 27.0.12077973 and CMake 3.22.1. CI installs the required toolchain and builds JNI for arm64-v8a, armeabi-v7a, x86 and x86_64.
+A labeled [pre-upgrade source backup](backups/README.md) is kept in this repo. It restores the tested source from before this work; your phone’s profiles need their own export.
+
+The [two-pass audit](docs/AUDIT_NEON_UPGRADE_2026-10-10.md) records what was found, what changed and which tested behaviors were preserved. The latest complete [Android validation](https://github.com/esooLsIeicuJehT/nexus_input/actions/workflows/android-debug.yml) covers debug and release tests, APK/AAB builds, lint, native packaging and rendered portrait/landscape layouts. Host and WebUI tests cover the module scripts and controls. These checks help catch regressions; they do not replace playing on the two phones.
+
+<details>
+<summary>Build and technical notes</summary>
+
+Use Java 17, Gradle 9.3.1, Android SDK 36/36.1, NDK 27.0.12077973 and CMake 3.22.1.
 
 ```sh
 python3 scripts/check_native_boundary.py
@@ -50,21 +70,12 @@ python3 scripts/verify_android_artifacts.py
 python3 scripts/package_release.py
 ```
 
-[Android validation workflow](.github/workflows/android-debug.yml) uploads a debug APK, explicitly **unsigned** release APK/AAB, KernelSU ZIP, test/lint reports and Room schemas. GitHub Actions on `main` and pull-request branches are the build evidence. CI #149 validated the latest combined candidate: root lifecycle, Stadia input, controller-event deduplication, mapper UX, camera/trigger behavior, backend-state handling, Nexus APK styling and KernelSU WebUI regression coverage. Unit tests use host/Robolectric transport fixtures; they do not certify SELinux behavior, physical-controller delivery or game-visible injection.
+The release APK directly produced by `-PunsignedRelease=true` is a build-validation artifact and cannot be installed. The APKs on this candidate's release page are subsequently signed with the same retained development key and verified with `apksigner`. The release APK remains non-debuggable; development signing does not establish hardware acceptance. Signing material stays outside the public repo and release assets.
 
-Global gamepad motion capture requires Android 14+. Android 7–13 supports Activity controller testing and key capture, but global stick profiles are rejected rather than silently losing motion. Accessibility screenshot capture requires Android 11+; image import remains available on older supported versions. Accessibility injection has explicit gesture and simultaneous-contact limitations.
+For your own production signing, use the existing keystore and alias `upload` with `KEYSTORE_PATH`, `STORE_PASSWORD` and `KEY_PASSWORD`, or configure `KEYSTORE_BASE64`, `STORE_PASSWORD` and `KEY_PASSWORD` for the [signed GitHub workflow](.github/workflows/android-signed-release.yml). The GitHub signing secrets are currently unconfigured. Keep those secrets out of the repo and chat.
 
+App identity remains `com.inputmapper.platform`, the Room database remains `controlyst_database`, and the module ID remains `gamepad.pro.root`. Version information comes from `version.properties`. Existing profiles and migrations are retained. See [source lineage](docs/SOURCE_LINEAGE.md) and [release notes for builders](docs/RELEASE_V1.md).
 
-## Latest test APK
+Root performance controls live in the KernelSU WebUI. Thermal protections stay intact; active ZRAM resizing and unverified device-specific presets remain unavailable. APatch remains unverified.
 
-CI **#149** produced the latest installable debug-signed test APK from commit `d8c9b0a600826f1f908fd0d539291a8be345c01a`. The GitHub Actions artifact is named `nexus-input-debug-v1`. This is a **debug/test candidate**, not a production-signed release. The corresponding CI run passed; rooted moto g 2026 + KernelSU + Stadia + Delta Force acceptance is still required before production publication.
-
-## Upgrade and release gates
-
-The package remains `com.inputmapper.platform`, the existing Room filename remains `controlyst_database`, and the module ID remains `gamepad.pro.root`. App and module share `version.properties`: development version 1.1.0-dev, code 1100. Legacy profiles from the exact preserved 0.6.2 contract migrate transactionally into Room without clearing the original preferences. Imported enabled intent never auto-arms mapping. See [source lineage](docs/SOURCE_LINEAGE.md).
-
-Release signing uses the **existing** keystore and alias `upload`, with `KEYSTORE_PATH`, `STORE_PASSWORD` and `KEY_PASSWORD`. No replacement key is generated. The manual signed workflow requires secure GitHub environment secrets; no signed APK/AAB can be claimed until it passes. See [release gates](docs/RELEASE_V1.md).
-
-The [editable Figma file](https://www.figma.com/design/0nup9fG0xfbIa2VTuXKvMh) is the design reference. Its connector is rate-limited and trustworthy per-screen node links are unavailable. Current screens are implemented, but exact Figma visual acceptance remains pending.
-
-Follow the [device test checklist](docs/DEVICE_TEST_CHECKLIST_V1.md) before production publication. `scripts/device_test_v1.py` collects real read-only ADB observations and initializes every manual case as `NOT_RUN`; it never manufactures a hardware pass. Device-specific thermal writes, active ZRAM resizing, compaction and performance presets remain unsupported until a verified device adapter/recovery path exists.
+</details>

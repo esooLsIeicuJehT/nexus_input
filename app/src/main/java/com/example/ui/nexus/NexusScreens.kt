@@ -635,7 +635,7 @@ fun NexusSystemScreen(
             }
         }
 
-        NexusExpandablePanel("Mapping status", if (runtime.backendReady) "Ready" else "Disarmed", initiallyExpanded = true) {
+        NexusExpandablePanel("Mapping status", if (runtime.backendReady) "Ready" else if (runtime.armed) "Armed; backend not ready" else "Disarmed", initiallyExpanded = true) {
             Text(if (runtime.backendReady) "Backend ready: ${runtime.backend}" else if (runtime.armed) "Armed; backend not ready" else "Disarmed", color = TextPrimary)
             Text("Target in foreground: ${runtime.targetForeground}", color = TextSecondary)
             runtime.notice?.let { Text(it, color = AccentAmber) }
@@ -645,7 +645,11 @@ fun NexusSystemScreen(
                 panic.error?.let { Text(it, color = AccentRose) }
             }
         }
-        NexusExpandablePanel("Diagnostics", if (diagnostics == null) "Not collected" else "Report ready", initiallyExpanded = true) {
+        NexusExpandablePanel("Diagnostics", when {
+            diagnostics == null -> "Not collected"
+            diagnostics?.startsWith("Self-check failed:") == true -> "Collection failed"
+            else -> "Report ready"
+        }, initiallyExpanded = true) {
             Text("Reads device, permission, storage and backend observations. No test touches are injected.", color = TextSecondary)
             Button(onClick = viewModel::runSelfCheck) { Text("Collect diagnostics") }
             diagnostics?.let { report ->

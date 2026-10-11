@@ -212,6 +212,7 @@ class InGameMapperOverlay(private val context: Context) {
         try { choice.show();choice.window?.setBackgroundDrawable(glass()) } catch(error:Exception) { fail("Binding dialog failed: ${error.message}",error) }
     }
     private fun learnBinding(canvas: View) {
+        if (saving || closed) return
         val node=session?.draft?.buttons?.firstOrNull { it.id==selected }
         if (node==null || node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)) {
             Toast.makeText(context,"Select a button target first",Toast.LENGTH_SHORT).show();return

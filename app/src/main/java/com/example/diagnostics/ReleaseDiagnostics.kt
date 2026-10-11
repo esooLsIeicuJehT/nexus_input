@@ -21,8 +21,19 @@ object ReleaseDiagnostics {
         val panic = PanicKillSwitch.state.value
         val devices = JSONArray()
         InputDevice.getDeviceIds().forEach { id -> InputDevice.getDevice(id)?.let { device ->
+            // Capability observations only. A delivered button/touch does not
+            // imply Android exposes a controller's motors or game rumble feedback.
+            val vibration = runCatching {
+                if (Build.VERSION.SDK_INT >= 31) device.vibratorManager.vibratorIds.isNotEmpty()
+                else {
+                    @Suppress("DEPRECATION")
+                    device.vibrator.hasVibrator()
+                }
+            }
             devices.put(JSONObject().put("id",id).put("name",device.name).put("descriptor",device.descriptor)
                 .put("sources",device.sources).put("vendorId",device.vendorId).put("productId",device.productId)
+                .put("vibratorReported",vibration.getOrNull() ?: JSONObject.NULL)
+                .put("vibratorObservationError",vibration.exceptionOrNull()?.message ?: JSONObject.NULL)
                 .put("isVirtual",device.isVirtual).put("ranges",JSONArray().apply { device.motionRanges.forEach { range ->
                     put(JSONObject().put("axis",range.axis).put("source",range.source).put("min",range.min)
                         .put("max",range.max).put("flat",range.flat).put("fuzz",range.fuzz))
@@ -40,6 +51,8 @@ object ReleaseDiagnostics {
             .put("manufacturer",Build.MANUFACTURER).put("model",Build.MODEL).put("abis",JSONArray(Build.SUPPORTED_ABIS.toList()))
             .put("kernel",System.getProperty("os.version") ?: JSONObject.NULL)
             .put("hardwareVerification","Not established by this self-check; perform the device checklist")
+            .put("controllerRumble",JSONObject().put("gameFeedbackRelayImplemented",false)
+                .put("note","Controller motor capability is reported per input device. No rumble pulse is sent by this self-check."))
             .put("capture",JSONObject().put("connected",ControlystAccessibilityService.isServiceRunning())
                 .put("pendingAccessibilityGestures",ControlystAccessibilityService.getInstance()?.pendingGestureCount ?: JSONObject.NULL)
                 .put("globalMotionApiAvailable",Build.VERSION.SDK_INT >= 34).put("screenshotApiAvailable",Build.VERSION.SDK_INT >= 30)
