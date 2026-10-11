@@ -19,6 +19,7 @@ import com.example.data.ProfilePersistence
 import com.example.input.MapperEditSession
 import com.example.model.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -40,6 +41,10 @@ class InGameMapperOverlay(private val context: Context) {
     private var closed = false
     private var bubbleObserver: Job? = null
     private var saveJob: Job? = null
+    private var snapToGrid = false
+    private var nodesVisible = true
+    private var inspector: ScrollView? = null
+    private var initialSelection: String? = null
 
     private fun displaySize(): Pair<Int,Int> {
         if(Build.VERSION.SDK_INT >= 30) {
@@ -136,11 +141,18 @@ class InGameMapperOverlay(private val context: Context) {
         }
         val menu=LinearLayout(context).apply {
             orientation=LinearLayout.VERTICAL;setPadding(8,8,8,8);background=glass();elevation=8*density
-            addView(TextView(context).apply { text="NEXUS INPUT";setTextColor(Color.WHITE) })
+            addView(TextView(context).apply { text="NEXUS INPUT · QUICK MENU";setTextColor(0xFF16F1FF.toInt());textSize=12f })
             addView(status)
-            addView(button("Edit game layout") { beginEdit() })
-            addView(button("Panic release") { PanicKillSwitch.triggerPanic(context,"Floating controls") })
-            addView(button("Close controls") { closePanel() })
+            val actions=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
+            actions.addView(button("✎\nMapper") { beginEdit() },LinearLayout.LayoutParams(0,-2,1f))
+            actions.addView(button("⇄\nProfile") { chooseProfile() },LinearLayout.LayoutParams(0,-2,1f))
+            actions.addView(button("◎\nCamera") { initialSelection="RS";beginEdit() },LinearLayout.LayoutParams(0,-2,1f))
+            addView(actions)
+            addView(button("▣  Screenshot mapper") { captureForMapper() })
+            val safety=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
+            safety.addView(button("!\nPanic") { PanicKillSwitch.triggerPanic(context,"Floating controls") },LinearLayout.LayoutParams(0,-2,1f))
+            safety.addView(button("×\nClose") { closePanel() },LinearLayout.LayoutParams(0,-2,1f))
+            addView(safety)
         }
         val (screenWidth,screenHeight) = displaySize()
         val width = (300*density).roundToInt().coerceAtMost(screenWidth.coerceAtLeast(1))
@@ -159,8 +171,162 @@ class InGameMapperOverlay(private val context: Context) {
         service.emergencyRelease { released -> handler.post {
             if(closed) return@post
             if(!released) { fail("Mapper edit aborted: backend did not acknowledge release",preserveRuntimeError=true);return@post }
-            session=MapperEditSession(config);selected=null;openEditor()
+            session=MapperEditSession(config)
+            selected=initialSelection?.let { binding -> config.buttons.firstOrNull { it.boundKey==binding }?.id }
+            initialSelection=null;nodesVisible=true;openEditor()
         } }
+    }
+
+    private fun captureForMapper() {
+        val config=MappingRuntimeBridge.config.value ?: run { fail("Launch a mapped game before capturing",preserveRuntimeError=true);return }
+        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Screenshot capture service is unavailable",preserveRuntimeError=true);return }
+        if(!MappingRuntimeBridge.state.value.targetForeground) { fail("Game focus must be confirmed before screenshot capture");return }
+        service.emergencyRelease { released -> handler.post {
+            if(closed) return@post
+            if(!released) { fail("Screenshot aborted: contact release was not acknowledged",preserveRuntimeError=true);return@post }
+            closePanel();bubbleObserver?.cancel();bubbleObserver=null;remove(bubble);bubble=null
+            var pending=true
+            val timeout=Runnable { if(pending && !closed) { pending=false;fail("Screenshot capture timed out");show() } }
+            handler.postDelayed(timeout,8_000)
+            Choreographer.getInstance().postFrameCallback {
+                Choreographer.getInstance().postFrameCallback captureFrame@{
+                    if(closed || !pending) return@captureFrame
+                    service.captureScreenshot { result -> handler.post captureResult@{
+                        if(!pending || closed) { result.getOrNull()?.recycle();return@captureResult }
+                        pending=false;handler.removeCallbacks(timeout)
+                        result.onSuccess { bitmap ->
+                            val opened=com.example.ui.mapper.MapperScreenshotHandoff.open(context,bitmap,config)
+                            bitmap.recycle()
+                            opened.onFailure { fail("Screenshot mapper could not open: ${it.message}",it);show() }
+                        }.onFailure { fail("Screenshot capture failed: ${it.message}",it);show() }
+                    } }
+                }
+            }
+        } }
+    }
+
+    private fun chooseProfile() {
+        val original=MappingRuntimeBridge.config.value ?: run { fail("No active game profile can be switched",preserveRuntimeError=true);return }
+        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Capture service is unavailable",preserveRuntimeError=true);return }
+        service.emergencyRelease { released -> handler.post {
+            if(closed) return@post
+            if(!released) { fail("Profile switch aborted: release was not acknowledged",preserveRuntimeError=true);return@post }
+            closePanel()
+            saveJob=scope.launch {
+                try {
+                    val db=ControlystDatabase.getDatabase(context)
+                    val profiles=withContext(Dispatchers.IO) { db.configProfileDao().getProfilesForGame(original.gamePackage).first() }
+                    require(profiles.isNotEmpty()) { "No saved profiles for ${original.gamePackage}" }
+                    val choice=AlertDialog.Builder(context).setTitle("Profiles for ${original.gameTitle.ifBlank { original.gamePackage }}")
+                        .setItems(profiles.map { it.profileName+if(it.isDefault) " · default" else "" }.toTypedArray()) { _,index ->
+                            saveJob=scope.launch {
+                                try {
+                                    val config=withContext(Dispatchers.IO) {
+                                        ProfilePersistence(db).load(profiles[index].id,original.gamePackage).also { ProfilePersistence(db).save(it) }
+                                    }
+                                    if(!closed) {
+                                        MappingForegroundService.currentCrosshairConfig.value=config.crosshair
+                                        MappingRuntimeBridge.arm(config.gamePackage,config)
+                                    }
+                                } catch(error:Exception) { if(error is CancellationException) throw error;fail("Profile switch failed: ${error.message}",error) }
+                            }
+                        }.setNegativeButton("Cancel") { _,_ -> if(!closed) MappingRuntimeBridge.arm(original.gamePackage,original) }.create()
+                    choice.window?.setType(params(1,1).type);dialog=choice
+                    choice.show();choice.window?.setBackgroundDrawable(glass())
+                } catch(error:Exception) { if(error is CancellationException) throw error;fail("Profile list unavailable: ${error.message}",error) }
+            }
+        } }
+    }
+
+    private fun showInspector(canvas: EditorCanvas) {
+        val root=editor ?: return
+        inspector?.let(root::removeView);inspector=null
+        val node=session?.draft?.buttons?.firstOrNull { it.id==selected } ?: return
+        val body=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;background=glass();setPadding(12,8,12,8) }
+        fun label(text:String)=TextView(context).apply { this.text=text;setTextColor(Color.WHITE);textSize=11f }
+        body.addView(label("SELECTED · ${node.boundKey}"))
+        body.addView(label("${node.type} · ${node.buttonBehavior}"))
+        fun updateNode(change: (MappingNode) -> MappingNode): MappingNode? {
+            val edit=session ?: return null
+            return try {
+                edit.replaceDraft(edit.draft.copy(buttons=edit.draft.buttons.map { if(it.id==node.id) change(it) else it }));canvas.invalidate()
+                edit.draft.buttons.firstOrNull { it.id==node.id }
+            } catch(error:Exception) { fail("Tuning rejected: ${error.message}",error);null }
+        }
+        fun slider(title:String,value:Float,min:Float,max:Float,change:(Float)->Float?) {
+            val caption=label("$title · ${"%.2f".format(value)}");body.addView(caption)
+            body.addView(SeekBar(context).apply {
+                var observed=value
+                this.max=100;progress=(((value-min)/(max-min))*100).roundToInt().coerceIn(0,100)
+                if(Build.VERSION.SDK_INT>=21) progressTintList=android.content.res.ColorStateList.valueOf(0xFF16F1FF.toInt())
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onStartTrackingTouch(bar:SeekBar?)=Unit
+                    override fun onStopTrackingTouch(bar:SeekBar?)=Unit
+                    override fun onProgressChanged(bar:SeekBar?,progress:Int,fromUser:Boolean) {
+                        if(fromUser) {
+                            val requested=min+(max-min)*progress/100
+                            change(requested)?.let { observed=it }
+                            caption.text="$title · ${"%.2f".format(observed)}"
+                            bar?.progress=(((observed-min)/(max-min))*100).roundToInt().coerceIn(0,100)
+                        }
+                    }
+                })
+            })
+        }
+        slider("Radius",node.radiusNorm,.02f,.3f) { radius -> updateNode { it.copy(radiusNorm=radius) }?.radiusNorm }
+        if(node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)) {
+            slider("Sensitivity",node.sensitivity,.25f,3f) { value -> updateNode { it.copy(sensitivity=value) }?.sensitivity }
+            slider("Inner deadzone",node.deadzoneInner,0f,.9f) { value -> updateNode { it.copy(deadzoneInner=value.coerceAtMost(it.deadzoneOuter-.01f)) }?.deadzoneInner }
+            slider("Outer deadzone",node.deadzoneOuter,.01f,1f) { value -> updateNode { it.copy(deadzoneOuter=value.coerceAtLeast(it.deadzoneInner+.01f)) }?.deadzoneOuter }
+            body.addView(CheckBox(context).apply {
+                text="Invert Y";setTextColor(Color.WHITE)
+                isChecked=node.invertY || (node.type==NodeType.CAMERA_DRAG && session!!.draft.camera.invertY)
+                setOnCheckedChangeListener { _,enabled ->
+                    if(node.type==NodeType.CAMERA_DRAG) session?.setCameraInversion(enabled)
+                    else updateNode { it.copy(invertY=enabled) }
+                }
+            })
+        }
+        if(node.type==NodeType.CAMERA_DRAG) {
+            val settings=session!!.draft.camera
+            fun camera(change:(CameraSettings)->CameraSettings): CameraSettings? {
+                val edit=session ?: return null
+                return try { edit.replaceDraft(edit.draft.copy(camera=change(edit.draft.camera)));edit.draft.camera }
+                catch(error:Exception) { fail("Camera tuning rejected: ${error.message}",error);null }
+            }
+            slider("Horizontal",settings.horizontalSensitivity,.1f,3f) { value -> camera { it.copy(horizontalSensitivity=value) }?.horizontalSensitivity }
+            slider("Vertical",settings.verticalSensitivity,.1f,3f) { value -> camera { it.copy(verticalSensitivity=value) }?.verticalSensitivity }
+            slider("Smoothing",settings.smoothingFrames.toFloat(),1f,12f) { value -> camera { it.copy(smoothingFrames=value.roundToInt()) }?.smoothingFrames?.toFloat() }
+            slider("Fast turn boost",settings.fastTurnBoost,1f,3f) { value -> camera { it.copy(fastTurnBoost=value) }?.fastTurnBoost }
+        }
+        if(node.type==NodeType.JOYSTICK_ZONE) {
+            val settings=session!!.draft.joystick
+            fun joystick(change:(JoystickSettings)->JoystickSettings): JoystickSettings? {
+                val edit=session ?: return null
+                return try { edit.replaceDraft(edit.draft.copy(joystick=change(edit.draft.joystick)));edit.draft.joystick }
+                catch(error:Exception) { fail("Movement tuning rejected: ${error.message}",error);null }
+            }
+            slider("Walk radius",settings.walkRadiusScale,.1f,.95f) { value -> joystick { it.copy(walkRadiusScale=value.coerceAtMost(it.runRadiusScale-.01f)) }?.walkRadiusScale }
+            slider("Run radius",settings.runRadiusScale,.2f,1.5f) { value -> joystick { it.copy(runRadiusScale=value.coerceAtLeast(it.walkRadiusScale+.01f)) }?.runRadiusScale }
+            slider("Run threshold",settings.runThresholdNorm,.05f,.99f) { value -> joystick { it.copy(runThresholdNorm=value) }?.runThresholdNorm }
+        }
+        if(com.example.input.ControllerBindingAliases.canonical(node.boundKey) in setOf("LT","RT")) {
+            slider("Press threshold",node.triggerPressThreshold,.1f,1f) { value -> updateNode { it.copy(triggerPressThreshold=value,triggerReleaseThreshold=it.triggerReleaseThreshold.coerceAtMost(value-.05f)) }?.triggerPressThreshold }
+            slider("Release threshold",node.triggerReleaseThreshold,0f,.9f) { value -> updateNode { it.copy(triggerReleaseThreshold=value.coerceAtMost(it.triggerPressThreshold-.05f)) }?.triggerReleaseThreshold }
+        }
+        if(node.type==NodeType.BUTTON) body.addView(CheckBox(context).apply {
+            text="Hold touch";setTextColor(Color.WHITE);isChecked=node.buttonBehavior==ButtonBehavior.HOLD
+            setOnCheckedChangeListener { _,enabled -> updateNode { it.copy(buttonBehavior=if(enabled) ButtonBehavior.HOLD else ButtonBehavior.TAP) } }
+        })
+        body.addView(button("Rebind") { chooseBinding(false,canvas) })
+        body.addView(button("Duplicate") { chooseBinding(false,canvas,duplicate=true) })
+        body.addView(button("Delete") { session?.remove(node.id);selected=null;inspector?.let(root::removeView);inspector=null;canvas.invalidate() })
+        val window=ScrollView(context).apply { addView(body) }
+        val (w,h)=displaySize()
+        root.addView(window,FrameLayout.LayoutParams(minOf((220*density).roundToInt(),w/2),minOf((360*density).roundToInt(),h/2)).apply {
+            gravity=Gravity.RIGHT or Gravity.CENTER_VERTICAL;rightMargin=(8*density).roundToInt()
+        })
+        inspector=window
     }
 
     private fun openEditor() {
@@ -173,8 +339,14 @@ class InGameMapperOverlay(private val context: Context) {
             orientation=LinearLayout.HORIZONTAL;background=glass()
             addView(button("Add") { chooseBinding(true,canvas) })
             addView(button("Bind") { chooseBinding(false,canvas) })
+            addView(button("Copy") { chooseBinding(false,canvas,duplicate=true) })
             addView(button("Learn") { learnBinding(canvas) })
-            addView(button("Delete") { selected?.let { session?.remove(it);selected=null;canvas.invalidate() } })
+            addView(button("Delete") { selected?.let {
+                session?.remove(it);selected=null;inspector?.let(root::removeView);inspector=null;canvas.invalidate()
+            } })
+            addView(button("Grid") { snapToGrid=!snapToGrid;canvas.invalidate() })
+            addView(button("Hide nodes") { nodesVisible=!nodesVisible;canvas.invalidate() })
+            addView(button("Reset") { session?.reset();selected=null;inspector?.let(root::removeView);inspector=null;canvas.invalidate() })
             addView(button("− Size") { selected?.let { session?.resize(it,-.01f);canvas.invalidate() } })
             addView(button("+ Size") { selected?.let { session?.resize(it,.01f);canvas.invalidate() } })
             addView(button("Save") { save() })
@@ -195,17 +367,23 @@ class InGameMapperOverlay(private val context: Context) {
             topMargin=safeInsets.first
         })
         try { wm.addView(root,params(-1,-1));editor=root } catch(error:Exception) { fail("In-game mapper window failed: ${error.message}",error);finishEdit(null) }
+        if(selected!=null) showInspector(canvas)
     }
 
-    private fun chooseBinding(add: Boolean, canvas: View) {
+    private fun chooseBinding(add: Boolean, canvas: View, duplicate: Boolean = false) {
         if(saving || (!add && selected==null)) { Toast.makeText(context,"Select a binding first",Toast.LENGTH_SHORT).show();return }
-        val keys=arrayOf("A","B","X","Y","LB","RB","LT","RT","DPAD_UP","DPAD_DOWN","DPAD_LEFT","DPAD_RIGHT","L3","R3","START","SELECT","GUIDE","CAPTURE","ASSISTANT","LS","RS")
-        val choice=AlertDialog.Builder(context).setTitle(if(add) "Add physical input" else "Bind physical input")
+        val keys=com.example.input.ControllerBindingAliases.supported.sorted().toTypedArray()
+        val choice=AlertDialog.Builder(context).setTitle(if(duplicate) "Copy to a distinct physical input" else if(add) "Add physical input" else "Bind physical input")
             .setItems(keys) { _, index ->
                 val binding=keys[index]
-                if(add) selected=session?.add(binding)
-                else selected?.let { session?.bind(it,binding,if(binding in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP) }
+                try {
+                    if(duplicate) selected=selected?.let { session?.duplicate(it,binding,
+                        if(binding in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP) }
+                    else if(add) selected=session?.add(binding)
+                    else selected?.let { session?.bind(it,binding,if(binding in setOf("LT","RT")) ButtonBehavior.HOLD else ButtonBehavior.TAP) }
+                } catch(error:Exception) { fail("Mapping change rejected: ${error.message}",error);return@setItems }
                 canvas.invalidate()
+                if(canvas is EditorCanvas) showInspector(canvas)
                 if(binding !in setOf("LS","RS")) chooseBehavior(canvas)
             }.setNegativeButton("Cancel",null).create()
         choice.window?.setType(params(1,1).type);dialog=choice
@@ -251,6 +429,7 @@ class InGameMapperOverlay(private val context: Context) {
     }
     private fun chooseBehavior(canvas: View) {
         val node=session?.draft?.buttons?.firstOrNull { it.id==selected } ?: return
+        if(node.type != NodeType.BUTTON) return
         val choice=AlertDialog.Builder(context).setTitle("Touch behavior for ${node.boundKey}")
             .setItems(arrayOf("TAP","HOLD")) { _,index -> session?.bind(node.id,node.boundKey,ButtonBehavior.entries[index]);canvas.invalidate() }.create()
         choice.window?.setType(params(1,1).type);dialog=choice
@@ -270,7 +449,7 @@ class InGameMapperOverlay(private val context: Context) {
     }
     private fun finishEdit(config: MappingConfig?) {
         if(saving) return
-        dialog?.dismiss();dialog=null;remove(editor);editor=null;session=null
+        dialog?.dismiss();dialog=null;remove(editor);editor=null;inspector=null;session=null
         if(config!=null && !closed) MappingRuntimeBridge.arm(config.gamePackage,config)
         if(!closed) show()
     }
@@ -288,24 +467,59 @@ class InGameMapperOverlay(private val context: Context) {
     }
     private inner class EditorCanvas : View(context) {
         private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+        private var resizing=false
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            if(!nodesVisible) return
+            if(snapToGrid) {
+                paint.style=Paint.Style.STROKE;paint.strokeWidth=density;paint.color=0x2516F1FF
+                for(i in 1..19) {
+                    canvas.drawLine(width*i/20f,0f,width*i/20f,height.toFloat(),paint)
+                    canvas.drawLine(0f,height*i/20f,width.toFloat(),height*i/20f,paint)
+                }
+            }
             session?.draft?.buttons?.forEach { node ->
                 val x=node.xNorm*(width-1);val y=node.yNorm*(height-1)
                 val radius=maxOf(18*density,node.radiusNorm*minOf(width,height))
                 paint.style=Paint.Style.FILL;paint.color=0x770B2440;canvas.drawCircle(x,y,radius,paint)
                 paint.style=Paint.Style.STROKE;paint.strokeWidth=7*density;paint.color=0x3016F1FF;canvas.drawCircle(x,y,radius,paint)
                 paint.style=Paint.Style.STROKE;paint.strokeWidth=2*density;paint.color=if(node.id==selected) Color.WHITE else 0xFF16F1FF.toInt();canvas.drawCircle(x,y,radius,paint)
-                paint.style=Paint.Style.FILL;paint.textSize=12*density;paint.textAlign=Paint.Align.CENTER;canvas.drawText(node.boundKey,x,y+4*density,paint)
+                val label=when(com.example.input.ControllerBindingAliases.canonical(node.boundKey)) {
+                    "DPAD_UP" -> "↑"; "DPAD_DOWN" -> "↓"; "DPAD_LEFT" -> "←"; "DPAD_RIGHT" -> "→"
+                    else -> node.boundKey
+                }
+                paint.style=Paint.Style.FILL;paint.textSize=12*density;paint.textAlign=Paint.Align.CENTER;canvas.drawText(label,x,y+4*density,paint)
+                if(node.id==selected) {
+                    paint.style=Paint.Style.STROKE;paint.strokeWidth=density;paint.color=Color.WHITE
+                    canvas.drawRect(x-radius,y-radius,x+radius,y+radius,paint)
+                    paint.style=Paint.Style.FILL;paint.color=0xFFB47AFF.toInt()
+                    for(sx in listOf(-1,1)) for(sy in listOf(-1,1))
+                        canvas.drawRect(x+sx*radius-4*density,y+sy*radius-4*density,x+sx*radius+4*density,y+sy*radius+4*density,paint)
+                }
             }
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if(saving) return true
             when(event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { selected=session?.draft?.buttons?.minByOrNull { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y) }
-                    ?.takeIf { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y)<40*density }?.id;invalidate() }
-                MotionEvent.ACTION_MOVE -> selected?.let { session?.move(it,event.x,event.y,width,height);invalidate() }
-                MotionEvent.ACTION_UP -> performClick()
+                MotionEvent.ACTION_DOWN -> {
+                    val previous=session?.draft?.buttons?.firstOrNull { it.id==selected }
+                    val radius=previous?.let { maxOf(18*density,it.radiusNorm*minOf(width,height)) }
+                    resizing=previous!=null && radius!=null && listOf(-1,1).any { sx -> listOf(-1,1).any { sy ->
+                        hypot(event.x-(previous.xNorm*(width-1)+sx*radius),event.y-(previous.yNorm*(height-1)+sy*radius))<22*density
+                    } }
+                    if(!resizing) selected=session?.draft?.buttons?.minByOrNull { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y) }
+                        ?.takeIf { hypot(it.xNorm*(width-1)-event.x,it.yNorm*(height-1)-event.y)<40*density }?.id
+                    invalidate()
+                }
+                MotionEvent.ACTION_MOVE -> selected?.let { id ->
+                    if(resizing) session?.draft?.buttons?.firstOrNull { it.id==id }?.let { node ->
+                        val wanted=maxOf(kotlin.math.abs(event.x-node.xNorm*(width-1)),kotlin.math.abs(event.y-node.yNorm*(height-1)))/minOf(width,height)
+                        session?.resize(id,wanted-node.radiusNorm)
+                    } else session?.move(id,event.x,event.y,width,height,snapToGrid)
+                    invalidate()
+                }
+                MotionEvent.ACTION_UP -> { resizing=false;performClick();showInspector(this) }
+                MotionEvent.ACTION_CANCEL -> resizing=false
             };return true
         }
         override fun performClick(): Boolean { super.performClick();return true }
