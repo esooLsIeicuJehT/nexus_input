@@ -1,6 +1,5 @@
 package com.example.ui.theme
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,39 +15,35 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** Static glass/edge lighting: no blur render loop or gameplay input work. */
-fun Modifier.nexusGlass(radius: Dp = 20.dp): Modifier = this
+fun Modifier.nexusGlass(radius: Dp = 20.dp, accent: Color = NexusCyan): Modifier = this
     .background(NexusPanelGradient, RoundedCornerShape(radius))
     .drawWithCache {
         val corner = CornerRadius(radius.toPx())
-        val edge = Brush.linearGradient(listOf(NexusCyan.copy(alpha = .75f),
-            Color.White.copy(alpha = .14f), NexusVioletLight.copy(alpha = .65f)))
+        val edge = Brush.linearGradient(listOf(Color.White.copy(alpha = .32f),
+            accent.copy(alpha = .65f), accent.copy(alpha = .24f)))
         onDrawBehind {
             // Layered translucent strokes approximate edge bloom without offscreen blur.
-            for (width in listOf(9f, 5f, 2f)) {
-                drawRoundRect(NexusCyan.copy(alpha = .025f), cornerRadius = corner,
-                    style = Stroke(width = width.dp.toPx()))
-            }
+            drawRoundRect(accent.copy(alpha = .045f), cornerRadius = corner,
+                style = Stroke(width = 5.dp.toPx()))
             drawRoundRect(edge, cornerRadius = corner, style = Stroke(1.dp.toPx()))
+            // A faint inner highlight gives depth without a blur layer or shader.
+            drawRoundRect(Color.White.copy(alpha = .035f), topLeft = Offset(2.dp.toPx(), 2.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size((size.width - 4.dp.toPx()).coerceAtLeast(0f),
+                    (size.height - 4.dp.toPx()).coerceAtLeast(0f)), cornerRadius = corner,
+                style = Stroke(.5.dp.toPx()))
         }
     }
 
 @Composable
-fun NexusAtmosphere() {
-    Canvas(Modifier.fillMaxSize().background(GraphiteFoundation)) {
-        drawRect(Brush.radialGradient(listOf(NexusViolet.copy(alpha = .24f), Color.Transparent),
-            center = Offset(size.width * .9f, size.height * .15f), radius = size.width * .95f))
-        drawRect(Brush.radialGradient(listOf(NexusCyan.copy(alpha = .12f), Color.Transparent),
-            center = Offset(0f, size.height * .65f), radius = size.width * .8f))
-        val step = 48.dp.toPx()
-        var x = 0f
-        while (x < size.width) {
-            drawLine(Color.White.copy(alpha = .018f), Offset(x, 0f), Offset(x, size.height))
-            x += step
+fun NexusAtmosphere(accent: Color = LocalNexusAccent.current) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(GraphiteFoundation).drawWithCache {
+        val haze = Brush.radialGradient(listOf(accent.copy(alpha = .095f), Color.Transparent),
+            center = Offset(size.width * .9f, size.height * .18f), radius = size.width * .85f)
+        val base = Brush.radialGradient(listOf(NexusBlue.copy(alpha = .055f), Color.Transparent),
+            center = Offset(0f, size.height * .8f), radius = size.width * .8f)
+        onDrawBehind {
+            drawRect(haze)
+            drawRect(base)
         }
-        var y = 0f
-        while (y < size.height) {
-            drawLine(Color.White.copy(alpha = .018f), Offset(0f, y), Offset(size.width, y))
-            y += step
-        }
-    }
+    })
 }
