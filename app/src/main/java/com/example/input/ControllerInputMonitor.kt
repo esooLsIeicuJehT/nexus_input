@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  * can therefore distinguish real Android events from configured profile values.
  */
 data class ObservedControllerKey(val keyCode: Int, val scanCode: Int, val sequence: Long, val aliases: Set<String>)
+data class ObservedControllerHat(val binding: String, val sequence: Long)
 
 data class ControllerLiveState(
     val connectedEventSource: String? = null,
@@ -31,6 +32,7 @@ data class ControllerLiveState(
     val lastKeyAction: Int? = null,
     val lastKeySequence: Long = 0L,
     val lastPress: ObservedControllerKey? = null,
+    val lastHatPress: ObservedControllerHat? = null,
     val eventLog: List<String> = emptyList()
 )
 
@@ -40,6 +42,7 @@ object ControllerInputMonitor {
     private val observedEvents = AtomicLong()
     private val eventLock = Any()
     private var lastKeyIdentity: KeyIdentity? = null
+    private val hatDirections = mutableMapOf<Int, Set<String>>()
 
     private data class KeyIdentity(
         val deviceId: Int,
@@ -50,6 +53,7 @@ object ControllerInputMonitor {
         val source: Int
     )
 
+    @Synchronized
     fun onMotionEvent(event: MotionEvent) {
         if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
 
@@ -88,6 +92,21 @@ object ControllerInputMonitor {
         val motionLine = "MOTION dev=${event.deviceId} src=0x${event.source.toString(16)} " +
             axes.entries.joinToString(" ") { "${it.key}=${"%.3f".format(it.value)}" }
 
+        val sequence = observedEvents.incrementAndGet()
+        var lastHatPress = _state.value.lastHatPress
+        // Retain a directional edge through neutral, just as lastPress survives
+        // key-up. Fast D-pad taps can arrive in one batched MotionEvent.
+        fun observeHat(historyIndex: Int?) {
+            val directions = ControllerBindingAliases.forHatMotion(event, historyIndex)
+            val previous = hatDirections[event.deviceId].orEmpty()
+            (directions - previous).singleOrNull()?.let {
+                lastHatPress = ObservedControllerHat(it, sequence)
+            }
+            hatDirections[event.deviceId] = directions
+        }
+        repeat(event.historySize) { observeHat(it) }
+        observeHat(null)
+
         _state.value = _state.value.copy(
             connectedEventSource = device?.name,
             deviceId = device?.id,
@@ -96,10 +115,12 @@ object ControllerInputMonitor {
             lastSource = event.source,
             eventLog = (_state.value.eventLog + motionLine).takeLast(64),
             lastEventUptimeMs = event.eventTime,
-            observedEventSequence = observedEvents.incrementAndGet()
+            observedEventSequence = sequence,
+            lastHatPress = lastHatPress
         )
     }
 
+    @Synchronized
     fun onKeyEvent(event: KeyEvent) {
         if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
         val identity = KeyIdentity(event.deviceId,event.eventTime,event.action,event.keyCode,event.scanCode,event.source)
@@ -143,7 +164,9 @@ object ControllerInputMonitor {
         )
     }
 
+    @Synchronized
     fun onDeviceRemoved(id: Int) {
+        hatDirections.remove(id)
         if(_state.value.deviceId==id) {
             _state.value=ControllerLiveState(observedEventSequence = observedEvents.incrementAndGet())
         }

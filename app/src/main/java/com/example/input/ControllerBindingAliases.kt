@@ -1,6 +1,7 @@
 package com.example.input
 
 import android.view.KeyEvent
+import android.view.MotionEvent
 
 /** Canonical mapper labels accepted for Android controller key events. */
 object ControllerBindingAliases {
@@ -9,19 +10,52 @@ object ControllerBindingAliases {
 
     fun forEvent(event: KeyEvent): Set<String> {
         if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return emptySet()
+        val device = event.device
+        val stadia = device?.vendorId == STADIA_VENDOR_ID && device.productId == STADIA_PRODUCT_ID
+        // Google's Stadia mapping uses BUTTON_1/2 for Assistant/Capture. Moto's
+        // Generic.kl can instead deliver UNKNOWN with the same Linux scans.
+        // Scope these extra buttons to Stadia; other controllers use them differently.
+        if (stadia) when (event.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_1 -> return setOf("ASSISTANT", "ASSIST")
+            KeyEvent.KEYCODE_BUTTON_2 -> return setOf("CAPTURE", "SCREENSHOT")
+        }
         val standard = forKeyCode(event.keyCode)
         if (standard.isNotEmpty()) return standard
-        val device = event.device
-        if (device?.vendorId != STADIA_VENDOR_ID || device.productId != STADIA_PRODUCT_ID) return emptySet()
-        return when (event.scanCode) {
+        if (!stadia) return emptySet()
+        return forStadiaScan(event.scanCode)
+    }
+
+    internal fun forStadiaScan(scanCode: Int): Set<String> = when (scanCode) {
             314 -> setOf("SELECT", "BACK")
             315 -> setOf("START")
-            // Linux BTN_MODE is defined by AOSP Generic.kl; do not guess the
-            // firmware-dependent Capture/Assistant scan values.
             316 -> setOf("GUIDE", "MODE", "HOME")
             317 -> setOf("L3")
             318 -> setOf("R3")
+            // Observed in the user's Moto tester (2026-10-11). AOSP's Stadia
+            // bridge identifies BTN_TRIGGER_HAPPY1/2 as Assistant/Share, and
+            // Linux defines those scans as 0x2c0/0x2c1 (704/705).
+            704 -> setOf("ASSISTANT", "ASSIST")
+            705 -> setOf("CAPTURE", "SCREENSHOT")
             else -> emptySet()
+    }
+
+    /** Real HAT directions for learning; never invent a KeyEvent or scan code. */
+    fun forHatMotion(event: MotionEvent, historyIndex: Int? = null): Set<String> {
+        if (event.actionMasked != MotionEvent.ACTION_MOVE ||
+            !ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return emptySet()
+        fun value(axis: Int): Float {
+            val range = event.device?.motionRanges?.firstOrNull { it.axis == axis } ?: return 0f
+            if (!range.min.isFinite() || !range.max.isFinite() || range.min >= range.max) return 0f
+            return (if (historyIndex == null) event.getAxisValue(axis)
+                else event.getHistoricalAxisValue(axis, historyIndex)).takeIf { it.isFinite() } ?: 0f
+        }
+        val x = value(MotionEvent.AXIS_HAT_X)
+        val y = value(MotionEvent.AXIS_HAT_Y)
+        return buildSet {
+            if (x < -.5f) add("DPAD_LEFT")
+            if (x > .5f) add("DPAD_RIGHT")
+            if (y < -.5f) add("DPAD_UP")
+            if (y > .5f) add("DPAD_DOWN")
         }
     }
 

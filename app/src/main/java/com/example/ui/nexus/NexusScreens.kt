@@ -653,6 +653,13 @@ fun NexusSystemScreen(
             Text("Reads device, permission, storage and backend observations. No test touches are injected.", color = TextSecondary)
             Button(onClick = viewModel::runSelfCheck) { Text("Collect diagnostics") }
             diagnostics?.let { report ->
+                com.example.diagnostics.ReleaseDiagnostics.inputReport(report)?.let { inputReport ->
+                    OutlinedButton(onClick = {
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NEXUS INPUT input report", inputReport))
+                        viewModel.showSnack("Input report copied")
+                    }) { Text("Copy input report") }
+                }
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("NEXUS INPUT diagnostics",report))
