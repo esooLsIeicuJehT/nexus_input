@@ -125,7 +125,7 @@ The existing stick timing, camera movement, trigger thresholds, macros, turbo, p
 
 First check **Devices**. Each control also needs a saved target placed over a real game button; detecting a controller does not create those targets. The included Delta Force preset covers face buttons, triggers and sticks, so add any center-button or D-pad targets you want to use.
 
-If a mapped input still fails, launch the game through its profile, press that input, then collect and copy **System → Diagnostics**. Include which phone and backend you used. The follow-up build retains recent routing results after leaving the game: **unmapped** means no saved target matched, **blocked** explains a focus/backend gate, and **matched** means a touch request was routed. A matched request still needs a successful in-game check.
+If a mapped input still fails, launch the game through its profile, press that input, then open **System → Diagnostics**, select **Collect diagnostics**, and use **Copy input report**. Include which phone and backend you used. The follow-up build retains recent routing results after leaving the game: **unmapped** means no saved target matched, **blocked** explains a focus/backend gate, and **matched** means a touch request was routed. A matched request still needs a successful in-game check.
 
 | What you're seeing | What to check |
 | --- | --- |

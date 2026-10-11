@@ -3,7 +3,7 @@
 - Recognize Stadia Assistant/Capture from the Moto-observed UNKNOWN scans 704/705 and Android BUTTON_1/2. Preserve explicit learned scans across those translations; limit automatic extra-button aliases to Stadia's VID/PID.
 - Learn real D-pad HAT directions in both editors, retain quick directional presses through neutral and avoid guessing a direction from a simultaneous diagonal.
 - Process batched D-pad history so a press followed by neutral in one callback still reaches its mapped target. Keep historical stick positions out of the stick/camera driver.
-- Retain a bounded routing trace in diagnostics after leaving the game, distinguishing blocked backend/focus gates, missing saved targets and matched touch requests.
+- Retain a bounded routing trace after leaving the game and add **Copy input report** for sharing bindings, effective slots and runtime state without the long motion log. Distinguish blocked backend/focus gates, missing saved targets and matched touch requests.
 - Source backup and findings: `docs/STADIA_FOLLOWUP_2026-10-11.md`. The reported in-game failure is not declared solved until the user's Moto test confirms it.
 
 # 1.1.0-dev — neon glass and controller routing candidate

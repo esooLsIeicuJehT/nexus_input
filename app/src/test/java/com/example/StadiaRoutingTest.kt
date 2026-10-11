@@ -3,7 +3,9 @@ package com.example
 import android.app.Application
 import android.graphics.PointF
 import android.hardware.input.InputManager
+import android.hardware.input.IInputManager
 import android.view.InputDevice
+import android.view.InputEvent
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.test.core.app.ApplicationProvider
@@ -15,6 +17,11 @@ import com.example.input.ProfileValidator
 import com.example.injector.InputInjector
 import com.example.model.*
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import com.inputmapper.platform.root.PrivilegedInputManagerEngine
+import com.example.diagnostics.ReleaseDiagnostics
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +40,10 @@ class StadiaRoutingTest {
             .setProductId(37888).setSources(InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK)
             .addMotionRange(MotionEvent.AXIS_X, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f)
             .addMotionRange(MotionEvent.AXIS_Y, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f)
+            .addMotionRange(MotionEvent.AXIS_Z, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f)
+            .addMotionRange(MotionEvent.AXIS_RZ, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f)
+            .addMotionRange(MotionEvent.AXIS_LTRIGGER, InputDevice.SOURCE_JOYSTICK, 0f, 1f, 0f, 0f, 0f)
+            .addMotionRange(MotionEvent.AXIS_RTRIGGER, InputDevice.SOURCE_JOYSTICK, 0f, 1f, 0f, 0f, 0f)
             .addMotionRange(MotionEvent.AXIS_HAT_X, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f)
             .addMotionRange(MotionEvent.AXIS_HAT_Y, InputDevice.SOURCE_JOYSTICK, -1f, 1f, 0f, 0f, 0f).build()
         shadowOf(ApplicationProvider.getApplicationContext<Application>()
@@ -157,5 +168,97 @@ class StadiaRoutingTest {
             assertTrue(routes.first().input.contains("scan=704"))
             assertEquals("hat_left down", routes.last().input)
         } finally { runtime.shutdown(null); ControllerRoutingTrace.clear() }
+    }
+
+    @Test fun reportedSeventeenNodeProfileRoutesStartSelectAndAllHatsIntoRootMotionEvents() {
+        val device = device()
+        // The user's diagnostic order, normalized coordinates, and null physical/slot fields.
+        // This exercises default TAP targets and pointer ID 16, unlike the HOLD-only fixture.
+        val targets = listOf(
+            Triple("A", .8938093f, .9103233f), Triple("B", .8149076f, .92005634f),
+            Triple("LT", .95930177f, .49322248f), Triple("RT", .096366554f, .50712526f),
+            Triple("X", .7375642f, .8950297f), Triple("Y", .85888034f, .2443525f),
+            Triple("LS", .20427275f, .7865837f), Triple("RS", .75206643f, .16301666f),
+            Triple("R3", .9596137f, .8567957f), Triple("LB", .6585595f, .7455681f),
+            Triple("RB", .65782845f, .8992008f), Triple("DPAD_LEFT", .17464508f, .52346194f),
+            Triple("DPAD_RIGHT", .23000148f, .52798074f), Triple("START", .92528903f, .054529946f),
+            Triple("SELECT", .12984443f, .19026127f), Triple("DPAD_UP", .7838769f, .517445f),
+            Triple("DPAD_DOWN", .8532671f, .47445318f))
+        val profile = config(targets.map { (binding, x, y) ->
+            MappingNode(binding, x, y, boundKey = binding, type = when (binding) {
+                "LS" -> NodeType.JOYSTICK_ZONE
+                "RS" -> NodeType.CAMERA_DRAG
+                else -> NodeType.BUTTON
+            })
+        }).copy(id = "builtin_delta_force_nexus_v1")
+        assertTrue(ProfileValidator.runtimeErrors(profile).toString(), ProfileValidator.runtimeErrors(profile).isEmpty())
+        data class Touch(val action: Int, val id: Int, val x: Float, val y: Float)
+        val injected = CopyOnWriteArrayList<Touch>()
+        val released = CountDownLatch(6)
+        val inputManager = object : IInputManager.Stub() {
+            override fun injectInputEvent(event: InputEvent, mode: Int): Boolean {
+                assertEquals(0, mode)
+                val motion = event as MotionEvent
+                val index = motion.actionIndex
+                injected += Touch(motion.actionMasked, motion.getPointerId(index), motion.getX(index), motion.getY(index))
+                if (motion.actionMasked in listOf(MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP)) released.countDown()
+                return true
+            }
+        }
+        // Replace only the OS boundary. Exercise the real root engine's sparse pointer
+        // IDs, action indices and coordinate composition; no root permission is simulated.
+        val engine = PrivilegedInputManagerEngine(32)
+        engine.javaClass.getDeclaredField("manager").apply { isAccessible = true }.set(engine, inputManager)
+        val backend = object : InputInjector {
+            override val method = PrivilegeMethod.KERNELSU
+            override fun isAvailable() = true
+            override fun injectTap(x: Float, y: Float) = false
+            override fun injectDrag(path: List<PointF>, durationMs: Long) = false
+            override fun injectKeyEvent(keyCode: Int, action: Int) = false
+            override fun beginTouch(pointerId: Int, x: Float, y: Float) = engine.down(pointerId, x, y).startsWith("OK")
+            override fun moveTouch(pointerId: Int, x: Float, y: Float) = engine.move(pointerId, x, y).startsWith("OK")
+            override fun endTouch(pointerId: Int) = engine.up(pointerId).startsWith("OK")
+            override fun cleanup() = Unit
+        }
+        val errors = CopyOnWriteArrayList<String>()
+        val runtime = GamepadMappingRuntime({ 1604 to 720 }) { errors += it }
+        try {
+            for ((code, scan) in listOf(108 to 315, 109 to 314)) {
+                assertTrue(runtime.handleKeyEvent(key(device, code, scan), profile, backend))
+                assertTrue(runtime.handleKeyEvent(key(device, code, scan, KeyEvent.ACTION_UP), profile, backend))
+            }
+            for ((x, y) in listOf(-1f to 0f, 1f to 0f, 0f to -1f, 0f to 1f)) {
+                motion(device, x, y).let { runtime.handleMotionEvent(it, profile, backend); it.recycle() }
+                motion(device, 0f, 0f).let { runtime.handleMotionEvent(it, profile, backend); it.recycle() }
+            }
+            runtime.awaitIdle()
+            assertTrue("All six default taps must release", released.await(2, TimeUnit.SECONDS))
+            assertTrue(errors.toString(), errors.isEmpty())
+            val downs = injected.filter { it.action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN) }
+            assertEquals(setOf(11, 12, 13, 14, 15, 16), downs.map { it.id }.toSet())
+            for (touch in downs) {
+                val node = profile.buttons[touch.id]
+                assertEquals(node.xNorm * 1603, touch.x, .001f)
+                assertEquals(node.yNorm * 719, touch.y, .001f)
+            }
+            assertEquals(6, downs.size)
+        } finally { runtime.shutdown(backend) }
+    }
+
+    @Test fun compactInputReportKeepsBindingsAndRoutesWithoutTheLongMotionLog() {
+        val full = JSONObject().put("runtime", JSONObject().put("armed", false))
+            .put("controllerRouting", JSONObject().put("selectedProfile", "saved")
+                .put("bindingsProfile", "saved").put("bindings", org.json.JSONArray().put(JSONObject().put("binding", "START")))
+                .put("events", org.json.JSONArray().put("irrelevant motion"))
+                .put("recentRoutes", org.json.JSONArray().apply { repeat(48) { put(JSONObject().put("input", it)) } }))
+        val compact = JSONObject(ReleaseDiagnostics.inputReport(full.toString())!!)
+        assertFalse(compact.getJSONObject("runtime").getBoolean("armed"))
+        val routing = compact.getJSONObject("controllerRouting")
+        assertFalse(routing.has("events"))
+        assertEquals("START", routing.getJSONArray("bindings").getJSONObject(0).getString("binding"))
+        assertEquals(24, routing.getJSONArray("recentRoutes").length())
+        assertEquals(24, routing.getJSONArray("recentRoutes").getJSONObject(0).getInt("input"))
+        assertEquals(47, routing.getJSONArray("recentRoutes").getJSONObject(23).getInt("input"))
+        assertNull(ReleaseDiagnostics.inputReport("Self-check failed: unavailable"))
     }
 }
