@@ -272,7 +272,9 @@ class StadiaRoutingTest {
         MappingRuntimeBridge.disarm()
         ControllerRoutingTrace.clear()
         try {
-            assertFalse(service.onKeyEvent(key(device, 108, 315)))
+            val captureKey = service.javaClass.getDeclaredMethod("onKeyEvent", KeyEvent::class.java)
+                .apply { isAccessible = true }
+            assertFalse(captureKey.invoke(service, key(device, 108, 315)) as Boolean)
             assertEquals("blocked: mapper is disarmed", ControllerRoutingTrace.snapshot().single().result)
             val profile = config(listOf(MappingNode("left", .2f, .3f, boundKey = "DPAD_LEFT")))
             assertTrue(MappingRuntimeBridge.arm(profile.gamePackage, profile))
