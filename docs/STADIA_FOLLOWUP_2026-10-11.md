@@ -40,3 +40,11 @@ Diagnostics now label the selected editor profile separately from the profile wh
 Still required: whether other mapped controls worked and whether the floating panel reported mapping ready during the failed test, plus routing evidence from the follow-up APK. The code changes explain missing extra-button aliases, HAT learning and a reproduced batched D-pad tap loss. They do not yet establish the cause of every Start/Select failure or a held, correctly bound HAT direction. Neither Moto phone is connected to this workspace.
 
 The follow-up source backup is `backups/nexus-input-before-stadia-followup-2026-10-11.tar.gz` at baseline `ad75bf3`; its digest is in `backups/SHA256SUMS`.
+
+## Completed validation and publication
+
+Both signed build variants pass 145 Android tests, including the reported 17-target root event-composition replay and blocked Accessibility capture. APK/AAB packaging, all four native ABIs and lint pass; lint reports 0 errors and 62 existing warnings. The 17 host/module tests, 13 WebUI tests, architecture boundaries, shell syntax and both backup digests pass. [GitHub validation for the released source](https://github.com/esooLsIeicuJehT/nexus_input/actions/runs/38127903524) passes too.
+
+[v1.1.1-dev](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.1-dev) publishes the normal release APK, debug APK, matching KernelSU companion, checksums and public signing notes from source commit `6f306f4`. Both APKs retain the v1.1.0-dev development certificate. Publicly downloaded assets match the local signed files byte for byte; the companion's module identity, version, CRC and SHA-256 are verified before advancing the public updater manifest.
+
+These completed checks establish the reproduced fixes and artifact integrity. Remaining Start/Select and held-D-pad in-game acceptance still require the follow-up phone report; no full hardware success or controller rumble fix is claimed.

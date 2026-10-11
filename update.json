@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0-dev",
-  "versionCode": 1100,
-  "zipUrl": "https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/main/releases/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip",
-  "sha256": "0c485fc0bf5c8acffdbb615a5e0271eed30cca1bf683c0417d861344aa0b743a",
+  "version": "1.1.1-dev",
+  "versionCode": 1101,
+  "zipUrl": "https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.1-dev/NEXUS_INPUT-KernelSU-Companion-v1.1.1-dev.zip",
+  "sha256": "896514d62718fc227e237f2bb7d0f33405af88c1645ba5369facb6d85a7def52",
   "changelog": "https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/main/CHANGELOG.md"
 }
