@@ -16,8 +16,8 @@ The new look is dark glass, cyan light and violet glow. There’s one bottom nav
 
 | Download | What it’s for |
 | --- | --- |
-| [Nexus Input-debug.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus%20Input-debug.apk) | An installable debug build for testing the new UI and mapping fixes. |
-| [Nexus Input.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus%20Input.apk) | The installable release build, signed with the same development key as the debug download. |
+| [Nexus Input-debug.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus.Input-debug.apk) | An installable debug build for testing the new UI and mapping fixes. |
+| [Nexus Input.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus.Input.apk) | The installable release build, signed with the same development key as the debug download. |
 | [KernelSU companion ZIP](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip) | The module for rooted KernelSU setups, including the matching WebUI and GitHub updater. |
 
 Already have Nexus installed? Keep your profiles. Export them using **System → System tools → Local profile files → Backup ZIP** before trying a test build. An APK update needs the same signing key as your installed copy. Older GitHub Actions debug APKs used temporary keys, so these downloads may not update them directly. If Android reports a signature mismatch, keep the installed app until your profile backup is safely exported and you have a restore path.
