@@ -21,3 +21,16 @@ class UpdaterTest(unittest.TestCase):
             self.assertEqual(0,self.call('verify_sha256',digest,str(file)).returncode)
             self.assertNotEqual(0,self.call('verify_sha256','a'*64,str(file)).returncode)
             self.assertNotEqual(0,self.call('verify_sha256','',str(file)).returncode)
+
+    def test_zip_identity_and_version_must_match_manifest(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            archive=Path(directory)/'module.zip'
+            with zipfile.ZipFile(archive,'w') as z:
+                z.writestr('module.prop','id=gamepad.pro.root\nversion=1.1.0-dev\nversionCode=1100\n')
+            self.assertEqual(0,self.call('verify_module_zip',str(archive),'1.1.0-dev','1100').returncode)
+            for version,code in [('1.0.0','1100'),('1.1.0-dev','1000')]:
+                self.assertNotEqual(0,self.call('verify_module_zip',str(archive),version,code).returncode)
+            with zipfile.ZipFile(archive,'w') as z:
+                z.writestr('module.prop','id=other.module\nversion=1.1.0-dev\nversionCode=1100\n')
+            self.assertNotEqual(0,self.call('verify_module_zip',str(archive),'1.1.0-dev','1100').returncode)

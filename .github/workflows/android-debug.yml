@@ -77,5 +77,6 @@ jobs:
           path: |
             app/build/test-results/
             app/build/reports/
+            app/build/outputs/ui-review/
             app/schemas/
           if-no-files-found: warn

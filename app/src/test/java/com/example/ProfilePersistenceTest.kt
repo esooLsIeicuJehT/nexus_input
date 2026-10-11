@@ -16,6 +16,30 @@ import java.util.zip.ZipFile
 
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class ProfilePersistenceTest {
+    @Test fun learnedVendorScanSurvivesSaveAndRebindClearsItsIdentity() = runBlocking {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val db=Room.inMemoryDatabaseBuilder(context,ControlystDatabase::class.java).build()
+        try {
+            val original=MappingConfig(id="learned",profileName="Learned",gamePackage="com.test.game",
+                buttons=listOf(MappingNode("capture",.4f,.5f,boundKey="CAPTURE",touchSlot=12)))
+            val edit=com.example.input.MapperEditSession(original)
+            // Synthetic vendor scan: learning must preserve it, not guess a firmware key.
+            edit.bindObserved("capture",android.view.KeyEvent(100,120,android.view.KeyEvent.ACTION_DOWN,
+                android.view.KeyEvent.KEYCODE_UNKNOWN,0,0,41,900,0,android.view.InputDevice.SOURCE_GAMEPAD))
+            val saved=edit.validated()
+            val store=ProfilePersistence(db)
+            store.save(saved)
+            assertEquals(saved,store.load("learned","com.test.game"))
+            assertEquals(900,saved.buttons.single().inputScanCode)
+            assertEquals("CAPTURE",saved.buttons.single().boundKey)
+            assertEquals(12,saved.buttons.single().touchSlot)
+            assertNull(original.buttons.single().inputScanCode)
+            edit.bind("capture","START",ButtonBehavior.HOLD)
+            assertNull(edit.validated().buttons.single().inputScanCode)
+            assertNull(edit.validated().buttons.single().inputKeyCode)
+        } finally { db.close() }
+    }
+
     @Test fun persistenceValidatesExactTargetsAndDoesNotDestroyExistingRowsOnFailure() = runBlocking {
         val context=ApplicationProvider.getApplicationContext<Context>()
         val db=Room.inMemoryDatabaseBuilder(context,ControlystDatabase::class.java).build()

@@ -145,7 +145,7 @@ class MainAppViewModel @JvmOverloads constructor(
     fun runSelfCheck() {
         viewModelScope.launch {
             try {
-                _diagnostics.value = withContext(Dispatchers.IO) { com.example.diagnostics.ReleaseDiagnostics.collect(getApplication()) }
+                _diagnostics.value = withContext(Dispatchers.IO) { com.example.diagnostics.ReleaseDiagnostics.collect(getApplication(), _activeConfig.value) }
                 showSnack("Device observations collected. Injection still requires the device test checklist.")
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error

@@ -1,3 +1,12 @@
+# 1.1.0-dev — neon glass and controller routing candidate
+
+- Verified source backup and two-pass audit in `backups/` and `docs/AUDIT_NEON_UPGRADE_2026-10-10.md`.
+- Translucent cyan/violet panels, static glow, one persistent bottom dock, compact mapper toolbar and bounded diagnostics/input/tuning windows.
+- Expandable System/backend details and WebUI device controls; WebUI uses five separate workspaces instead of one long page. Native floating bubble, editor and binding dialogs share the theme.
+- Physical button learning in screenshot and in-game editors; Guide, Capture and Assistant choices. Compatible Android-prefixed labels, equivalent center-key translations, unknown-key scan fallback and scan-bound HAT/trigger matching. Existing contact ownership, stick driver, launch grace and cleanup retained.
+- Root HOME key conversion corrected; Capture/Assistant key conversion added. CPU final-pair read-back failures attempt verified restoration.
+- Real checked-in `1.1.0-dev` module ZIP and SHA-256 manifest replace the stale `0.6.0-dev` channel. Update staging checks ZIP module ID/version, serializes processes and removes failed downloads. This public development channel is a test candidate, not hardware acceptance or a production-signed APK release.
+
 # Changelog
 
 ## 1.0.0 candidate — not yet production-published

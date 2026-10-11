@@ -36,3 +36,28 @@ class ControlTest(unittest.TestCase):
         self.assertNotEqual(0,run('nexus_swappiness','101').returncode)
         for value in ['../../proc/sys','.','..']:
             self.assertNotEqual(0,run('nexus_gpu_governor',value,'performance').returncode)
+
+    def test_final_interval_mismatch_restores_original_pair(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            policy=root/'policy0';policy.mkdir()
+            for name,value in {'scaling_min_freq':'100','scaling_max_freq':'1000',
+                'scaling_available_frequencies':'100 500 1000 1500'}.items():
+                (policy/name).write_text(value+'\n')
+            # Redirect only the fixed sysfs prefix to fixture nodes. A mock driver
+            # changes max after accepting min, exercising the actual final-pair check.
+            lib=root/'control-lib.sh'
+            lib.write_text(LIB.read_text().replace('/sys/devices/system/cpu/cpufreq/',str(root)+'/'))
+            command=''' . "$1"
+            nexus_write_checked() {
+                printf '%s\n' "$2" > "$1"
+                case "$1" in */scaling_min_freq) printf '999\n' > "${1%/*}/scaling_max_freq";; esac
+                return 0
+            }
+            nexus_cpu_frequencies 0 500 1500
+            '''
+            result=subprocess.run(['sh','-c',command,'test',str(lib)],text=True,capture_output=True)
+            self.assertNotEqual(0,result.returncode,result.stdout)
+            self.assertIn('ROLLBACK_VERIFIED=CPU_INTERVAL',result.stdout)
+            self.assertEqual('100', (policy/'scaling_min_freq').read_text().strip())
+            self.assertEqual('1000', (policy/'scaling_max_freq').read_text().strip())

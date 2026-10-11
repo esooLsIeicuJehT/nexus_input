@@ -48,14 +48,13 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshPrivileges()
     }
 
-    private fun testingInput(source: Int) = viewModel.currentTab.value in setOf("devices", "calibration") &&
-        (source and android.view.InputDevice.SOURCE_GAMEPAD == android.view.InputDevice.SOURCE_GAMEPAD ||
-            source and android.view.InputDevice.SOURCE_JOYSTICK == android.view.InputDevice.SOURCE_JOYSTICK ||
-            source and android.view.InputDevice.SOURCE_DPAD == android.view.InputDevice.SOURCE_DPAD)
+    private fun testingInput(source: Int, deviceSources: Int) =
+        viewModel.currentTab.value in setOf("devices", "calibration", "mapper") &&
+            com.example.input.ControllerSourceClassifier.accepts(source, deviceSources)
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         ControllerInputMonitor.onMotionEvent(event)
-        return if (testingInput(event.source)) true else super.dispatchGenericMotionEvent(event)
+        return if (testingInput(event.source, event.device?.sources ?: 0)) true else super.dispatchGenericMotionEvent(event)
     }
 
     // Android Activity's public input callback must forward unconsumed events to ComponentActivity.
@@ -63,7 +62,7 @@ class MainActivity : ComponentActivity() {
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         ControllerInputMonitor.onKeyEvent(event)
-        return if (testingInput(event.source)) true else super.dispatchKeyEvent(event)
+        return if (testingInput(event.source, event.device?.sources ?: 0)) true else super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

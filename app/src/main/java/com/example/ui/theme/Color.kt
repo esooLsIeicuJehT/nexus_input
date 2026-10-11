@@ -6,8 +6,8 @@ import androidx.compose.ui.graphics.Color
 // Nexus Input dark foundation.
 val GraphiteFoundation = Color(0xFF03070D)
 val DarkBackground = GraphiteFoundation
-val DarkSurface = Color(0xFF06111D)
-val DarkSurfaceElevated = Color(0xFF0A1A2A)
+val DarkSurface = Color(0xB006111D)
+val DarkSurfaceElevated = Color(0xC00A1A2A)
 val DarkSurfaceBorder = Color(0xFF155073)
 
 // Nexus Input interaction palette.
@@ -39,7 +39,7 @@ val AccentRose = NexusRed
 
 val TextPrimary = Color(0xFFF5FAFF)
 val TextSecondary = Color(0xFF9CB4C8)
-val TextMuted = Color(0xFF667F95)
+val TextMuted = Color(0xFF91A9BD)
 
 val DarkTextPrimary = TextPrimary
 val DarkTextSecondary = TextSecondary
@@ -52,5 +52,5 @@ val SignatureGradientVertical = Brush.verticalGradient(
     listOf(NexusViolet, NexusBlue, NexusCyan)
 )
 
-val NexusPanelGradient = Brush.linearGradient(listOf(Color(0xFF0B2031), Color(0xFF07111D), Color(0xFF101338)))
+val NexusPanelGradient = Brush.linearGradient(listOf(Color(0xAA183044), Color(0xB0081423), Color(0xA51D1840)))
 val NexusGlowGradient = Brush.linearGradient(listOf(NexusCyan, NexusBlue, NexusVioletLight))

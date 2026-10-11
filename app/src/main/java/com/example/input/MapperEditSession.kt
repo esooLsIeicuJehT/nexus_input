@@ -38,6 +38,15 @@ class MapperEditSession(val original: MappingConfig) {
             type = when(canonical) { "LS" -> NodeType.JOYSTICK_ZONE; "RS" -> NodeType.CAMERA_DRAG; else -> if(it.type in setOf(NodeType.MACRO,NodeType.TURBO)) it.type else NodeType.BUTTON },
             buttonBehavior=behavior,inputKeyCode=null,inputScanCode=null,axisX=null,axisY=null) })
     }
+    fun bindObserved(id: String, event: android.view.KeyEvent) {
+        require(ControllerSourceClassifier.accepts(event.source,event.device?.sources ?: 0)) { "Not a controller event" }
+        require(event.keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN || event.scanCode > 0) { "Input has no usable key or scan code" }
+        val alias=ControllerBindingAliases.forEvent(event).firstOrNull()?.let(ControllerBindingAliases::canonical)
+        draft=draft.copy(buttons=draft.buttons.map { node ->
+            if(node.id != id) node else node.copy(boundKey=alias ?: node.boundKey,
+                inputKeyCode=event.keyCode,inputScanCode=event.scanCode.takeIf { it > 0 })
+        })
+    }
     fun remove(id: String) { draft = draft.copy(buttons = draft.buttons.filterNot { it.id == id }) }
     fun validated(): MappingConfig {
         val errors = ProfileValidator.errors(draft, original.gamePackage, original.id)

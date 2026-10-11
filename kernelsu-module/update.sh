@@ -7,11 +7,20 @@ UPDATE_JSON_URL="https://raw.githubusercontent.com/esooLsIeicuJehT/nexus_input/m
 TMP_DIR="$STATE_DIR/update"
 TMP_JSON="$TMP_DIR/update.json"
 TMP_ZIP="$TMP_DIR/module.zip"
+# The WebUI serializes calls, but manager actions/another WebUI can run concurrently.
+LOCK_DIR="$STATE_DIR/update.lock"
 
 mkdir -p "$STATE_DIR" "$TMP_DIR" || {
     echo "ERROR=unable to create update state directory"
     exit 1
 }
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "STATE=ERROR"
+    echo "MESSAGE=Another update is active, or an interrupted update lock needs inspection"
+    exit 8
+fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'rm -f "$TMP_ZIP"; exit 130' HUP INT TERM
 chmod 0700 "$STATE_DIR" "$TMP_DIR" 2>/dev/null || true
 
 . "$MODDIR/update-lib.sh" || { echo "STATE=ERROR";echo "MESSAGE=Updater verification library is missing";exit 1; }
@@ -119,7 +128,6 @@ install_update() {
     check_update
     CHECK_RC=$?
     if [ "$CHECK_RC" -eq 0 ]; then
-        STATE=$(json_string state 2>/dev/null || true)
         echo "MESSAGE=No newer published update is available"
         return 0
     fi
@@ -144,6 +152,15 @@ install_update() {
         echo "STATE=ERROR"
         echo "MESSAGE=Module ZIP SHA-256 verification failed"
         return 5
+    fi
+
+    # A valid digest alone does not establish this is the correct module/version.
+    if ! verify_module_zip "$TMP_ZIP" "$REMOTE_VERSION" "$REMOTE_CODE"; then
+        rm -f "$TMP_ZIP"
+        write_status "state=error" "message=Module ZIP identity/version validation failed"
+        echo "STATE=ERROR"
+        echo "MESSAGE=Module ZIP identity/version validation failed"
+        return 9
     fi
 
     KSUD=$(find_ksud 2>/dev/null || true)
