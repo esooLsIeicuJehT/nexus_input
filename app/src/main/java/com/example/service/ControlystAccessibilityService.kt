@@ -61,12 +61,14 @@ class ControlystAccessibilityService : AccessibilityService() {
     private var pendingForegroundTeardown: Runnable? = null
 
     private val capturedDevices = ControllerSessionDevices()
+    private val blockedHatDirections = mutableMapOf<Int, Set<String>>()
 
     private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
         override fun onInputDeviceChanged(deviceId: Int) = Unit
         override fun onInputDeviceRemoved(deviceId: Int) {
             val used=capturedDevices.remove(deviceId)
+            blockedHatDirections.remove(deviceId)
             ControllerInputMonitor.onDeviceRemoved(deviceId)
             if(used && MappingRuntimeBridge.state.value.armed) PanicKillSwitch.triggerPanic(this@ControlystAccessibilityService,"Controller disconnected")
         }
@@ -147,10 +149,11 @@ class ControlystAccessibilityService : AccessibilityService() {
         val config = MappingRuntimeBridge.config.value
         val injector = activeInjector
         if (!state.armed || !state.targetForeground || !state.backendReady || config == null || injector == null) {
-            if (state.armed && event.repeatCount == 0) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 com.example.input.ControllerRoutingTrace.record(state.configId.orEmpty(),
                     "key=${event.keyCode} scan=${event.scanCode} action=${event.action}",
-                    if (!state.targetForeground) "blocked: target game is not foreground"
+                    if (!state.armed) "blocked: mapper is disarmed"
+                    else if (!state.targetForeground) "blocked: target game is not foreground"
                     else "blocked: backend is not ready", state.backend?.name)
             }
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
@@ -170,9 +173,25 @@ class ControlystAccessibilityService : AccessibilityService() {
         val config = MappingRuntimeBridge.config.value
         val injector = activeInjector
         if (!state.armed || !state.targetForeground || !state.backendReady || config == null || injector == null) {
+            // Observe only changed HAT edges while blocked, including batched taps.
+            // Do not add tracing work to the ready stick/camera path or log every frame.
+            for (index in 0..event.historySize) {
+                val directions = com.example.input.ControllerBindingAliases.forHatMotion(event,
+                    if (index < event.historySize) index else null)
+                val reason = if (!state.armed) "blocked: mapper is disarmed"
+                    else if (!state.targetForeground) "blocked: target game is not foreground"
+                    else "blocked: backend is not ready"
+                (directions - blockedHatDirections[event.deviceId].orEmpty()).forEach { direction ->
+                    com.example.input.ControllerRoutingTrace.record(state.configId.orEmpty(),
+                        "$direction down", reason, state.backend?.name)
+                }
+                if (directions.isEmpty()) blockedHatDirections.remove(event.deviceId)
+                else blockedHatDirections[event.deviceId] = directions
+            }
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
             return
         }
+        blockedHatDirections.clear()
         capturedDevices.record(event.deviceId)
         mappingRuntime.handleMotionEvent(event, config, injector)
     }

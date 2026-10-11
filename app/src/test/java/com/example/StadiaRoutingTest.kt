@@ -21,11 +21,14 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import com.inputmapper.platform.root.PrivilegedInputManagerEngine
 import com.example.diagnostics.ReleaseDiagnostics
+import com.example.service.ControlystAccessibilityService
+import com.example.service.MappingRuntimeBridge
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.InputDeviceBuilder
@@ -260,5 +263,32 @@ class StadiaRoutingTest {
         assertEquals(24, routing.getJSONArray("recentRoutes").getJSONObject(0).getInt("input"))
         assertEquals(47, routing.getJSONArray("recentRoutes").getJSONObject(23).getInt("input"))
         assertNull(ReleaseDiagnostics.inputReport("Self-check failed: unavailable"))
+    }
+
+    @Test fun accessibilityReportsDisarmedKeysAndBlockedBatchedHatWithoutRepeatedFrames() {
+        val device = device()
+        val controller = Robolectric.buildService(ControlystAccessibilityService::class.java).create()
+        val service = controller.get()
+        MappingRuntimeBridge.disarm()
+        ControllerRoutingTrace.clear()
+        try {
+            assertFalse(service.onKeyEvent(key(device, 108, 315)))
+            assertEquals("blocked: mapper is disarmed", ControllerRoutingTrace.snapshot().single().result)
+            val profile = config(listOf(MappingNode("left", .2f, .3f, boundKey = "DPAD_LEFT")))
+            assertTrue(MappingRuntimeBridge.arm(profile.gamePackage, profile))
+            val batched = motion(device, -1f, 0f)
+            batched.addBatch(140, arrayOf(coords(0f, 0f)), 0)
+            service.onMotionEvent(batched); batched.recycle()
+            repeat(3) { motion(device, 0f, 0f).let { service.onMotionEvent(it); it.recycle() } }
+            val routes = ControllerRoutingTrace.snapshot()
+            assertEquals(2, routes.size)
+            assertEquals("DPAD_LEFT down", routes.last().input)
+            assertEquals("blocked: target game is not foreground", routes.last().result)
+            assertEquals(profile.id, routes.last().profileId)
+        } finally {
+            controller.destroy()
+            ControllerRoutingTrace.clear()
+            MappingRuntimeBridge.disarm()
+        }
     }
 }

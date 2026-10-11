@@ -23,7 +23,7 @@ The Assistant/Capture labels are supported by [AOSP's Stadia bridge](https://and
 - After adding aliases for UNKNOWN scans, a learned BUTTON_1/2 could miss its saved scan because the old fallback required an empty alias set. Allow the explicit saved scan for UNKNOWN translations; keep known conflicting keycodes distinct.
 - Capture callbacks previously copied monitor state outside a common lock. Serialize key/motion updates so a motion copy cannot overwrite a retained learning press.
 - Keep logical bindings, raw scan bindings, macros, turbo, HOLD ownership, slots, profile identity, launch/focus grace, trigger hysteresis, current stick samples and the 8 ms camera loop intact.
-- Keep a bounded routing trace after leaving the game. An unmatched key or HAT must say that the saved profile lacks a target. A captured key blocked by focus/backend readiness must say why. A matched request is not proof of game-visible touch acceptance.
+- Keep a bounded routing trace after leaving the game. An unmatched key or HAT must say that the saved profile lacks a target. A captured key or changed HAT edge blocked by focus/backend readiness must say why, including disarmed capture and a batched HAT press. Keep neutral frames and key repeats out of this trace. A matched request is not proof of game-visible touch acceptance.
 
 ## User diagnostics and remaining device evidence
 
