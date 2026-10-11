@@ -46,7 +46,7 @@ internal fun rememberInputDevices(onChanged: () -> Unit, refreshKey: Int = 0): I
         fun refresh() {
             inventory = try {
                 checkNotNull(manager) { "Android InputManager is unavailable" }
-                InputDeviceInventory(manager.inputDeviceIds.mapNotNull(manager::getInputDevice).filter(::isNexusPhysicalInput))
+                InputDeviceInventory(manager.inputDeviceIds.asSequence().mapNotNull(manager::getInputDevice).filter(::isNexusPhysicalInput).toList())
             } catch (error: Exception) {
                 Log.e("NexusDevices", "Device inventory failed", error)
                 InputDeviceInventory(error = "Device inventory failed: ${error.message}")
