@@ -3,170 +3,147 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#03070d" />
+  <meta name="theme-color" content="#060a12" />
   <title>NEXUS INPUT · KernelSU</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app-shell">
     <main class="workspace">
-      <header class="topbar" id="overview">
-        <div>
-          <div class="eyebrow">KERNELSU / CONTROL CENTER</div>
-          <h1>NEXUS <em>INPUT</em></h1>
-          <p>Device capabilities, guarded root controls, input backend health, and module updates.</p>
-        </div>
-        <div class="top-actions">
-          <button id="refresh" class="button ghost">Refresh diagnostics</button>
-          <button id="launch" class="button primary">Launch NEXUS INPUT</button>
-        </div>
+      <header class="masthead" id="overview">
+        <div class="brand-title">NEXUS INPUT</div>
+        <h1>KernelSU Control Center</h1>
       </header>
 
       <div class="view-page" data-page="overview">
-      <section class="hero-panel">
-        <div class="hero-orb"><span>N</span></div>
-        <div class="hero-copy">
-          <div class="eyebrow">NEXUS ROOT CONTROL PLANE</div>
-          <h2>Root status and observed device controls.</h2>
-          <p>The cards below are populated by live shell probes through KernelSU WebUI. Missing permissions, devices, or APK state remain visible as failures.</p>
+        <div class="page-heading">
+          <div><span class="eyebrow">ROOT COMPANION</span><h2>System overview</h2></div>
+          <span class="technical-chip">MANUAL READOUTS</span>
         </div>
-      </section>
+        <p class="page-intro">Refresh to read this device. Node presence and process listings are diagnostics; they do not confirm that a game received input.</p>
 
-      <section class="status-grid" aria-label="Live diagnostics">
-        <article class="metric-card">
-          <span>ANDROID APK</span>
-          <strong id="apk">Not read</strong>
-          <small>Installed package state</small>
-        </article>
-        <article class="metric-card">
-          <span>/DEV/UINPUT</span>
-          <strong id="uinput">Not read</strong>
-          <small>Virtual input capability</small>
-        </article>
-        <article class="metric-card">
-          <span>/DEV/UHID</span>
-          <strong id="uhid">Not read</strong>
-          <small>HID capability</small>
-        </article>
-        <article class="metric-card">
-          <span>SELINUX</span>
-          <strong id="selinux">Not read</strong>
-          <small>Current enforcement mode</small>
-        </article>
-        <article class="metric-card wide">
-          <span>NEXUS PROCESSES</span>
-          <strong id="processes">Not read</strong>
-          <small>Matching live process contexts</small>
-        </article>
-      </section>
+        <section class="status-grid" aria-label="Device diagnostics">
+          <article class="metric-card">
+            <span class="metric-icon" aria-hidden="true">▦</span>
+            <div><h3>Android APK</h3><strong id="apk">Not read</strong><small>Installed package state</small></div>
+          </article>
+          <article class="metric-card">
+            <span class="metric-icon" aria-hidden="true">⌁</span>
+            <div><h3>Input node</h3><strong id="uinput">Not read</strong><small>/dev/uinput presence and context</small></div>
+          </article>
+          <article class="metric-card">
+            <span class="metric-icon" aria-hidden="true">◇</span>
+            <div><h3>HID node</h3><strong id="uhid">Not read</strong><small>/dev/uhid presence and context</small></div>
+          </article>
+          <article class="metric-card">
+            <span class="metric-icon" aria-hidden="true">◈</span>
+            <div><h3>SELinux</h3><strong id="selinux">Not read</strong><small>Observed enforcement mode</small></div>
+          </article>
+          <article class="metric-card wide">
+            <span class="metric-icon" aria-hidden="true">⌘</span>
+            <div><h3>Nexus processes</h3><strong id="processes">Not read</strong><small>Matching live process contexts</small></div>
+          </article>
+        </section>
 
+        <section class="card actions-card" aria-labelledby="actions-title">
+          <div class="card-heading"><h2 id="actions-title">Actions</h2><span class="technical-chip">ROOT / APK</span></div>
+          <div class="actions-grid">
+            <button id="refresh" type="button" class="button action-button icon-refresh">Refresh diagnostics</button>
+            <button id="launch" type="button" class="button action-button primary icon-launch">Launch NEXUS INPUT</button>
+            <button data-route="controls" type="button" class="button action-button icon-controls">Device controls</button>
+            <button data-route="runtime" type="button" class="button action-button icon-runtime">Runtime &amp; devices</button>
+            <button data-route="updates" type="button" class="button action-button icon-update">GitHub updates</button>
+            <button data-route="logs" type="button" class="button action-button icon-logs">Log console</button>
+          </div>
+        </section>
+        <section class="card safety-card" aria-labelledby="safety-title">
+          <div class="card-heading"><h2 id="safety-title">Safety &amp; input ownership</h2><span class="safety-icon" aria-hidden="true">△</span></div>
+          <p>Mapping, stop and panic release are owned by the Android APK. Open NEXUS INPUT to use its runtime controls. Root changes here keep kernel thermal protections active and require verified read-back.</p>
+        </section>
       </div>
+
       <div class="view-page" data-page="controls" hidden>
-      <section class="card" id="capabilities-panel">
-        <div class="card-heading"><div><div class="eyebrow">DEVICE CAPABILITIES</div><h3>Root controls and safeguards</h3></div><button id="refreshCapabilities" class="button ghost">Read device capabilities</button></div>
-        <p>Only values exposed by this device populate the controls. Every change checks actual read-back. Tuning is refused when Android battery state is unavailable, charge is below 20%, or battery temperature is 45°C or above. Kernel thermal protections remain active.</p>
-        <div class="detail-grid">
-          <details class="control-group"><summary>CPU policies</summary><pre id="cpuCapabilities">Not read</pre>
-            <label>Observed policy <select id="cpuPolicy" disabled></select></label>
-            <label>Available governor <select id="cpuGovernor" disabled></select></label>
-            <button id="applyCpuGovernor" class="button ghost" disabled>Apply governor with read-back</button>
-            <label>Available minimum kHz <select id="cpuMinimum" disabled></select></label>
-            <label>Available maximum kHz <select id="cpuMaximum" disabled></select></label>
-            <button id="applyCpuFrequencies" class="button ghost" disabled>Apply frequency interval</button>
-          </details>
-          <details class="control-group"><summary>GPU / devfreq devices</summary><pre id="devfreqCapabilities">Not read</pre>
-            <label>Observed devfreq device <select id="devfreqDevice" disabled></select></label>
-            <label>Available governor <select id="devfreqGovernor" disabled></select></label>
-            <button id="applyDevfreqGovernor" class="button ghost" disabled>Apply devfreq governor</button>
-          </details>
-          <details class="control-group"><summary>Thermal state</summary><pre id="thermalCapabilities">Not read</pre></details>
-          <details class="control-group"><summary>ZRAM / memory / sysctl</summary><pre id="memoryCapabilities">Not read</pre>
-            <label>vm.swappiness (0..100) <input id="swappiness" type="number" min="0" max="100" disabled></label>
-            <button id="applySwappiness" class="button ghost" disabled>Apply with read-back</button>
-          </details>
-          <details class="control-group"><summary>Battery safeguards</summary><pre id="batteryCapabilities">Not read</pre></details>
-          <details class="control-group"><summary>Performance presets</summary><pre id="presetCapabilities">Not read</pre></details>
-        </div>
-        <pre id="controlStatus">Device capabilities are not scanned automatically. Use the button above when you want live hardware values.</pre>
-        <button id="readControlLog" class="button ghost">Read root control log</button>
-      </section>
-
+        <section class="card" id="capabilities-panel">
+          <div class="card-heading"><div><span class="eyebrow">DEVICE CAPABILITIES</span><h2>Root controls</h2></div><button id="refreshCapabilities" type="button" class="button ghost">Read device capabilities</button></div>
+          <p>Only values exposed by this device populate the controls. Every change checks actual read-back. Tuning is refused when Android battery state is unavailable, charge is below 20%, or battery temperature is 45°C or above. Kernel thermal protections remain active.</p>
+          <div class="detail-grid capability-grid">
+            <details class="control-group"><summary>CPU policies</summary><pre id="cpuCapabilities">Not read</pre>
+              <label for="cpuPolicy">Observed policy</label><select id="cpuPolicy" disabled></select>
+              <label for="cpuGovernor">Available governor</label><select id="cpuGovernor" disabled></select>
+              <button id="applyCpuGovernor" type="button" class="button ghost" disabled>Apply governor with read-back</button>
+              <label for="cpuMinimum">Available minimum kHz</label><select id="cpuMinimum" disabled></select>
+              <label for="cpuMaximum">Available maximum kHz</label><select id="cpuMaximum" disabled></select>
+              <button id="applyCpuFrequencies" type="button" class="button ghost" disabled>Apply frequency interval</button>
+            </details>
+            <details class="control-group"><summary>GPU / devfreq devices</summary><pre id="devfreqCapabilities">Not read</pre>
+              <label for="devfreqDevice">Observed devfreq device</label><select id="devfreqDevice" disabled></select>
+              <label for="devfreqGovernor">Available governor</label><select id="devfreqGovernor" disabled></select>
+              <button id="applyDevfreqGovernor" type="button" class="button ghost" disabled>Apply devfreq governor</button>
+            </details>
+            <details class="control-group"><summary>Thermal state · read-only</summary><pre id="thermalCapabilities">Not read</pre></details>
+            <details class="control-group"><summary>ZRAM / memory / sysctl</summary><pre id="memoryCapabilities">Not read</pre>
+              <label for="swappiness">vm.swappiness (0..100)</label><input id="swappiness" type="number" min="0" max="100" disabled />
+              <button id="applySwappiness" type="button" class="button ghost" disabled>Apply with read-back</button>
+            </details>
+            <details class="control-group"><summary>Battery safeguards</summary><pre id="batteryCapabilities">Not read</pre></details>
+            <details class="control-group"><summary>Performance preset availability</summary><pre id="presetCapabilities">Not read</pre></details>
+          </div>
+          <div class="console-frame" role="status" aria-live="polite"><pre id="controlStatus">Device capabilities are not scanned automatically. Read device capabilities when you want live hardware values.</pre></div>
+          <button id="readControlLog" type="button" class="button ghost control-log-button">Read root control log</button>
+        </section>
       </div>
+
       <div class="view-page" data-page="updates" hidden>
-      <section class="card update-card" id="update-panel">
-        <div class="card-heading">
-          <div>
-            <div class="eyebrow">GITHUB DELIVERY</div>
-            <h3>Module Update</h3>
+        <section class="card update-card" id="update-panel">
+          <div class="card-heading"><div><span class="eyebrow">GITHUB DELIVERY</span><h2>Module update</h2></div><span class="technical-chip">SHA-256 REQUIRED</span></div>
+          <div class="update-grid">
+            <div class="version-box"><span>INSTALLED MODULE</span><strong id="installedVersion">Not read</strong></div>
+            <span class="version-arrow" aria-hidden="true">→</span>
+            <div class="version-box"><span>GITHUB CHANNEL</span><strong id="remoteVersion">Not checked</strong></div>
           </div>
-          <span class="secure-chip">SHA-256 VERIFIED</span>
-        </div>
-        <div class="update-grid">
-          <div class="version-box"><span>INSTALLED</span><strong id="installedVersion">Not read</strong></div>
-          <div class="version-arrow">→</div>
-          <div class="version-box"><span>GITHUB</span><strong id="remoteVersion">Not checked</strong></div>
-        </div>
-        <div class="button-row">
-          <button id="checkUpdate" class="button ghost">Check GitHub</button>
-          <button id="installUpdate" class="button primary" disabled>Install update</button>
-        </div>
-        <pre id="updateStatus" class="status-console">Updates are verified with SHA-256 before KernelSU stages them. A reboot is required after installation.</pre>
-      </section>
-
+          <div class="button-row">
+            <button id="checkUpdate" type="button" class="button ghost icon-refresh">Check GitHub</button>
+            <button id="installUpdate" type="button" class="button primary icon-update" disabled>Install update</button>
+          </div>
+          <div class="console-frame" role="status" aria-live="polite"><pre id="updateStatus">Updates require SHA-256 verification before KernelSU stages them. A reboot is required after installation.</pre></div>
+        </section>
       </div>
+
       <div class="view-page" data-page="runtime" hidden>
-      <section class="detail-grid">
-        <article class="card" id="runtime-panel">
-          <div class="card-heading compact">
-            <div><div class="eyebrow">APK BRIDGE</div><h3>Runtime State</h3></div>
-            <span class="icon-chip">APK</span>
-          </div>
-          <pre id="runtimeStatus">Waiting for NEXUS INPUT root runtime…</pre>
-        </article>
-
-        <article class="card" id="devices-panel">
-          <div class="card-heading compact">
-            <div><div class="eyebrow">LINUX INPUT</div><h3>Devices & Controllers</h3></div>
-            <span class="icon-chip">HID</span>
-          </div>
-          <pre id="devices">Not read</pre>
-        </article>
-
-        <article class="card">
-          <div class="card-heading compact">
-            <div><div class="eyebrow">KERNELSU</div><h3>Module Config</h3></div>
-            <span class="icon-chip">CFG</span>
-          </div>
-          <pre id="moduleConfig">Not read</pre>
-        </article>
-
-        <article class="card">
-          <div class="card-heading compact">
-            <div><div class="eyebrow">BOOT</div><h3>Boot Probe</h3></div>
-            <span class="icon-chip">SYS</span>
-          </div>
-          <pre id="bootStatus">Not read</pre>
-        </article>
-      </section>
-
+        <div class="page-heading"><div><span class="eyebrow">INPUT / DEVICE SECTION</span><h2>Runtime &amp; devices</h2></div><span class="technical-chip">OBSERVED STATE</span></div>
+        <section class="detail-grid">
+          <article class="card" id="runtime-panel">
+            <div class="card-heading"><h3>APK root runtime</h3><span class="metric-icon" aria-hidden="true">⌁</span></div>
+            <pre id="runtimeStatus">Not read</pre>
+          </article>
+          <article class="card" id="devices-panel">
+            <div class="card-heading"><h3>Linux input devices</h3><span class="metric-icon" aria-hidden="true">◇</span></div>
+            <pre id="devices">Not read</pre>
+          </article>
+        </section>
+        <h2 class="section-title">System section</h2>
+        <section class="detail-grid">
+          <article class="card"><div class="card-heading"><h3>Module configuration</h3><span class="technical-chip">KERNELSU</span></div><pre id="moduleConfig">Not read</pre></article>
+          <article class="card"><div class="card-heading"><h3>Boot diagnostics</h3><span class="technical-chip">ROOT MODULE</span></div><pre id="bootStatus">Not read</pre></article>
+        </section>
+        <p class="page-note">Refresh diagnostics on Overview to read these values. APK runtime data appears only when the root runtime has published it.</p>
       </div>
+
       <div class="view-page" data-page="logs" hidden>
-      <section class="card log-card" id="log-panel">
-        <div class="card-heading compact">
-          <div><div class="eyebrow">TERMINAL</div><h3>Last Command</h3></div>
-          <span class="terminal-dot"></span>
-        </div>
-        <pre id="log">Ready.</pre>
-      </section>
+        <section class="card log-card" id="log-panel">
+          <div class="card-heading"><div><span class="eyebrow">ROOT / DIAGNOSTICS</span><h2>Log console</h2></div><span class="technical-chip">LAST COMMAND</span></div>
+          <div class="console-frame" role="status" aria-live="polite"><pre id="log">No command has been requested.</pre></div>
+          <p class="page-note">Command output and failures appear here. Use Read root control log on Controls for the module's change history.</p>
+        </section>
       </div>
     </main>
   </div>
   <nav class="bottom-nav" aria-label="KernelSU sections">
-    <button data-route="overview" aria-current="page"><span>◈</span>Overview</button>
-    <button data-route="controls"><span>⚙</span>Controls</button>
-    <button data-route="runtime"><span>▣</span>Runtime</button>
-    <button data-route="updates"><span>↻</span>Updates</button>
-    <button data-route="logs"><span>›_</span>Logs</button>
+    <button data-route="overview" type="button" aria-current="page"><span aria-hidden="true">◈</span>Overview</button>
+    <button data-route="controls" type="button"><span aria-hidden="true">⚙</span>Controls</button>
+    <button data-route="runtime" type="button"><span aria-hidden="true">⌁</span>Runtime</button>
+    <button data-route="updates" type="button"><span aria-hidden="true">↻</span>Updates</button>
+    <button data-route="logs" type="button"><span aria-hidden="true">›_</span>Logs</button>
   </nav>
   <script src="app.js"></script>
 </body>
