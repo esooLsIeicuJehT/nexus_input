@@ -13,6 +13,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.example.calibration.CalibrationManager
 import com.example.calibration.StickCalibrationState
 import com.example.calibration.TouchLatencyResult
@@ -42,6 +43,9 @@ import com.example.ai.vision.AiHudDetector
 import com.example.ai.ConfigDiffEngine
 import com.example.backup.LocalBackupManager
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +59,14 @@ class MainAppViewModel @JvmOverloads constructor(
 ) : AndroidViewModel(application) {
     private val profilePersistence = com.example.data.ProfilePersistence(db)
     private val saveMutex = kotlinx.coroutines.sync.Mutex()
+    private val pendingProfileWrites = java.util.concurrent.atomic.AtomicInteger()
+    private val deletingProfileIds = mutableSetOf<String>()
+    private val selectionRevision = java.util.concurrent.atomic.AtomicLong()
+    private val profileSignalRevision = java.util.concurrent.atomic.AtomicLong()
+    private val profileOperationChanges = MutableStateFlow(0L)
+    private var hasDraftSelection = false
+    private var observedSelectionId: String? = null
+    private var lastSelectionObservationError: String? = null
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
     val privilegeDetector = PrivilegeDetector(application)
     val calibrationManager = CalibrationManager(application)
@@ -116,28 +128,87 @@ class MainAppViewModel @JvmOverloads constructor(
 
     init {
         viewModelScope.launch {
+            val restoreRevision = selectionRevision.get()
             val migration = withContext(Dispatchers.IO) {
                 com.example.data.LegacyProfileMigration.migrate(getApplication(), db)
             }
             if (migration.errors.isNotEmpty()) showSnack(migration.errors.joinToString("\n"))
             else if (migration.imported > 0) showSnack("Migrated ${migration.imported} legacy profiles into Room; original source retained.")
             val savedState = db.mapperStateDao().get()
+            if (restoreRevision == selectionRevision.get()) observedSelectionId = savedState?.activeProfileId
             val restored = savedState?.activeProfileId?.let { db.configProfileDao().getProfileById(it) }
             if (restored != null) {
                 try {
                     val config = ControlystRepository.deserializeJsonToConfig(restored.jsonBlob)
                     val errors = com.example.input.ProfileValidator.errors(config, restored.gamePackage, restored.id, false)
                     require(errors.isEmpty()) { errors.joinToString("; ") }
-                    _activeConfig.value = config
-                    _selectedGame.value = db.gameDao().getGame(config.gamePackage)
-                    if (savedState.mappingEnabled) showSnack("Saved mapping-enabled preference restored. Launch the game to explicitly arm mapping after permissions are checked.")
+                    val game = db.gameDao().getGame(config.gamePackage)
+                    if (restoreRevision == selectionRevision.get()) {
+                        _activeConfig.value = config
+                        _selectedGame.value = game
+                        if (savedState.mappingEnabled) showSnack("Saved mapping-enabled preference restored. Launch the game to explicitly arm mapping after permissions are checked.")
+                    }
                 } catch (error: Exception) {
                     showSnack("Saved profile restore failed: ${error.message}")
                 }
             }
+            viewModelScope.launch { observeSavedProfileSelection() }
             refreshPrivileges()
             detectController()
         }
+    }
+
+    private fun signalProfileOperation(selectionChanged: Boolean = false) {
+        if (selectionChanged) selectionRevision.incrementAndGet()
+        profileOperationChanges.value = profileSignalRevision.incrementAndGet()
+    }
+
+    /** Overlay profile changes become visible only after a committed, validated Room snapshot. */
+    private suspend fun observeSavedProfileSelection() {
+        combine(db.mapperStateDao().observe(), repository.allProfiles, profileOperationChanges) { _, _, _ -> Unit }
+            .catch { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Saved profile observation stopped: ${error.javaClass.simpleName}: ${error.message}")
+            }
+            .collect {
+                if (hasDraftSelection || pendingProfileWrites.get() > 0 || selectionJob?.isActive == true || deletingProfileIds.isNotEmpty()) return@collect
+                saveMutex.lock()
+                try {
+                    if (hasDraftSelection || pendingProfileWrites.get() > 0 || selectionJob?.isActive == true || deletingProfileIds.isNotEmpty()) return@collect
+                    val revision = selectionRevision.get()
+                    val snapshot = db.withTransaction {
+                        val state = db.mapperStateDao().get()
+                        val entity = state?.activeProfileId?.let { db.configProfileDao().getProfileById(it) }
+                        Triple(state, entity, entity?.let { db.gameDao().getGame(it.gamePackage) })
+                    }
+                    if (revision != selectionRevision.get()) return@collect
+                    val id = snapshot.first?.activeProfileId
+                    if (id == null) {
+                        if (_activeConfig.value.id == observedSelectionId) {
+                            _activeConfig.value = MappingConfig(id = "new_profile", profileName = "Choose a game", gamePackage = "")
+                            _selectedGame.value = null
+                        }
+                        observedSelectionId = null
+                        lastSelectionObservationError = null
+                        return@collect
+                    }
+                    val entity = snapshot.second ?: error("Selected saved profile '$id' is missing")
+                    val config = ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
+                    val errors = com.example.input.ProfileValidator.errors(config, entity.gamePackage, id, false)
+                    require(errors.isEmpty()) { errors.joinToString("; ") }
+                    if (id != observedSelectionId || _activeConfig.value.id == id) {
+                        _activeConfig.value = config
+                        _selectedGame.value = snapshot.third
+                    }
+                    observedSelectionId = id
+                    lastSelectionObservationError = null
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    val message = "Saved profile state refresh failed: ${error.message}"
+                    if (message != lastSelectionObservationError) showSnack(message)
+                    lastSelectionObservationError = message
+                } finally { saveMutex.unlock() }
+            }
     }
 
     private val _diagnostics = MutableStateFlow<String?>(null)
@@ -201,6 +272,8 @@ class MainAppViewModel @JvmOverloads constructor(
     }
 
     fun overrideControllerType(type: ControllerType) {
+        hasDraftSelection = true
+        signalProfileOperation(selectionChanged = true)
         _controllerProfile.value = _controllerProfile.value.copy(
             type = type,
             manualOverride = true
@@ -222,8 +295,11 @@ class MainAppViewModel @JvmOverloads constructor(
         }
     }
     private var selectionJob: kotlinx.coroutines.Job? = null
-    fun selectGame(game: GameEntity) {
+    fun selectGame(game: GameEntity, onSelected: () -> Unit = {}) {
         selectionJob?.cancel()
+        hasDraftSelection = true
+        signalProfileOperation(selectionChanged = true)
+        val revision = selectionRevision.get()
         _selectedGame.value = game
         _activeConfig.value = MappingConfig(id="${game.packageName}_default",profileName="${game.displayName} Layout",gamePackage=game.packageName,gameTitle=game.displayName)
         selectionJob = viewModelScope.launch {
@@ -233,39 +309,140 @@ class MainAppViewModel @JvmOverloads constructor(
                     val config = ControlystRepository.deserializeJsonToConfig(saved.jsonBlob)
                     val errors = com.example.input.ProfileValidator.errors(config, game.packageName, saved.id, false)
                     require(errors.isEmpty()) { errors.joinToString("; ") }
+                    if (revision != selectionRevision.get()) { showSnack("Game selection superseded by a newer profile edit"); return@launch }
                     _activeConfig.value = config
+                    hasDraftSelection = false
                 }
+                if (revision != selectionRevision.get()) { showSnack("Game selection superseded by a newer profile edit"); return@launch }
+                onSelected()
             } catch(error: Exception) {
                 if(error is kotlinx.coroutines.CancellationException) throw error
                 showSnack("Profile load failed: ${error.message}")
             }
         }
+        selectionJob?.invokeOnCompletion { signalProfileOperation() }
     }
-    fun selectSavedProfile(entity: ConfigProfileEntity) {
+    fun selectSavedProfile(entity: ConfigProfileEntity, onSaved: () -> Unit = {}) {
+        selectStoredProfile(entity.id, entity.gamePackage, onSaved)
+    }
+
+    /** Used by an explicit mapper handoff when no profile list has been collected yet. */
+    fun selectSavedProfileById(id: String, onSelected: () -> Unit = {}) {
+        selectStoredProfile(id, null, onSelected)
+    }
+
+    private fun selectStoredProfile(
+        id: String, expectedGamePackage: String?, onSaved: () -> Unit,
+        beforeSelection: () -> Unit = {}
+    ) {
+        if (id in deletingProfileIds) { showSnack("Profile selection failed: deletion is in progress"); return }
         selectionJob?.cancel()
+        signalProfileOperation(selectionChanged = true)
+        val revision = selectionRevision.get()
         selectionJob=viewModelScope.launch {
+            saveMutex.lock()
             try {
-                val config=ControlystRepository.deserializeJsonToConfig(entity.jsonBlob)
-                val errors=com.example.input.ProfileValidator.errors(config,entity.gamePackage,entity.id,false)
-                require(errors.isEmpty()) { errors.joinToString("; ") }
+                require(id !in deletingProfileIds) { "Profile deletion is in progress" }
+                require(revision == selectionRevision.get()) { "Selection was superseded by a newer profile edit" }
+                beforeSelection()
+                val config = profilePersistence.select(id, expectedGamePackage)
+                val game = db.gameDao().getGame(config.gamePackage)
+                require(revision == selectionRevision.get()) { "Selection was superseded by a newer profile edit; current draft was kept" }
                 _activeConfig.value=config
-                _selectedGame.value=db.gameDao().getGame(config.gamePackage)
-                profilePersistence.save(config)
+                _selectedGame.value=game
+                hasDraftSelection = false
+                observedSelectionId = config.id
+                onSaved()
             } catch(error:Exception) {
                 if(error is kotlinx.coroutines.CancellationException) throw error
                 showSnack("Profile selection failed: ${error.message}")
-            }
+            } finally { saveMutex.unlock() }
+        }
+        selectionJob?.invokeOnCompletion { signalProfileOperation() }
+    }
+
+    /** Exact-profile handoff from a real captured image; no invented replacement profile. */
+    fun importCapturedScreenshot(profileId: String, gamePackage: String, uri: Uri) {
+        if (profileId.isBlank() || gamePackage.isBlank()) {
+            showSnack("Screenshot handoff failed: saved profile ID and game package are required")
+            return
+        }
+        mappingMutationRefusal()?.let { showSnack("Screenshot handoff refused: $it"); return }
+        selectStoredProfile(profileId, gamePackage, onSaved = {
+            importScreenshot(uri)
+            selectTab("mapper")
+        }, beforeSelection = {
+            mappingMutationRefusal()?.let { error("Screenshot handoff refused: $it") }
+        })
+    }
+
+    fun cloneSavedProfile(entity: ConfigProfileEntity, name: String, onSaved: () -> Unit = {}) {
+        if (name.isBlank()) { showSnack("Profile clone failed: profile name is required"); return }
+        if (entity.id in deletingProfileIds) { showSnack("Profile clone failed: source deletion is in progress"); return }
+        viewModelScope.launch {
+            saveMutex.lock()
+            try {
+                require(entity.id !in deletingProfileIds) { "Source deletion is in progress" }
+                val copy = profilePersistence.clone(entity.id, entity.gamePackage, name)
+                showSnack("Profile cloned: ${copy.profileName}. Current selection is unchanged.")
+                onSaved()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile clone failed: ${error.message}")
+            } finally { saveMutex.unlock() }
         }
     }
-    fun createProfile(name: String) {
+
+    fun deleteSavedProfile(entity: ConfigProfileEntity, onDeleted: () -> Unit = {}) {
+        mappingMutationRefusal()?.let { showSnack("Profile deletion refused: $it"); return }
+        if (pendingProfileWrites.get() > 0) { showSnack("Profile deletion refused: wait for pending profile saves to finish"); return }
+        if (!deletingProfileIds.add(entity.id)) { showSnack("Profile deletion refused: deletion is already in progress"); return }
+        signalProfileOperation(selectionChanged = true)
+        selectionJob?.cancel()
+        val deletion = viewModelScope.launch {
+            saveMutex.lock()
+            try {
+                mappingMutationRefusal()?.let { error(it) }
+                profilePersistence.delete(entity.id, entity.gamePackage)
+                if (_activeConfig.value.id == entity.id) {
+                    _activeConfig.value = MappingConfig(id = "new_profile", profileName = "Choose a game", gamePackage = "")
+                    _selectedGame.value = null
+                    hasDraftSelection = false
+                    observedSelectionId = null
+                }
+                showSnack("Profile deleted: ${entity.profileName}. No replacement was selected.")
+                onDeleted()
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                showSnack("Profile deletion failed: ${error.message}")
+            } finally { saveMutex.unlock() }
+        }
+        deletion.invokeOnCompletion { deletingProfileIds.remove(entity.id); signalProfileOperation() }
+    }
+
+    private fun mappingMutationRefusal(): String? {
+        if (com.example.service.MappingRuntimeBridge.state.value.armed || MappingForegroundService.isServiceActive.value) {
+            return "stop mapping and confirm contact release before changing the saved profile"
+        }
+        val panic = PanicKillSwitch.state.value
+        if (panic.isKilled && !panic.releaseConfirmed) return "contact release is unconfirmed; retry Panic Release and inspect diagnostics"
+        val runtimeError = com.example.service.MappingRuntimeBridge.state.value.error.orEmpty()
+        if (!panic.releaseConfirmed && (runtimeError.contains("release", ignoreCase = true) || runtimeError.contains("cleanup", ignoreCase = true))) {
+            return "runtime reported an unconfirmed release or cleanup; retry Panic Release before changing the saved profile"
+        }
+        return null
+    }
+    fun createProfile(name: String, onSaved: () -> Unit = {}) {
         val game=_selectedGame.value ?: run { showSnack("Choose a game before creating a profile");return }
         if(name.isBlank()) { showSnack("Profile name is required");return }
         updateActiveConfig(MappingConfig(id=java.util.UUID.randomUUID().toString(),profileName=name.trim(),gamePackage=game.packageName,gameTitle=game.displayName)) {
             showSnack("Profile created. Add physical input bindings in Mapper.")
+            onSaved()
         }
     }
 
     fun launchGameWithMapping(game: GameEntity, context: Context) {
+        if (deletingProfileIds.isNotEmpty()) { showSnack("Launch failed: wait for profile deletion to finish"); return }
         viewModelScope.launch {
             try {
                 selectionJob?.join()
@@ -304,21 +481,29 @@ class MainAppViewModel @JvmOverloads constructor(
     }
 
     fun updateActiveConfig(updated: MappingConfig, onSaved: () -> Unit = {}) {
+        if (updated.id in deletingProfileIds) { showSnack("Profile save failed: deletion is in progress"); return }
         val errors = com.example.input.ProfileValidator.errors(updated, requireBindings = false)
         if (errors.isNotEmpty()) { showSnack("Profile rejected: " + errors.joinToString("; ")); return }
         val previous = _activeConfig.value
+        val previousDraft = hasDraftSelection
+        hasDraftSelection = true
+        signalProfileOperation(selectionChanged = true)
         _activeConfig.value = updated
-        viewModelScope.launch {
+        pendingProfileWrites.incrementAndGet()
+        val save = viewModelScope.launch {
             saveMutex.lock()
             try {
                 profilePersistence.save(updated)
+                observedSelectionId = updated.id
+                if (_activeConfig.value == updated) hasDraftSelection = false
                 onSaved()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                if (_activeConfig.value == updated) _activeConfig.value = previous
+                if (_activeConfig.value == updated) { _activeConfig.value = previous; hasDraftSelection = previousDraft }
                 showSnack("Profile save failed: ${error.message}")
             } finally { saveMutex.unlock() }
         }
+        save.invokeOnCompletion { pendingProfileWrites.decrementAndGet(); signalProfileOperation() }
     }
 
     fun updateCrosshair(crosshair: CrosshairConfig) {
@@ -393,12 +578,12 @@ class MainAppViewModel @JvmOverloads constructor(
 
     fun runAutoDetectHud() = runAiHudScan()
 
-    fun addGame(game: GameEntity) {
+    fun addGame(game: GameEntity, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             try {
                 require(getApplication<Application>().packageManager.getLaunchIntentForPackage(game.packageName) != null) { "Application is no longer installed or launchable" }
                 repository.insertGame(game)
-                selectGame(game)
+                selectGame(game, onSelected = onSaved)
                 showSnack("Added ${game.displayName} to library")
             } catch(error:Exception) {
                 if(error is kotlinx.coroutines.CancellationException) throw error
