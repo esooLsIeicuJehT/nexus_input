@@ -16,6 +16,27 @@ import java.util.zip.ZipFile
 
 @RunWith(RobolectricTestRunner::class) @Config(sdk=[34])
 class ProfilePersistenceTest {
+    @Test fun capturedStadiaUnknownButtonsRemainDistinctAfterRoomSave() = runBlocking {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val db=Room.inMemoryDatabaseBuilder(context,ControlystDatabase::class.java).build()
+        try {
+            val original=MappingConfig(id="stadia-extras",profileName="Stadia extras",gamePackage="com.test.game",
+                buttons=listOf(MappingNode("assistant",.4f,.5f,boundKey="ASSISTANT",touchSlot=12),
+                    MappingNode("capture",.6f,.5f,boundKey="CAPTURE",touchSlot=13)))
+            val edit=com.example.input.MapperEditSession(original)
+            for ((id,scan) in listOf("assistant" to 704,"capture" to 705)) {
+                edit.bindObserved(id,android.view.KeyEvent(100,120,android.view.KeyEvent.ACTION_DOWN,
+                    android.view.KeyEvent.KEYCODE_UNKNOWN,0,0,41,scan,0,0x501))
+            }
+            val store=ProfilePersistence(db)
+            val saved=edit.validated()
+            store.save(saved)
+            assertEquals(saved,store.load(saved.id,saved.gamePackage))
+            assertEquals(listOf(704,705),saved.buttons.map { it.inputScanCode })
+            assertEquals(listOf(12,13),saved.buttons.map { it.touchSlot })
+        } finally { db.close() }
+    }
+
     @Test fun learnedVendorScanSurvivesSaveAndRebindClearsItsIdentity() = runBlocking {
         val context=ApplicationProvider.getApplicationContext<Context>()
         val db=Room.inMemoryDatabaseBuilder(context,ControlystDatabase::class.java).build()

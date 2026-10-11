@@ -42,6 +42,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var learnAfter by remember { mutableStateOf(0L) }
     var learnedKey by remember { mutableStateOf<Int?>(null) }
     var learnedScan by remember { mutableStateOf<Int?>(null) }
+    var learnedHat by remember { mutableStateOf(false) }
     val inspectorHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * .30f)
         .coerceIn(100f, 220f).dp
     val screenshot by viewModel.screenshot.collectAsState()
@@ -58,9 +59,11 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
 
-    LaunchedEffect(showBinding, learning, live.lastPress?.sequence) {
+    LaunchedEffect(showBinding, learning, live.lastPress?.sequence, live.lastHatPress?.sequence) {
         val press = live.lastPress
+        val hat = live.lastHatPress
         if (showBinding && learning && press != null && press.sequence > learnAfter &&
+            press.sequence >= (hat?.sequence ?: 0L) &&
             (press.keyCode != android.view.KeyEvent.KEYCODE_UNKNOWN || press.scanCode > 0)) {
             val code = press.keyCode
             val aliases = press.aliases
@@ -68,6 +71,12 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             // Preserve raw identity for vendor keys rather than assigning a guessed code.
             learnedKey = code
             learnedScan = press.scanCode.takeIf { it > 0 }
+            learnedHat = false
+            learning = false
+        } else if (showBinding && learning && hat != null && hat.sequence > learnAfter) {
+            binding = hat.binding
+            learnedKey = null; learnedScan = null
+            learnedHat = true
             learning = false
         }
     }
@@ -92,7 +101,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             onCapture = viewModel::captureScreenshot,
             onFindRegions = viewModel::runAiHudScan,
             onAddInput = {
-                learnedKey = null; learnedScan = null; learning = false
+                learnedKey = null; learnedScan = null; learnedHat = false; learning = false
                 binding = "A"
                 behavior = ButtonBehavior.TAP
                 turbo = false
@@ -322,7 +331,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                 config = config,
                 node = node,
                 onRebind = {
-                    learnedKey = node.inputKeyCode; learnedScan = node.inputScanCode; learning = false
+                    learnedKey = node.inputKeyCode; learnedScan = node.inputScanCode; learnedHat = false; learning = false
                     binding = node.boundKey
                     behavior = node.buttonBehavior
                     turbo = node.type == NodeType.TURBO
@@ -375,7 +384,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                                 FilterChip(
                                     selected = binding == key,
                                     onClick = {
-                                        learnedKey = null; learnedScan = null; learning = false
+                                        learnedKey = null; learnedScan = null; learnedHat = false; learning = false
                                         binding = key
                                         behavior = if (key in setOf("LT", "RT")) {
                                             ButtonBehavior.HOLD
@@ -389,13 +398,16 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         }
                     }
                     OutlinedButton(onClick = {
-                        learnAfter = live.lastPress?.sequence ?: 0L
+                        learnAfter = live.observedEventSequence
                         learning = true
-                        learnedKey = null; learnedScan = null
+                        learnedKey = null; learnedScan = null; learnedHat = false
                     }, enabled = binding !in setOf("LS", "RS")) {
                         Text(if (learning) "Press the physical button…" else "Learn physical button")
                     }
                     learnedKey?.let { Text("Observed key $it · scan ${learnedScan ?: "none"}", color = NexusCyan) }
+                    if (learnedHat) Text("Observed D-pad HAT direction: $binding", color = NexusCyan)
+                    Text("For D-pad learning, press one direction at a time.", color = TextMuted,
+                        style = MaterialTheme.typography.bodySmall)
                     Text("Home/Assistant may be reserved by Android or controller firmware. Learn uses only events received from your controller.",
                         color = TextMuted, style = MaterialTheme.typography.bodySmall)
                     if (binding !in setOf("LS", "RS") && node?.type != NodeType.MACRO) {

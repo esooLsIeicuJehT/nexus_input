@@ -75,15 +75,21 @@ class GamepadMappingRuntime(
                             aliases.any { ControllerBindingAliases.canonical(it) == ControllerBindingAliases.canonical(saved) }
                         } ||
                         // A firmware may stop translating a previously learned scan.
-                        // Use its saved physical scan only when no known logical key
-                        // translation is available, preserving explicit key identity.
-                        (aliases.isEmpty() && node.inputScanCode != null && node.inputScanCode > 0 && node.inputScanCode == event.scanCode)
+                        // UNKNOWN still has a usable physical identity even when a
+                        // device-specific alias recognizes it (Stadia 704/705). Do
+                        // not let that alias disable a previously learned scan.
+                        ((event.keyCode == KeyEvent.KEYCODE_UNKNOWN || aliases.isEmpty()) &&
+                            node.inputScanCode != null && node.inputScanCode > 0 && node.inputScanCode == event.scanCode)
                 node.inputScanCode != null -> node.inputScanCode == event.scanCode
                 else -> aliases.any { ControllerBindingAliases.canonical(it) == ControllerBindingAliases.canonical(node.boundKey) }
             }
             physicalMatches && node.type in setOf(NodeType.BUTTON, NodeType.TURBO, NodeType.MACRO)
         }
         if (nodes.isEmpty()) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                ControllerRoutingTrace.record(config.id, "key=${event.keyCode} scan=${event.scanCode} aliases=$aliases",
+                    "unmapped: no saved touch target", injector.method.name)
+            }
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 &&
                 aliases.any { ControllerBindingAliases.canonical(it) in setOf("START", "SELECT", "GUIDE", "CAPTURE", "ASSISTANT", "DPAD_UP", "DPAD_DOWN", "DPAD_LEFT", "DPAD_RIGHT") }) {
                 android.util.Log.w("NexusRouting", "No saved touch target for $aliases key=${event.keyCode} scan=${event.scanCode} profile=${config.id}")
@@ -93,6 +99,8 @@ class GamepadMappingRuntime(
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
         if (event.repeatCount > 0) return true
         android.util.Log.d("NexusRouting", "key=${event.keyCode} scan=${event.scanCode} action=${event.action} targets=${nodes.map { it.boundKey }} backend=${injector.method}")
+        ControllerRoutingTrace.record(config.id, "key=${event.keyCode} scan=${event.scanCode} action=${event.action}",
+            "matched: ${nodes.joinToString { it.boundKey }}", injector.method.name)
         val pressed = event.action == KeyEvent.ACTION_DOWN
         val channel = if(event.keyCode != KeyEvent.KEYCODE_UNKNOWN) "key_${event.deviceId}_${event.keyCode}" else "scan_${event.deviceId}_${event.scanCode}"
         enqueue { nodes.forEach { handleOwnedInput(channel, it, pressed, config, injector) } }
@@ -101,6 +109,14 @@ class GamepadMappingRuntime(
 
     fun handleMotionEvent(event: MotionEvent, config: MappingConfig, injector: InputInjector) {
         if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
+        // Android can batch HAT press + neutral into one callback. Reading only
+        // the final sample silently loses that D-pad tap. Copy before Android
+        // recycles the event; replay only digital edges, never historical LS/RS
+        // positions, preserving the tested stick update rate and camera loop.
+        if (event.historySize > 0) {
+            val history = (0 until event.historySize).map { MotionSnapshot.from(event, it) }
+            enqueue { history.forEach { handleDpad(it, config, injector) } }
+        }
         handleMotionSnapshot(MotionSnapshot.from(event), config, injector)
     }
 
@@ -116,12 +132,7 @@ class GamepadMappingRuntime(
             snapshot.rightTrigger?.let {
                 handleThreshold("right_trigger", it.normalizedTrigger(), ControllerBindingAliases.rightTrigger(), config, injector)
             }
-            val hatX = snapshot.hatX?.raw ?: 0f
-            val hatY = snapshot.hatY?.raw ?: 0f
-            handleDigital("hat_left", hatX < -0.5f, ControllerBindingAliases.dpadLeft(), config, injector)
-            handleDigital("hat_right", hatX > 0.5f, ControllerBindingAliases.dpadRight(), config, injector)
-            handleDigital("hat_up", hatY < -0.5f, ControllerBindingAliases.dpadUp(), config, injector)
-            handleDigital("hat_down", hatY > 0.5f, ControllerBindingAliases.dpadDown(), config, injector)
+            handleDpad(snapshot, config, injector)
 
             latestMotion = Triple(snapshot, config, injector)
             val hasJoystick = config.buttons.any { it.type == NodeType.JOYSTICK_ZONE }
@@ -141,6 +152,16 @@ class GamepadMappingRuntime(
                 else if (!cameraActive) stopCameraLoop()
             }
         }
+    }
+
+    private fun handleDpad(snapshot: MotionSnapshot, config: MappingConfig, injector: InputInjector) {
+        val hatX = snapshot.hatX?.raw ?: 0f
+        val hatY = snapshot.hatY?.raw ?: 0f
+        require(hatX.isFinite() && hatY.isFinite()) { "Invalid D-pad motion sample" }
+        handleDigital("hat_left", hatX < -0.5f, ControllerBindingAliases.dpadLeft(), config, injector)
+        handleDigital("hat_right", hatX > 0.5f, ControllerBindingAliases.dpadRight(), config, injector)
+        handleDigital("hat_up", hatY < -0.5f, ControllerBindingAliases.dpadUp(), config, injector)
+        handleDigital("hat_down", hatY > 0.5f, ControllerBindingAliases.dpadDown(), config, injector)
     }
 
     private fun ensureCameraLoop() {
@@ -452,6 +473,9 @@ class GamepadMappingRuntime(
         if (previous == pressed) return
         digitalAxisState[id] = pressed
         val nodes = matchingNodes(config, aliases)
+        ControllerRoutingTrace.record(config.id, "$id ${if (pressed) "down" else "up"}",
+            if (nodes.isEmpty()) "unmapped: no saved touch target" else "matched: ${nodes.joinToString { it.boundKey }}",
+            injector.method.name)
         nodes.forEach { handleOwnedInput(id, it, pressed, config, injector) }
     }
 
@@ -668,12 +692,13 @@ class GamepadMappingRuntime(
             get() = if (rightX != null && rightY != null) rightX to rightY else null
 
         companion object {
-            fun from(event: MotionEvent): MotionSnapshot {
+            fun from(event: MotionEvent, historyIndex: Int? = null): MotionSnapshot {
                 val device = event.device
                 fun axis(axis: Int): AxisValue? {
                     val range = device?.motionRanges?.firstOrNull { it.axis == axis } ?: return null
                     return AxisValue(
-                        raw = event.getAxisValue(axis),
+                        raw = if (historyIndex == null) event.getAxisValue(axis)
+                            else event.getHistoricalAxisValue(axis, historyIndex),
                         minimum = range.min,
                         maximum = range.max,
                         flat = range.flat

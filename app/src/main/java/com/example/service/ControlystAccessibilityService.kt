@@ -147,6 +147,12 @@ class ControlystAccessibilityService : AccessibilityService() {
         val config = MappingRuntimeBridge.config.value
         val injector = activeInjector
         if (!state.armed || !state.targetForeground || !state.backendReady || config == null || injector == null) {
+            if (state.armed && event.repeatCount == 0) {
+                com.example.input.ControllerRoutingTrace.record(state.configId.orEmpty(),
+                    "key=${event.keyCode} scan=${event.scanCode} action=${event.action}",
+                    if (!state.targetForeground) "blocked: target game is not foreground"
+                    else "blocked: backend is not ready", state.backend?.name)
+            }
             if (state.armed && state.targetForeground) prepareRuntimeAsync()
             return false
         }

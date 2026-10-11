@@ -8,17 +8,17 @@ Nexus Input lets you turn your gamepad buttons and sticks into touch controls fo
 
 The new look is dark glass, cyan light and violet glow. There’s one bottom navigation bar, a cleaner mapping workspace, and small scrollable windows for long reports. Your game stays the focus.
 
-[Download Nexus Input](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.0-dev) · [Start here](#before-you-start) · [See the changes](CHANGELOG.md) · [Phone testing guide](docs/DEVICE_TEST_NEON_UPGRADE.md)
+[Download Nexus Input](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.1-dev) · [Start here](#before-you-start) · [See the changes](CHANGELOG.md) · [Phone testing guide](docs/DEVICE_TEST_NEON_UPGRADE.md)
 
 ## Downloads
 
-**1.1.0-dev is a development candidate.** The Android builds and automated checks pass; the new controller fixes still need an in-game check on both Moto phones.
+**The controller update is a development candidate.** Automated checks cannot confirm touches inside your game. The current Moto testing and follow-up findings are recorded in [the Stadia notes](docs/STADIA_FOLLOWUP_2026-10-11.md).
 
 | Download | What it’s for |
 | --- | --- |
-| [Nexus Input-debug.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus.Input-debug.apk) | An installable debug build for testing the new UI and mapping fixes. |
-| [Nexus Input.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/Nexus.Input.apk) | The installable release build, signed with the same development key as the debug download. |
-| [KernelSU companion ZIP](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.0-dev/NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip) | The module for rooted KernelSU setups, including the matching WebUI and GitHub updater. |
+| [Nexus Input-debug.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.1-dev/Nexus.Input-debug.apk) | An installable debug build for testing the new UI and mapping fixes. |
+| [Nexus Input.apk](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.1-dev/Nexus.Input.apk) | The installable release build, signed with the same development key as the debug download. |
+| [KernelSU companion ZIP](https://github.com/esooLsIeicuJehT/nexus_input/releases/download/v1.1.1-dev/NEXUS_INPUT-KernelSU-Companion-v1.1.1-dev.zip) | The module for rooted KernelSU setups, including the matching WebUI and GitHub updater. |
 
 Already have Nexus installed? Keep your profiles. Export them using **System → System tools → Local profiles & backup → Backup ZIP** before trying a test build. When the share menu opens, save the ZIP somewhere outside Nexus and confirm you can find it.
 
@@ -41,7 +41,7 @@ The **APK** is the mapper: it stores profiles, reads controller input, places to
 
 ## Install the Nexus APK
 
-1. On your phone, open the [Nexus Input release page](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.0-dev) and expand **Assets** if needed.
+1. On your phone, open the [Nexus Input release page](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.1-dev) and expand **Assets** if needed.
 2. Download **Nexus Input.apk** for the normal release build, or **Nexus Input-debug.apk** if you're testing and need the debug build. Choose one. Both are the same app and share saved profiles when their signing keys match.
 3. Open the downloaded APK from your browser or Files app. If Android asks, allow that browser or Files app to **Install unknown apps**, then tap **Install**.
 4. Open **NEXUS INPUT**. The setup guide walks through backend selection, permissions, your controller and calibration. You can reopen it through **System → System tools → Onboarding**.
@@ -53,7 +53,7 @@ Your phone must already have working KernelSU root and its Manager app installed
 
 The companion gives you a separate **root control center**. It can show device and input diagnostics, expose supported CPU/devfreq and memory controls, and check GitHub for module updates. Performance tuning is optional; opening the WebUI doesn't apply a preset. Nexus's APK handles the game layouts and uses KernelSU root access for mapping.
 
-1. Download **NEXUS_INPUT-KernelSU-Companion-v1.1.0-dev.zip** from [the same release page](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.0-dev). Keep it as a ZIP.
+1. Download **NEXUS_INPUT-KernelSU-Companion-v1.1.1-dev.zip** from [the same release page](https://github.com/esooLsIeicuJehT/nexus_input/releases/tag/v1.1.1-dev). Keep it as a ZIP.
 2. Open **KernelSU Manager → Modules**.
 3. Tap **Install** or **Install from storage**—the wording depends on your manager version—and select the downloaded companion ZIP.
 4. Wait for installation to finish successfully, then **reboot the phone**.
@@ -104,7 +104,7 @@ If Android shows **Restricted setting** when you try to enable Accessibility for
 3. **Add a background.** Open **Mapper → Import** and choose a screenshot of the game's touch controls in the orientation you'll play. The mapper's overflow menu also has **Capture game screen** for supported setups. You can place controls manually too.
 4. **Place your inputs.** Tap **+ Input**, choose a controller button, and confirm. Drag its target onto the matching on-screen game button. Repeat for the controls you need. Use **LS** for movement and **RS** for camera movement, placing them over the game's movement and camera areas.
 5. **Set the behavior.** Tap a target to open its inspector. Use **Rebind** to change the input or its behavior: **TAP** sends a short press; **HOLD** keeps the target pressed while you hold the controller input. Resize targets and tune sticks or triggers as needed.
-6. **Learn unusual buttons.** Select a button target, then choose **Rebind → Learn physical button** and press the real controller button. Confirm the binding. For Stadia, this is useful for **Start, Select, Guide/Home, Capture and Assistant**. Choose the intended label first when a vendor button has an unknown Android name. Map each D-pad direction to its matching `DPAD_*` label.
+6. **Learn unusual buttons.** Select a button target, then choose **Rebind → Learn physical button** and press the real controller button. Tap **SAVE INPUT**. You can also learn a D-pad direction: press one direction at a time and check the displayed `DPAD_*` label. Stadia Assistant/Capture are recognized from the measured scans 704/705 in the follow-up build; other unknown vendor buttons can still be learned against your chosen label.
 7. **Launch and try it.** Return to the game profile and tap **Launch**. This starts mapping for the selected game. Test a few controls first, then adjust the layout until each touch lands where the game expects it. **System → Mapping status** shows backend state and any error or notice.
 
 **Edit while playing:** tap the floating Nexus button, then **Edit game layout**. Select targets to move or resize them; **Add**, **Bind** and **Learn** help change the layout. Tap **Save** to keep your edits, or **Cancel** to return to the previous layout.
@@ -123,7 +123,9 @@ The existing stick timing, camera movement, trigger thresholds, macros, turbo, p
 
 ## If a control still won’t work
 
-First check **Devices**. If the button shows an event there, learn it against the intended touch target and try it in the game. If it still fails, collect and copy **System → Diagnostics** after pressing it. The report includes the selected profile, button identities and backend state, so we can follow the event to its touch target.
+First check **Devices**. Each control also needs a saved target placed over a real game button; detecting a controller does not create those targets. The included Delta Force preset covers face buttons, triggers and sticks, so add any center-button or D-pad targets you want to use.
+
+If a mapped input still fails, launch the game through its profile, press that input, then collect and copy **System → Diagnostics**. Include which phone and backend you used. The follow-up build retains recent routing results after leaving the game: **unmapped** means no saved target matched, **blocked** explains a focus/backend gate, and **matched** means a touch request was routed. A matched request still needs a successful in-game check.
 
 | What you're seeing | What to check |
 | --- | --- |

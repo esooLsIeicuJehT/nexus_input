@@ -8,6 +8,7 @@ import com.example.BuildConfig
 import com.example.data.ControlystDatabase
 import com.example.injector.PrivilegeDetector
 import com.example.input.ControllerInputMonitor
+import com.example.input.ControllerRoutingTrace
 import com.example.input.ProfileValidator
 import com.example.service.*
 import org.json.JSONArray
@@ -79,6 +80,11 @@ object ReleaseDiagnostics {
                 .put("keyCode",live.lastKeyCode ?: JSONObject.NULL).put("scanCode",live.lastScanCode ?: JSONObject.NULL)
                 .put("source",live.lastSource ?: JSONObject.NULL).put("axes",JSONObject(live.axes))
                 .put("events",JSONArray(live.eventLog)).put("selectedProfile",profile?.id ?: JSONObject.NULL)
+                .put("recentRoutes",JSONArray().apply { ControllerRoutingTrace.snapshot().forEach { route ->
+                    put(JSONObject().put("uptimeMs",route.uptimeMs).put("profileId",route.profileId)
+                        .put("input",route.input).put("result",route.result)
+                        .put("backend",route.backend ?: JSONObject.NULL))
+                } })
                 .put("bindings",JSONArray().apply { profile?.buttons?.forEach { node ->
                     put(JSONObject().put("id",node.id).put("binding",node.boundKey).put("type",node.type.name)
                         .put("keyCode",node.inputKeyCode ?: JSONObject.NULL).put("scanCode",node.inputScanCode ?: JSONObject.NULL)

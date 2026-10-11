@@ -218,7 +218,7 @@ class InGameMapperOverlay(private val context: Context) {
             Toast.makeText(context,"Select a button target first",Toast.LENGTH_SHORT).show();return
         }
         val choice=AlertDialog.Builder(context).setTitle("Learn ${node.boundKey}")
-            .setMessage("Press your controller button. Home/Assistant may be reserved by Android; only delivered events can be learned.")
+            .setMessage("Press your controller button or one D-pad direction. Only delivered events can be learned.")
             .setNegativeButton("Cancel",null).create()
         choice.setOnKeyListener { _, _, event ->
             if (!com.example.input.ControllerSourceClassifier.accepts(event.source,event.device?.sources ?: 0)) false
@@ -235,8 +235,19 @@ class InGameMapperOverlay(private val context: Context) {
             }
         }
         choice.window?.setType(params(1,1).type);dialog=choice
+        val learnAfter = com.example.input.ControllerInputMonitor.state.value.observedEventSequence
+        val hatJob = scope.launch {
+            com.example.input.ControllerInputMonitor.state.collect { live ->
+                val hat = live.lastHatPress
+                if (!closed && !saving && hat != null && hat.sequence > learnAfter) {
+                    session?.bind(node.id, hat.binding, node.buttonBehavior)
+                    canvas.invalidate();choice.dismiss()
+                }
+            }
+        }
+        choice.setOnDismissListener { hatJob.cancel() }
         try { choice.show();choice.window?.setBackgroundDrawable(glass()) }
-        catch(error:Exception) { fail("Learn dialog failed: ${error.message}",error) }
+        catch(error:Exception) { hatJob.cancel();fail("Learn dialog failed: ${error.message}",error) }
     }
     private fun chooseBehavior(canvas: View) {
         val node=session?.draft?.buttons?.firstOrNull { it.id==selected } ?: return
