@@ -70,6 +70,8 @@ class CalibrationManager(private val context: Context) {
 
         for (id in deviceIds) {
             val dev = InputDevice.getDevice(id) ?: continue
+            // SDK virtual devices provide system input, not connected physical hardware.
+            if (dev.isVirtual) continue
             val sources = dev.sources
             val isGamepad = (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -103,6 +105,8 @@ class CalibrationManager(private val context: Context) {
 
         for (id in deviceIds) {
             val dev = InputDevice.getDevice(id) ?: continue
+            // SDK virtual devices provide system input, not connected physical hardware.
+            if (dev.isVirtual) continue
             val sources = dev.sources
             val hasMouse = (sources and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE
             val hasKeyboard = dev.keyboardType != InputDevice.KEYBOARD_TYPE_NONE
