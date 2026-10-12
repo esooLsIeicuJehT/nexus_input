@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.model.ControllerType
+import com.example.ui.nexus.NexusControllerTester
 import com.example.ui.MainAppViewModel
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 fun CalibrationScreen(
     viewModel: MainAppViewModel
 ) {
+    val accent = MaterialTheme.colorScheme.primary
     val stickState by viewModel.stickCalibrationState.collectAsState()
     val triggerState by viewModel.triggerCalibrationState.collectAsState()
     val latencyResult by viewModel.touchLatencyResult.collectAsState()
@@ -45,49 +46,23 @@ fun CalibrationScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
+            .background(Color.Transparent)
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Controller Profile Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurfaceElevated),
-            border = BorderStroke(1.dp, CyberCyan)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Connected Controller", color = TextSecondary, fontSize = 12.sp)
-                    Text(
-                        text = controllerProfile.type.displayName,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                    Text(controllerProfile.deviceName ?: "No controller connected", color = CyberCyan, fontSize = 11.sp)
-                }
-
-                IconButton(onClick = { viewModel.detectController() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = CyberCyan)
-                }
-            }
-        }
-
+        NexusControllerTester(viewModel)
         Spacer(Modifier.height(16.dp))
+        Text("CALIBRATION TOOLS", color = accent, fontWeight = FontWeight.Bold)
+        Text("Calibration samples Android motion events. Move the connected controller during each requested phase.", color = TextSecondary, fontSize = 12.sp)
+        Text("Controller motor testing is unavailable in this build; no rumble commands are sent.", color = TextMuted, fontSize = 10.sp)
+        Spacer(Modifier.height(12.dp))
 
         // Thumbstick 2-Stage Auto-Calibration
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().nexusGlass(16.dp, accent),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurface),
-            border = BorderStroke(1.dp, DarkSurfaceBorder)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            border = BorderStroke(0.dp, Color.Transparent)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(
@@ -96,9 +71,9 @@ fun CalibrationScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Adjust, contentDescription = null, tint = CyberCyan)
+                        Icon(Icons.Default.Adjust, contentDescription = null, tint = accent)
                         Spacer(Modifier.width(10.dp))
-                        Text("Thumbstick Deadzone Calibration", fontWeight = FontWeight.Bold, color = TextPrimary)
+                        Text("Left stick deadzone calibration", fontWeight = FontWeight.Bold, color = TextPrimary)
                     }
                 }
 
@@ -129,12 +104,14 @@ fun CalibrationScreen(
                         // Stick position
                         val stickPx = cx + (stickState.currentX * maxR)
                         val stickPy = cy + (stickState.currentY * maxR)
-                        drawCircle(CyberCyan, radius = 10f * density, center = Offset(stickPx, stickPy))
+                        if (stickState.isMeasured || stickState.progressPercent > 0f) {
+                            drawCircle(accent, radius = 10f * density, center = Offset(stickPx, stickPy))
+                        }
                     }
 
                     Text(
                         text = stickState.error ?: stickState.phase,
-                        color = CyberCyan,
+                        color = accent,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier
@@ -150,12 +127,12 @@ fun CalibrationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Inner Deadzone: ${(stickState.computedInnerDeadzone * 100).toInt()}%",
+                        text = if (stickState.isMeasured) "Inner deadzone: ${(stickState.computedInnerDeadzone * 100).toInt()}%" else "Inner deadzone: not measured",
                         color = TextSecondary,
                         fontSize = 13.sp
                     )
                     Text(
-                        text = "Outer Deflection: ${(stickState.computedOuterDeadzone * 100).toInt()}%",
+                        text = if (stickState.isMeasured) "Outer deflection: ${(stickState.computedOuterDeadzone * 100).toInt()}%" else "Outer deflection: not measured",
                         color = TextSecondary,
                         fontSize = 13.sp
                     )
@@ -168,7 +145,7 @@ fun CalibrationScreen(
                         .fillMaxWidth()
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = CyberCyan,
+                    color = accent,
                     trackColor = DarkSurfaceBorder
                 )
 
@@ -186,7 +163,7 @@ fun CalibrationScreen(
                         }
                     },
                     enabled = !isCalibratingStick && controllerProfile.connected,
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                    colors = ButtonDefaults.buttonColors(containerColor = accent),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -207,13 +184,13 @@ fun CalibrationScreen(
                         )
                     },
                     enabled = stickState.isMeasured,
-                    colors = ButtonDefaults.buttonColors(containerColor = ControlystViolet),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Save, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Save Calibration to Room DB", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Save measured calibration", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -222,10 +199,10 @@ fun CalibrationScreen(
 
         // Trigger Pull Range Calibration
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().nexusGlass(16.dp, accent),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurface),
-            border = BorderStroke(1.dp, DarkSurfaceBorder)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            border = BorderStroke(0.dp, Color.Transparent)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,7 +216,7 @@ fun CalibrationScreen(
                     color = TextSecondary,
                     fontSize = 13.sp
                 )
-                Text(triggerState.phase + " • ${triggerState.currentPull}" + (triggerState.error?.let { " • $it" } ?: ""), color = TextSecondary)
+                Text(triggerState.phase + (if (triggerState.phase.startsWith("REST") || triggerState.phase.startsWith("PULL") || triggerState.isMeasured) " • ${triggerState.currentPull}" else "") + (triggerState.error?.let { " • $it" } ?: ""), color = if (triggerState.error != null) AccentRose else TextSecondary)
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -247,6 +224,7 @@ fun CalibrationScreen(
                 ) {
                     OutlinedButton(
                         onClick = { viewModel.calibrateTriggerAndSave(true) },
+                        enabled = controllerProfile.connected,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
@@ -254,6 +232,7 @@ fun CalibrationScreen(
                     }
                     OutlinedButton(
                         onClick = { viewModel.calibrateTriggerAndSave(false) },
+                        enabled = controllerProfile.connected,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentAmber)
                     ) {
@@ -267,10 +246,10 @@ fun CalibrationScreen(
 
         // Touch Injection Latency Benchmark
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().nexusGlass(16.dp, accent),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurface),
-            border = BorderStroke(1.dp, DarkSurfaceBorder)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            border = BorderStroke(0.dp, Color.Transparent)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -284,7 +263,7 @@ fun CalibrationScreen(
                         "Backend call: ${latencyResult.roundTripMs} ms • ${latencyResult.grade}"
                     else
                         latencyResult.grade + ". Includes backend preparation; does not measure screen presentation.",
-                    color = if (latencyResult.roundTripMs > 0) CyberCyan else TextSecondary,
+                    color = if (latencyResult.roundTripMs > 0) accent else TextSecondary,
                     fontSize = 13.sp,
                     fontWeight = if (latencyResult.roundTripMs > 0) FontWeight.Bold else FontWeight.Normal
                 )
@@ -298,8 +277,8 @@ fun CalibrationScreen(
                         }
                         isTestingLatency = true
                         coroutineScope.launch {
-                            viewModel.calibrationManager.measureTouchLatency(injector)
-                            isTestingLatency = false
+                            try { viewModel.calibrationManager.measureTouchLatency(injector) }
+                            finally { isTestingLatency = false }
                         }
                     },
                     enabled = !isTestingLatency && viewModel.currentInjector != null,
@@ -316,10 +295,10 @@ fun CalibrationScreen(
 
         // Screen Resolution & Aspect Ratio Scaler
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().nexusGlass(16.dp, accent),
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = DarkSurface),
-            border = BorderStroke(1.dp, DarkSurfaceBorder)
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            border = BorderStroke(0.dp, Color.Transparent)
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -329,7 +308,7 @@ fun CalibrationScreen(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Profile target ratio: ${activeConfig.targetAspectRatio}. All normalized nodes (0..1) automatically adapt across 16:9, 19.5:9, 20:9, foldables, and tablets.",
+                    "Profile target ratio: ${activeConfig.targetAspectRatio}. The mapper stores normalized node positions. Verify alignment in the actual game and orientation.",
                     color = TextSecondary,
                     fontSize = 13.sp
                 )

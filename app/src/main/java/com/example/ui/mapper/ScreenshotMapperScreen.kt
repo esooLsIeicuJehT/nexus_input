@@ -20,13 +20,17 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.input.ControllerBindingAliases
+import com.example.input.MapperEditSession
 import com.example.model.*
 import com.example.ui.MainAppViewModel
 import com.example.ui.theme.*
 import kotlin.math.hypot
+
+private val MapperAccent = NexusMagenta
 
 /**
  * NEXUS screenshot mapper.
@@ -53,11 +57,15 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
 
     var selected by remember(config.id) { mutableStateOf<String?>(null) }
     var showBinding by remember { mutableStateOf(false) }
+    var duplicating by remember { mutableStateOf(false) }
+    var bindingError by remember { mutableStateOf<String?>(null) }
     var binding by remember { mutableStateOf("A") }
     var behavior by remember { mutableStateOf(ButtonBehavior.TAP) }
     var turbo by remember { mutableStateOf(false) }
     var snap by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf<Offset?>(null) }
+    var resizing by remember { mutableStateOf(false) }
+    var resizeRadius by remember { mutableStateOf<Float?>(null) }
 
     LaunchedEffect(showBinding, learning, live.lastPress?.sequence, live.lastHatPress?.sequence) {
         val press = live.lastPress
@@ -96,11 +104,12 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             nodeCount = config.buttons.size,
             hasScreenshot = screenshot != null,
             gridEnabled = snap,
-            invertedY = config.camera.invertY,
+            invertedY = config.camera.invertY || config.buttons.any { it.type==NodeType.CAMERA_DRAG && it.invertY },
             onImport = { picker.launch(arrayOf("image/*")) },
             onCapture = viewModel::captureScreenshot,
             onFindRegions = viewModel::runAiHudScan,
             onAddInput = {
+                duplicating=false;bindingError=null
                 learnedKey = null; learnedScan = null; learnedHat = false; learning = false
                 binding = "A"
                 behavior = ButtonBehavior.TAP
@@ -109,11 +118,12 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                 showBinding = true
             },
             onToggleGrid = { snap = !snap },
+            onSave = { viewModel.updateActiveConfig(config) { viewModel.showSnack("Mapper profile saved to this game") } },
             onMacro = { viewModel.selectTab("macro") },
             onToggleInvertY = {
-                viewModel.updateActiveConfig(
-                    config.copy(camera = config.camera.copy(invertY = !config.camera.invertY))
-                )
+                val edit=MapperEditSession(config)
+                edit.setCameraInversion(!(config.camera.invertY || config.buttons.any { it.type==NodeType.CAMERA_DRAG && it.invertY }))
+                viewModel.updateActiveConfig(edit.draft)
             },
             canEdit = config.gamePackage.isNotBlank(),
             canScan = screenshot != null
@@ -138,7 +148,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         Brush.linearGradient(
                             listOf(
                                 NexusViolet.copy(alpha = .78f),
-                                NexusCyan.copy(alpha = .86f),
+                                MapperAccent.copy(alpha = .86f),
                                 Color(0xFF246BFF).copy(alpha = .72f)
                             )
                         ),
@@ -167,13 +177,13 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                     ) {
                         Text(
                             "NEXUS MAPPING CANVAS",
-                            color = NexusCyan,
+                            color = MapperAccent,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Import a screenshot, capture the game, or place controls manually.",
+                            "Import a screenshot, capture from the game's floating menu, or place controls manually.",
                             color = TextMuted,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -201,6 +211,16 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         .pointerInput(config.id, snap) {
                             detectDragGestures(
                                 onDragStart = { point ->
+                                    val previous=currentConfig.buttons.firstOrNull { it.id==selected }
+                                    val radius=previous?.let { maxOf(18*density.density,it.radiusNorm*minOf(size.width,size.height)) }
+                                    resizing=previous!=null && radius!=null && listOf(-1f,1f).any { sx ->
+                                        listOf(-1f,1f).any { sy ->
+                                            hypot(point.x-(previous.xNorm*(size.width-1)+sx*radius),
+                                                point.y-(previous.yNorm*(size.height-1)+sy*radius))<22*density.density
+                                        }
+                                    }
+                                    resizeRadius=if(resizing) previous?.radiusNorm else null
+                                    if(!resizing) {
                                     selected = currentConfig.buttons.minByOrNull {
                                         hypot(
                                             it.xNorm * (size.width - 1) - point.x,
@@ -212,6 +232,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                                             it.yNorm * (size.height - 1) - point.y
                                         ) < 32 * density.density
                                     }?.id
+                                    }
                                     drag = selected?.let { id ->
                                         currentConfig.buttons.first { it.id == id }.let {
                                             Offset(it.xNorm, it.yNorm)
@@ -223,15 +244,24 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                                     currentConfig.buttons.firstOrNull { it.id == selected }?.let { target ->
                                         if (position != null) {
                                             viewModel.updateNode(
-                                                target.copy(xNorm = position.x, yNorm = position.y)
+                                                if(resizing) target.copy(radiusNorm=resizeRadius ?: target.radiusNorm)
+                                                else target.copy(xNorm = position.x, yNorm = position.y)
                                             )
                                         }
                                     }
                                     drag = null
+                                    resizeRadius=null;resizing=false
                                 },
-                                onDragCancel = { drag = null }
+                                onDragCancel = { drag = null;resizeRadius=null;resizing=false }
                             ) { change, amount ->
                                 change.consume()
+                                if(resizing) {
+                                    currentConfig.buttons.firstOrNull { it.id==selected }?.let { target ->
+                                        resizeRadius=(maxOf(kotlin.math.abs(change.position.x-target.xNorm*(size.width-1)),
+                                            kotlin.math.abs(change.position.y-target.yNorm*(size.height-1)))/minOf(size.width,size.height))
+                                            .coerceIn(.02f,.30f)
+                                    }
+                                } else {
                                 drag = drag?.let {
                                     var x = (it.x + amount.x / (size.width - 1)).coerceIn(0f, 1f)
                                     var y = (it.y + amount.y / (size.height - 1)).coerceIn(0f, 1f)
@@ -241,18 +271,19 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                                     }
                                     Offset(x, y)
                                 }
+                                }
                             }
                         }
                 ) {
                     if (snap) {
                         for (i in 1..19) {
                             drawLine(
-                                NexusCyan.copy(alpha = .12f),
+                                MapperAccent.copy(alpha = .12f),
                                 Offset(size.width * i / 20, 0f),
                                 Offset(size.width * i / 20, size.height)
                             )
                             drawLine(
-                                NexusCyan.copy(alpha = .12f),
+                                MapperAccent.copy(alpha = .12f),
                                 Offset(0f, size.height * i / 20),
                                 Offset(size.width, size.height * i / 20)
                             )
@@ -275,7 +306,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         val center = Offset(norm.x * (size.width - 1), norm.y * (size.height - 1))
                         val radius = maxOf(
                             18 * density.density,
-                            item.radiusNorm * minOf(size.width, size.height)
+                            (if(item.id==selected) resizeRadius ?: item.radiusNorm else item.radiusNorm) * minOf(size.width, size.height)
                         )
                         val selectedNow = item.id == selected
 
@@ -285,21 +316,30 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                             center
                         )
                         drawCircle(
-                            if (selectedNow) Color.White else NexusCyan,
+                            if (selectedNow) Color.White else MapperAccent,
                             radius,
                             center,
                             style = Stroke(if (selectedNow) 3 * density.density else 2 * density.density)
                         )
                         if (selectedNow) {
                             drawCircle(
-                                NexusCyan.copy(alpha = .34f),
+                                MapperAccent.copy(alpha = .34f),
                                 radius + 7 * density.density,
                                 center,
                                 style = Stroke(1 * density.density)
                             )
+                            drawRect(Color.White.copy(alpha=.5f),center-Offset(radius,radius),
+                                androidx.compose.ui.geometry.Size(radius*2,radius*2),style=Stroke(density.density))
+                            for (sx in listOf(-1f,1f)) for(sy in listOf(-1f,1f)) {
+                                drawRect(MapperAccent,center+Offset(sx*radius-4*density.density,sy*radius-4*density.density),
+                                    androidx.compose.ui.geometry.Size(8*density.density,8*density.density))
+                            }
                         }
                         drawContext.canvas.nativeCanvas.drawText(
-                            item.boundKey,
+                            when(ControllerBindingAliases.canonical(item.boundKey)) {
+                                "DPAD_UP" -> "↑"; "DPAD_DOWN" -> "↓"; "DPAD_LEFT" -> "←"; "DPAD_RIGHT" -> "→"
+                                else -> item.boundKey
+                            },
                             center.x,
                             center.y + 4 * density.density,
                             textPaint
@@ -331,11 +371,21 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                 config = config,
                 node = node,
                 onRebind = {
+                    duplicating=false;bindingError=null
                     learnedKey = node.inputKeyCode; learnedScan = node.inputScanCode; learnedHat = false; learning = false
                     binding = node.boundKey
                     behavior = node.buttonBehavior
                     turbo = node.type == NodeType.TURBO
                     showBinding = true
+                },
+                onDuplicate = {
+                    duplicating=true;bindingError=null;learning=false
+                    learnedKey=null;learnedScan=null;learnedHat=false
+                    binding=ControllerBindingAliases.supported.sorted().firstOrNull { candidate ->
+                        config.buttons.none { ControllerBindingAliases.canonical(it.boundKey)==candidate }
+                    } ?: node.boundKey
+                    behavior=if(binding in setOf("LT","RT")) ButtonBehavior.HOLD else node.buttonBehavior
+                    turbo=node.type==NodeType.TURBO;showBinding=true
                 },
                 onDelete = {
                     viewModel.removeNode(node.id)
@@ -350,7 +400,10 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                 onUpdateCamera = { settings ->
                     viewModel.updateActiveConfig(config.copy(camera = settings))
                 },
-                onUpdateNode = viewModel::updateNode
+                onUpdateNode = viewModel::updateNode,
+                onInvertY = { enabled ->
+                    val edit=MapperEditSession(config);edit.setCameraInversion(enabled);viewModel.updateActiveConfig(edit.draft)
+                }
             )
         } else {
             NexusHintBar(
@@ -365,8 +418,8 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             containerColor = Color(0xFF07111D),
             title = {
                 Text(
-                    if (selected == null) "ADD PHYSICAL INPUT" else "REBIND INPUT",
-                    color = NexusCyan,
+                    if(duplicating) "DUPLICATE WITH NEW INPUT" else if (selected == null) "ADD PHYSICAL INPUT" else "REBIND INPUT",
+                    color = MapperAccent,
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -378,6 +431,8 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         style = MaterialTheme.typography.bodySmall
                     )
                     Spacer(Modifier.height(10.dp))
+                    if(duplicating) Text("Choose a distinct physical input. The copy receives its own touch slot.",color=TextSecondary)
+                    bindingError?.let { Text(it,color=AccentRose) }
                     ControllerBindingAliases.supported.sorted().chunked(4).forEach { keys ->
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             keys.forEach { key ->
@@ -401,16 +456,16 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                         learnAfter = live.observedEventSequence
                         learning = true
                         learnedKey = null; learnedScan = null; learnedHat = false
-                    }, enabled = binding !in setOf("LS", "RS")) {
+                    }, enabled = !duplicating && binding !in setOf("LS", "RS")) {
                         Text(if (learning) "Press the physical button…" else "Learn physical button")
                     }
-                    learnedKey?.let { Text("Observed key $it · scan ${learnedScan ?: "none"}", color = NexusCyan) }
-                    if (learnedHat) Text("Observed D-pad HAT direction: $binding", color = NexusCyan)
+                    learnedKey?.let { Text("Observed key $it · scan ${learnedScan ?: "none"}", color = MapperAccent) }
+                    if (learnedHat) Text("Observed D-pad HAT direction: $binding", color = MapperAccent)
                     Text("For D-pad learning, press one direction at a time.", color = TextMuted,
                         style = MaterialTheme.typography.bodySmall)
                     Text("Home/Assistant may be reserved by Android or controller firmware. Learn uses only events received from your controller.",
                         color = TextMuted, style = MaterialTheme.typography.bodySmall)
-                    if (binding !in setOf("LS", "RS") && node?.type != NodeType.MACRO) {
+                    if (!duplicating && binding !in setOf("LS", "RS") && node?.type != NodeType.MACRO) {
                         MapperToggleRow(
                             label = "Turbo repeat",
                             detail = "${node?.turboHz ?: 10} Hz",
@@ -418,7 +473,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                             onCheckedChange = { turbo = it }
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if(binding !in setOf("LS","RS") && !turbo && node?.type!=NodeType.MACRO) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         ButtonBehavior.entries.forEach { value ->
                             FilterChip(
                                 selected = behavior == value,
@@ -431,6 +486,15 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if(duplicating && node!=null) {
+                        try {
+                            val edit=MapperEditSession(config)
+                            val copyId=edit.duplicate(node.id,binding,behavior)
+                            viewModel.updateActiveConfig(edit.validated())
+                            selected=copyId;duplicating=false;showBinding=false
+                        } catch(error:Exception) { bindingError=error.message ?: "Duplicate rejected" }
+                        return@TextButton
+                    }
                     val type = when (binding) {
                         "LS" -> NodeType.JOYSTICK_ZONE
                         "RS" -> NodeType.CAMERA_DRAG
@@ -465,7 +529,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
                     selected = updated.id
                     showBinding = false
                 }) {
-                    Text("SAVE INPUT", color = NexusCyan)
+                    Text("SAVE INPUT", color = MapperAccent)
                 }
             },
             dismissButton = {
@@ -478,7 +542,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
         AlertDialog(
             onDismissRequest = viewModel::dismissAiHudCandidates,
             containerColor = Color(0xFF07111D),
-            title = { Text("REVIEW DETECTED REGIONS", color = NexusCyan) },
+            title = { Text("REVIEW DETECTED REGIONS", color = MapperAccent) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
@@ -502,7 +566,7 @@ fun ScreenshotMapperScreen(viewModel: MainAppViewModel) {
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.confirmAiHudCandidates(candidates) }) {
-                    Text("APPLY ASSIGNED", color = NexusCyan)
+                    Text("APPLY ASSIGNED", color = MapperAccent)
                 }
             },
             dismissButton = {
@@ -525,32 +589,36 @@ private fun NexusMapperHeader(
     onFindRegions: () -> Unit,
     onAddInput: () -> Unit,
     onToggleGrid: () -> Unit,
+    onSave: () -> Unit,
     onMacro: () -> Unit,
     onToggleInvertY: () -> Unit,
     canEdit: Boolean,
     canScan: Boolean
 ) {
     var more by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(8.dp).nexusGlass(16.dp).padding(10.dp)) {
+    Column(Modifier.fillMaxWidth().padding(8.dp).nexusGlass(16.dp,accent=MapperAccent).padding(10.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("MAPPING STUDIO", color = NexusCyan, fontWeight = FontWeight.ExtraBold,
+                Text("MAPPING STUDIO", color = MapperAccent, fontWeight = FontWeight.ExtraBold,
+                    maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
                 Text("$profileName · $nodeCount maps", color = TextSecondary, maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall)
             }
-            MapperActionButton("IMPORT", onImport)
+            MapperActionButton("IMPORT", onImport, tag="mapper_import")
             Spacer(Modifier.width(6.dp))
-            MapperActionButton("+ INPUT", onAddInput, canEdit, strong = true)
+            MapperActionButton("+ INPUT", onAddInput, canEdit, strong = true,tag="mapper_add_input")
+            Spacer(Modifier.width(6.dp))
+            MapperActionButton("SAVE",onSave,canEdit,strong=true,tag="mapper_save")
             Box {
-                TextButton(onClick = { more = true }) { Text("•••", color = NexusCyan) }
+                TextButton(onClick = { more = true },modifier=Modifier.testTag("mapper_more")) { Text("•••", color = MapperAccent) }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                     Text(gameTitle, Modifier.padding(12.dp), color = TextSecondary, maxLines = 2)
-                    DropdownMenuItem(text = { Text("Capture game screen") }, onClick = { more = false; onCapture() })
-                    DropdownMenuItem(text = { Text("Scan HUD regions") }, enabled = canScan,
+                    DropdownMenuItem(text = { Text("Capture screen") },enabled=canEdit,modifier=Modifier.testTag("mapper_capture"), onClick = { more = false; onCapture() })
+                    DropdownMenuItem(text = { Text("Scan HUD regions") }, enabled = canScan,modifier=Modifier.testTag("mapper_hud_scan"),
                         onClick = { more = false; onFindRegions() })
-                    DropdownMenuItem(text = { Text(if (gridEnabled) "Turn grid off" else "Turn grid on") },
+                    DropdownMenuItem(text = { Text(if (gridEnabled) "Turn grid off" else "Turn grid on") },modifier=Modifier.testTag("mapper_grid"),
                         onClick = { more = false; onToggleGrid() })
                     DropdownMenuItem(text = { Text("Macro editor") }, enabled = canEdit,
                         onClick = { more = false; onMacro() })
@@ -568,14 +636,16 @@ private fun SelectedControlInspector(
     config: MappingConfig,
     node: MappingNode,
     onRebind: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit,
     onResize: (Float) -> Unit,
     onUpdateJoystick: (JoystickSettings) -> Unit,
     onUpdateCamera: (CameraSettings) -> Unit,
-    onUpdateNode: (MappingNode) -> Unit
+    onUpdateNode: (MappingNode) -> Unit,
+    onInvertY: (Boolean) -> Unit
 ) {
     Column(
-        modifier.fillMaxWidth().nexusGlass(18.dp)
+        modifier.fillMaxWidth().nexusGlass(18.dp,accent=MapperAccent)
             .verticalScroll(rememberScrollState()).padding(10.dp)
     ) {
         Row(
@@ -583,26 +653,30 @@ private fun SelectedControlInspector(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     "SELECTED  •  ${node.boundKey}",
-                    color = NexusCyan,
+                    color = MapperAccent,
                     fontWeight = FontWeight.Bold,
+                    maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
                     "${node.type}  •  ${node.buttonBehavior}",
                     color = TextMuted,
+                    maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 MapperActionButton("REBIND", onRebind)
+                MapperActionButton("COPY", onDuplicate)
                 MapperActionButton("DELETE", onDelete)
             }
         }
 
         Spacer(Modifier.height(8.dp))
+        Text("POSITION · X ${"%.1f".format(node.xNorm*100)}% · Y ${"%.1f".format(node.yNorm*100)}%",color=TextMuted)
 
         Text("TOUCH TARGET SIZE", color = TextSecondary, fontWeight = FontWeight.SemiBold)
         Row(
@@ -621,15 +695,34 @@ private fun SelectedControlInspector(
             SmallSquareButton("+") { onResize(node.radiusNorm + .01f) }
         }
 
+        if(node.type in setOf(NodeType.JOYSTICK_ZONE,NodeType.CAMERA_DRAG)) {
+            InspectorSectionTitle("STICK RESPONSE")
+            LabeledMapperSlider("Node sensitivity",node.sensitivity,.25f..3f,"%.2fx".format(node.sensitivity)) {
+                onUpdateNode(node.copy(sensitivity=it))
+            }
+            LabeledMapperSlider("Inner deadzone",node.deadzoneInner,0f.. .9f,"%.0f%%".format(node.deadzoneInner*100)) {
+                onUpdateNode(node.copy(deadzoneInner=it.coerceAtMost(node.deadzoneOuter-.01f)))
+            }
+            LabeledMapperSlider("Outer deadzone",node.deadzoneOuter,.01f..1f,"%.0f%%".format(node.deadzoneOuter*100)) {
+                onUpdateNode(node.copy(deadzoneOuter=it.coerceAtLeast(node.deadzoneInner+.01f)))
+            }
+        }
+
         if (node.type == NodeType.JOYSTICK_ZONE) {
             InspectorSectionTitle("LEFT STICK  •  WALK / RUN")
+            MapperToggleRow(
+                label = "Invert movement Y",
+                detail = if(node.invertY) "UP = DOWN  •  DOWN = UP" else "UP = UP  •  DOWN = DOWN",
+                checked = node.invertY,
+                onCheckedChange = { onUpdateNode(node.copy(invertY=it)) }
+            )
             LabeledMapperSlider(
                 "Walk radius",
                 config.joystick.walkRadiusScale,
                 .10f.. .95f,
                 "${(config.joystick.walkRadiusScale * 100).toInt()}%"
             ) {
-                onUpdateJoystick(config.joystick.copy(walkRadiusScale = it))
+                onUpdateJoystick(config.joystick.copy(walkRadiusScale = it.coerceAtMost(config.joystick.runRadiusScale-.01f)))
             }
             LabeledMapperSlider(
                 "Run radius",
@@ -637,7 +730,7 @@ private fun SelectedControlInspector(
                 .20f..1.50f,
                 "${(config.joystick.runRadiusScale * 100).toInt()}%"
             ) {
-                onUpdateJoystick(config.joystick.copy(runRadiusScale = it))
+                onUpdateJoystick(config.joystick.copy(runRadiusScale = it.coerceAtLeast(config.joystick.walkRadiusScale+.01f)))
             }
             LabeledMapperSlider(
                 "Run threshold",
@@ -653,11 +746,9 @@ private fun SelectedControlInspector(
             InspectorSectionTitle("RIGHT STICK  •  CAMERA")
             MapperToggleRow(
                 label = "Invert vertical aim",
-                detail = if (config.camera.invertY) "UP = DOWN  •  DOWN = UP" else "UP = UP  •  DOWN = DOWN",
-                checked = config.camera.invertY,
-                onCheckedChange = { enabled ->
-                    onUpdateCamera(config.camera.copy(invertY = enabled))
-                }
+                detail = if (config.camera.invertY || node.invertY) "UP = DOWN  •  DOWN = UP" else "UP = UP  •  DOWN = DOWN",
+                checked = config.camera.invertY || node.invertY,
+                onCheckedChange = onInvertY
             )
             LabeledMapperSlider(
                 "Horizontal sensitivity",
@@ -731,20 +822,22 @@ private fun MapperActionButton(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
-    strong: Boolean = false
+    strong: Boolean = false,
+    tag: String? = null
 ) {
     val shape = RoundedCornerShape(9.dp)
     TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
+            .then(if(tag==null) Modifier else Modifier.testTag(tag))
             .background(
-                if (strong) NexusCyan.copy(alpha = .12f) else Color(0xFF0A1927),
+                if (strong) MapperAccent.copy(alpha = .12f) else Color(0xFF0A1927),
                 shape
             )
             .border(
                 1.dp,
-                if (strong) NexusCyan.copy(alpha = .70f) else DarkSurfaceBorder,
+                if (strong) MapperAccent.copy(alpha = .70f) else DarkSurfaceBorder,
                 shape
             ),
         contentPadding = PaddingValues(horizontal = 11.dp, vertical = 4.dp)
@@ -753,7 +846,7 @@ private fun MapperActionButton(
             text,
             color = when {
                 !enabled -> TextMuted.copy(alpha = .45f)
-                strong -> NexusCyan
+                strong -> MapperAccent
                 else -> TextSecondary
             },
             fontWeight = FontWeight.SemiBold,
@@ -770,10 +863,10 @@ private fun SmallSquareButton(text: String, onClick: () -> Unit) {
         modifier = Modifier
             .size(38.dp)
             .background(Color(0xFF0A1927), shape)
-            .border(1.dp, NexusCyan.copy(alpha = .46f), shape),
+            .border(1.dp, MapperAccent.copy(alpha = .46f), shape),
         contentPadding = PaddingValues(0.dp)
     ) {
-        Text(text, color = NexusCyan, fontWeight = FontWeight.Bold)
+        Text(text, color = MapperAccent, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -781,7 +874,7 @@ private fun SmallSquareButton(text: String, onClick: () -> Unit) {
 private fun MapperPill(
     text: String,
     active: Boolean,
-    accent: Color = NexusCyan
+    accent: Color = MapperAccent
 ) {
     val shape = RoundedCornerShape(50)
     Box(
@@ -833,7 +926,7 @@ private fun LabeledMapperSlider(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(label, color = TextMuted, style = MaterialTheme.typography.bodySmall)
-            Text(displayValue, color = NexusCyan, style = MaterialTheme.typography.bodySmall)
+            Text(displayValue, color = MapperAccent, style = MaterialTheme.typography.bodySmall)
         }
         Slider(
             value = value,
@@ -887,7 +980,7 @@ private fun NexusHintBar(text: String) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("NEXUS", color = NexusCyan, fontWeight = FontWeight.Bold)
+        Text("NEXUS", color = MapperAccent, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(10.dp))
         Text(text, color = TextMuted, style = MaterialTheme.typography.bodySmall)
     }

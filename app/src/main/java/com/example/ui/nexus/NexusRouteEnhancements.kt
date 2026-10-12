@@ -43,121 +43,7 @@ fun NexusDevicesRoute(
     viewModel: MainAppViewModel,
     onNavigate: (String) -> Unit
 ) {
-    val live by ControllerInputMonitor.state.collectAsState()
-
-    Column(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
-        Box(modifier = Modifier.weight(1f)) {
-            NexusDevicesScreen(viewModel = viewModel, onNavigate = onNavigate)
-        }
-        LiveInputStrip(
-            sourceName = live.connectedEventSource,
-            axes = live.axes,
-            pressedButtons = live.pressedButtons,
-            lastKey = listOfNotNull(live.lastKeyName, live.lastKeyCode?.let { "code=$it" }, live.lastScanCode?.let { "scan=$it" }, live.lastSource?.let { "src=0x${it.toString(16)}" }).joinToString(" · "),
-            eventLog = live.eventLog
-        )
-    }
-}
-
-@Composable
-private fun LiveInputStrip(
-    sourceName: String?,
-    axes: Map<String, Float>,
-    pressedButtons: Set<String>,
-    lastKey: String,
-    eventLog: List<String>
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().heightIn(max = 190.dp),
-        color = DarkSurface,
-        border = BorderStroke(1.dp, DarkSurfaceBorder),
-        tonalElevation = 0.dp
-    ) {
-        Column(modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 12.dp, vertical = 9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "LIVE ANDROID INPUT",
-                    color = NexusCyan,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    sourceName ?: "Waiting for controller events",
-                    color = if (sourceName == null) TextMuted else AccentGreen,
-                    fontSize = 8.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(Modifier.height(7.dp))
-            if (axes.isEmpty() && pressedButtons.isEmpty()) {
-                Text(
-                    "Move a stick, pull a trigger, press the D-pad, or tap a controller button. Only events Android actually delivers are shown here.",
-                    color = TextSecondary,
-                    fontSize = 9.sp
-                )
-            } else {
-                listOf("LX", "LY", "RX", "RY", "LT", "RT", "BRAKE", "GAS", "HAT_X", "HAT_Y")
-                    .mapNotNull { name -> axes[name]?.let { name to it } }
-                    .forEach { (name, value) -> LiveAxisRow(name, value) }
-                var expandedAxes by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-                TextButton(onClick = { expandedAxes = !expandedAxes }) {
-                    Text(if (expandedAxes) "Hide raw axes" else "All raw axes & events")
-                }
-                if (expandedAxes) axes.filterKeys { it.startsWith("AXIS_") }.toSortedMap()
-                    .forEach { (name, value) -> LiveAxisRow(name, value) }
-
-                if (pressedButtons.isNotEmpty() || lastKey.isNotBlank()) {
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        text = buildString { if(pressedButtons.isNotEmpty()) append("Pressed: ${pressedButtons.sorted().joinToString(" • ")}"); if(lastKey.isNotBlank()) { if(isNotEmpty()) append("\n"); append("Last key: $lastKey") } },
-                        color = NexusVioletLight,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if(eventLog.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text("RAW EVENT LOG",color=NexusCyan,fontSize=8.sp,fontWeight=FontWeight.ExtraBold)
-                    Text(eventLog.takeLast(8).joinToString("\n"),color=TextMuted,fontSize=7.sp,maxLines=8,overflow=TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LiveAxisRow(name: String, value: Float) {
-    val normalized = if (name == "LT" || name == "RT") {
-        value.coerceIn(0f, 1f)
-    } else {
-        abs(value).coerceIn(0f, 1f)
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(name, color = NexusCyan, fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(42.dp))
-        LinearProgressIndicator(
-            progress = { normalized },
-            modifier = Modifier.weight(1f).height(5.dp),
-            color = if (value < 0f) NexusVioletLight else NexusCyan,
-            trackColor = Color(0xFF12263A)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            String.format("%+.2f", value),
-            color = TextSecondary,
-            fontSize = 8.sp,
-            modifier = Modifier.width(38.dp)
-        )
-    }
+    NexusDevicesScreen(viewModel, onNavigate)
 }
 
 @Composable
@@ -191,16 +77,15 @@ fun NexusProfileDetailRoute(
         Surface(
             modifier = Modifier
                 .widthIn(min = 230.dp, max = 310.dp)
-                .fillMaxHeight(),
+                .fillMaxHeight().nexusGlass(18.dp, MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(18.dp),
-            color = DarkSurface,
-            border = BorderStroke(1.dp, NexusViolet.copy(alpha = 0.65f))
+            color = Color.Transparent
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("LANDSCAPE PROFILE", color = NexusCyan, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
+                Text("LANDSCAPE PROFILE", color = MaterialTheme.colorScheme.primary, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold)
                 Text(
                     game?.displayName ?: config.gameTitle.ifBlank { "No game selected" },
                     color = TextPrimary,
@@ -216,12 +101,12 @@ fun NexusProfileDetailRoute(
                 LandscapeMetric("Controller", config.controllerType.displayName)
                 LandscapeMetric("Aspect", config.targetAspectRatio)
 
-                Spacer(Modifier.weight(1f))
+                LandscapeMetric("Requested backend", config.preferredBackend?.title ?: "Automatic")
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = game != null,
                     onClick = { game?.let { viewModel.launchGameWithMapping(it, context) } },
-                    colors = ButtonDefaults.buttonColors(containerColor = NexusViolet)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(5.dp))

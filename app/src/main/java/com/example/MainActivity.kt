@@ -27,6 +27,23 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainAppViewModel by viewModels()
 
+    private fun importCapturedMapperRequest(requestIntent: android.content.Intent?) {
+        com.example.ui.mapper.MapperScreenshotHandoff.request(requestIntent, packageName)
+            .onSuccess { request ->
+                request?.let { viewModel.importCapturedScreenshot(it.profileId, it.gamePackage, it.uri) }
+            }
+            .onFailure { error ->
+                android.util.Log.e("NexusScreenshot", "Invalid mapper screenshot request", error)
+                viewModel.showSnack("Screenshot handoff failed: ${error.message}")
+            }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        importCapturedMapperRequest(intent)
+    }
+
     private val inputListener = object : android.hardware.input.InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) { viewModel.detectController() }
         override fun onInputDeviceChanged(deviceId: Int) { viewModel.detectController() }
@@ -75,6 +92,10 @@ class MainActivity : ComponentActivity() {
         getSystemService(android.hardware.input.InputManager::class.java)
             .registerInputDeviceListener(inputListener, android.os.Handler(android.os.Looper.getMainLooper()))
         enableEdgeToEdge()
+
+        // Consume a capture only on a fresh launch; the imported image survives recreation
+        // in this Activity's existing ViewModel, avoiding a second profile-state write.
+        if (savedInstanceState == null) importCapturedMapperRequest(intent)
 
         setContent {
             NexusInputTheme {

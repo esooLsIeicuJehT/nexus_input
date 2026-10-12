@@ -42,6 +42,36 @@ jobs:
           sh -n kernelsu-module/control.sh kernelsu-module/control-lib.sh kernelsu-module/update.sh kernelsu-module/update-lib.sh kernelsu-module/service.sh kernelsu-module/customize.sh
       - name: Debug and release regression tests, APK and AAB validation
         run: gradle --no-daemon --stacktrace -PunsignedRelease=true :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:bundleRelease :app:lintDebug :app:lintRelease
+      - name: Verify rendered Android UI evidence (not approved design goldens)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          outputs = Path("app/build/outputs")
+          expected = [
+              outputs / "ui-review" / f"{orientation}-{route}.png"
+              for orientation in ("portrait", "landscape")
+              for route in ("home", "system", "mapper")
+          ]
+          states = (
+              "splash-portrait",
+              "profiles-shipped-unverified-preset-portrait",
+              "profiles-empty-games-filter-portrait",
+              "devices-no-controller-portrait",
+              "calibration-no-controller-portrait",
+              "profile-detail-no-game-portrait",
+              "profile-detail-no-game-landscape",
+              "module-launcher-portrait",
+              "system-panic-unconfirmed-portrait",
+          )
+          expected.extend(outputs / "roborazzi" / "ui-reference-pass" / f"{state}.png" for state in states)
+          for capture in expected:
+              if not capture.is_file():
+                  raise SystemExit(f"Missing rendered UI evidence: {capture}")
+              if capture.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"Invalid PNG evidence: {capture}")
+          print(f"Verified {len(expected)} generated PNG files; design approval and hardware verification are not implied.")
+          PY
       - name: Verify packaged identity and native libraries
         run: python3 scripts/verify_android_artifacts.py
       - name: Package canonical KernelSU ZIP
@@ -80,3 +110,13 @@ jobs:
             app/build/outputs/ui-review/
             app/schemas/
           if-no-files-found: warn
+      - name: Upload rendered Android UI evidence (no hardware verification)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-rendered-ui-evidence
+          path: |
+            app/build/outputs/ui-review/*.png
+            app/build/outputs/roborazzi/**/*.png
+          if-no-files-found: error
+          retention-days: 14

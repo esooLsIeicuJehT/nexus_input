@@ -53,11 +53,20 @@ object ControllerInputMonitor {
         val source: Int
     )
 
+    private fun observationForDevice(deviceId: Int): ControllerLiveState {
+        val current = _state.value
+        // A controller's key event cannot establish another controller's axes or held keys.
+        // Keep the raw multi-device log (each line identifies its source), but clear readings
+        // until this device actually supplies them. Empty is unavailable, never measured zero.
+        return if (current.deviceId == deviceId) current else ControllerLiveState(eventLog = current.eventLog)
+    }
+
     @Synchronized
     fun onMotionEvent(event: MotionEvent) {
         if (!ControllerSourceClassifier.accepts(event.source, event.device?.sources ?: 0)) return
 
         val device = event.device
+        val observed = observationForDevice(event.deviceId)
         val ranges = device?.motionRanges.orEmpty()
         val axes = linkedMapOf<String, Float>()
         val normalized = linkedMapOf<String, Float>()
@@ -93,7 +102,7 @@ object ControllerInputMonitor {
             axes.entries.joinToString(" ") { "${it.key}=${"%.3f".format(it.value)}" }
 
         val sequence = observedEvents.incrementAndGet()
-        var lastHatPress = _state.value.lastHatPress
+        var lastHatPress = observed.lastHatPress
         // Retain a directional edge through neutral, just as lastPress survives
         // key-up. Fast D-pad taps can arrive in one batched MotionEvent.
         fun observeHat(historyIndex: Int?) {
@@ -107,13 +116,13 @@ object ControllerInputMonitor {
         repeat(event.historySize) { observeHat(it) }
         observeHat(null)
 
-        _state.value = _state.value.copy(
+        _state.value = observed.copy(
             connectedEventSource = device?.name,
-            deviceId = device?.id,
+            deviceId = event.deviceId,
             axes = axes,
             normalizedAxes = normalized,
             lastSource = event.source,
-            eventLog = (_state.value.eventLog + motionLine).takeLast(64),
+            eventLog = (observed.eventLog + motionLine).takeLast(64),
             lastEventUptimeMs = event.eventTime,
             observedEventSequence = sequence,
             lastHatPress = lastHatPress
@@ -133,7 +142,8 @@ object ControllerInputMonitor {
         }
 
         val label = KeyEvent.keyCodeToString(event.keyCode).removePrefix("KEYCODE_")
-        val updated = _state.value.pressedButtons.toMutableSet()
+        val observed = observationForDevice(event.deviceId)
+        val updated = observed.pressedButtons.toMutableSet()
         when (event.action) {
             KeyEvent.ACTION_DOWN -> updated += label
             KeyEvent.ACTION_UP -> updated -= label
@@ -143,9 +153,9 @@ object ControllerInputMonitor {
         val actionName = if (event.action == KeyEvent.ACTION_DOWN) "DOWN" else "UP"
         val line = "$actionName dev=${event.deviceId} src=0x${event.source.toString(16)} key=${event.keyCode} ${KeyEvent.keyCodeToString(event.keyCode)} scan=${event.scanCode}"
         val sequence = observedEvents.incrementAndGet()
-        _state.value = _state.value.copy(
+        _state.value = observed.copy(
             connectedEventSource = event.device?.name,
-            deviceId = event.device?.id,
+            deviceId = event.deviceId,
             pressedButtons = updated,
             lastKeyCode = event.keyCode,
             lastScanCode = event.scanCode,
@@ -157,8 +167,8 @@ object ControllerInputMonitor {
             // tap's state updates before the binding dialog gets a frame.
             lastPress = if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
                 ObservedControllerKey(event.keyCode, event.scanCode, sequence, ControllerBindingAliases.forEvent(event))
-                else _state.value.lastPress,
-            eventLog = (_state.value.eventLog + line).takeLast(64),
+                else observed.lastPress,
+            eventLog = (observed.eventLog + line).takeLast(64),
             lastEventUptimeMs = event.eventTime,
             observedEventSequence = sequence
         )

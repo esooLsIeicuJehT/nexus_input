@@ -4,7 +4,12 @@ import com.example.input.MapperEditSession
 import com.example.model.*
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk=[34])
 class MapperEditSessionTest {
     private fun config()=MappingConfig(id="game",profileName="Game",gamePackage="com.test.game",preferredBackend=PrivilegeMethod.SHIZUKU,
         buttons=listOf(MappingNode("a",.2f,.3f,boundKey="A",touchSlot=7)))
@@ -60,6 +65,94 @@ class MapperEditSessionTest {
         val turbo=MapperEditSession(config().copy(buttons=listOf(MappingNode("t",.2f,.3f,type=NodeType.TURBO,boundKey="A",turboHz=15))))
         turbo.bind("t","B",ButtonBehavior.TAP);assertEquals(15,turbo.validated().buttons.single().turboHz)
         assertEquals(NodeType.TURBO,turbo.validated().buttons.single().type)
+    }
+
+    @Test fun duplicateRequiresANewPhysicalInputAndAllocatesAnIndependentSlot() {
+        val edit=MapperEditSession(config())
+        val before=edit.draft
+        assertTrue(runCatching { edit.duplicate("a","A",ButtonBehavior.TAP) }.isFailure)
+        assertEquals(before,edit.draft)
+        val id=edit.duplicate("a","RT",ButtonBehavior.HOLD)
+        val copy=edit.validated().buttons.first { it.id==id }
+        assertNull(copy.touchSlot);assertNull(copy.inputKeyCode);assertNull(copy.inputScanCode)
+        assertEquals(ButtonBehavior.HOLD,copy.buttonBehavior)
+        assertEquals(.24f,copy.xNorm,.0001f)
+        val slots=com.example.input.TouchSlotAllocator.assign(edit.draft)
+        assertNotEquals(slots["a"],slots[id])
+        assertEquals(7,slots["a"])
+    }
+
+    @Test fun duplicateClearsObservedIdentityAndKeepsMacroStepsDetached() {
+        val source=config().copy(buttons=listOf(MappingNode("macro",.2f,.3f,type=NodeType.MACRO,
+            inputKeyCode=android.view.KeyEvent.KEYCODE_BUTTON_A,inputScanCode=304,touchSlot=7,
+            macroActions=listOf(MacroStep(actionType="SWIPE",endXNorm=.7f,endYNorm=.8f)))))
+        val edit=MapperEditSession(source)
+        val id=edit.duplicate("macro","B",ButtonBehavior.TAP)
+        val copy=edit.validated().buttons.first { it.id==id }
+        assertEquals(NodeType.MACRO,copy.type)
+        assertEquals(source.buttons.single().macroActions,copy.macroActions)
+        assertNotSame(source.buttons.single().macroActions,copy.macroActions)
+        assertNull(copy.inputKeyCode);assertNull(copy.inputScanCode)
+    }
+
+    @Test fun gridSnapsRealCoordinatesAndResetRestoresTheWholeDraft() {
+        val original=config();val edit=MapperEditSession(original)
+        edit.move("a",233f,317f,1001,1001,true)
+        assertEquals(.25f,edit.draft.buttons.single().xNorm,.0001f)
+        assertEquals(.3f,edit.draft.buttons.single().yNorm,.0001f)
+        edit.resize("a",.02f)
+        edit.replaceDraft(edit.draft.copy(camera=edit.draft.camera.copy(invertY=true)))
+        edit.reset()
+        assertEquals(original,edit.draft)
+        assertNotSame(original.buttons.single(),edit.draft.buttons.single())
+        assertTrue(runCatching { edit.replaceDraft(original.copy(gamePackage="com.wrong.game")) }.isFailure)
+        assertEquals(original,edit.draft)
+    }
+    @Test fun cameraInversionCanBeDisabledEvenWhenALegacyNodeFlagWasEnabled() {
+        val original=config().copy(camera=CameraSettings(invertY=true),buttons=listOf(
+            MappingNode("ls",.2f,.3f,type=NodeType.JOYSTICK_ZONE,boundKey="LS",invertY=true),
+            MappingNode("rs",.6f,.3f,type=NodeType.CAMERA_DRAG,boundKey="RS",invertY=true)))
+        val edit=MapperEditSession(original)
+        edit.setCameraInversion(false)
+        assertFalse(edit.validated().camera.invertY)
+        assertFalse(edit.draft.buttons.first { it.id=="rs" }.invertY)
+        assertTrue(edit.draft.buttons.first { it.id=="ls" }.invertY)
+        assertTrue(original.camera.invertY)
+        edit.setCameraInversion(true)
+        assertTrue(edit.validated().camera.invertY)
+        assertFalse(edit.draft.buttons.first { it.id=="rs" }.invertY)
+    }
+    @Test fun inspectorTuningChangesTheDraftWhilePreservingObservedTriggerIdentity() {
+        val original=config().copy(buttons=listOf(MappingNode("rt",.2f,.3f,boundKey="RT",
+            inputKeyCode=android.view.KeyEvent.KEYCODE_BUTTON_R2,inputScanCode=312,touchSlot=7)))
+        val edit=MapperEditSession(original)
+        edit.replaceDraft(edit.draft.copy(buttons=edit.draft.buttons.map {
+            it.copy(buttonBehavior=ButtonBehavior.HOLD,triggerPressThreshold=.6f,triggerReleaseThreshold=.2f)
+        },camera=edit.draft.camera.copy(smoothingFrames=5,fastTurnBoost=1.5f),
+            joystick=edit.draft.joystick.copy(walkRadiusScale=.4f,runRadiusScale=.9f)))
+        val saved=edit.validated()
+        assertEquals(android.view.KeyEvent.KEYCODE_BUTTON_R2,saved.buttons.single().inputKeyCode)
+        assertEquals(312,saved.buttons.single().inputScanCode)
+        assertEquals(7,saved.buttons.single().touchSlot)
+        assertEquals(.6f,saved.buttons.single().triggerPressThreshold,.0001f)
+        assertEquals(.2f,saved.buttons.single().triggerReleaseThreshold,.0001f)
+        assertEquals(5,saved.camera.smoothingFrames)
+        assertEquals(.4f,saved.joystick.walkRadiusScale,.0001f)
+        assertEquals(.55f,original.buttons.single().triggerPressThreshold,.0001f)
+    }
+
+    @Test fun inspectorUpdatesRejectDuplicateSlotsAndInvalidTriggerIntervalsWithoutChangingTheDraft() {
+        val edit=MapperEditSession(config())
+        val other=edit.add("RT")
+        val before=edit.draft
+        val duplicateSlot=before.copy(buttons=before.buttons.map { if(it.id==other) it.copy(touchSlot=7) else it })
+        assertTrue(runCatching { edit.replaceDraft(duplicateSlot) }.isFailure)
+        assertEquals(before,edit.draft)
+        val invalidThreshold=before.copy(buttons=before.buttons.map {
+            if(it.id==other) it.copy(triggerPressThreshold=.2f,triggerReleaseThreshold=.8f) else it
+        })
+        assertTrue(runCatching { edit.replaceDraft(invalidThreshold) }.isFailure)
+        assertEquals(before,edit.draft)
     }
 
 }

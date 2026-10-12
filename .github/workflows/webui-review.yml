@@ -1,0 +1,40 @@
+name: WebUI rendered reference review
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: webui-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actual-webui-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned browser renderer
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+      - name: Capture actual WebUI with absent KernelSU bridge
+        timeout-minutes: 3
+        run: python scripts/capture_webui_review.py --output build/ui-review/webui
+      - name: Upload browser evidence and actual failure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-webui-rendered-evidence
+          path: build/ui-review/webui/
+          if-no-files-found: error
+          retention-days: 14

@@ -15,6 +15,7 @@ val NexusViolet = Color(0xFF8B3DFF)
 val NexusVioletLight = Color(0xFFC05CFF)
 val NexusBlue = Color(0xFF246BFF)
 val NexusCyan = Color(0xFF16F1FF)
+val NexusMagenta = Color(0xFFEC5DCE)
 val NexusGreen = Color(0xFF19F2A0)
 val NexusOrange = Color(0xFFFFA726)
 val NexusRed = Color(0xFFFF405D)
@@ -52,5 +53,6 @@ val SignatureGradientVertical = Brush.verticalGradient(
     listOf(NexusViolet, NexusBlue, NexusCyan)
 )
 
-val NexusPanelGradient = Brush.linearGradient(listOf(Color(0xAA183044), Color(0xB0081423), Color(0xA51D1840)))
+// Neutral glass stays navy across routes; only its edge lighting changes accent.
+val NexusPanelGradient = Brush.verticalGradient(listOf(Color(0xD82A3543), Color(0xE0121C29), Color(0xDC1C2734)))
 val NexusGlowGradient = Brush.linearGradient(listOf(NexusCyan, NexusBlue, NexusVioletLight))

@@ -119,3 +119,45 @@ test('switching bottom navigation keeps one page visible and performs no root ca
   assert.equal(buttons.filter(button=>button.attributes['aria-current']==='page').length,1);
   assert.equal(calls.length,0);
 });
+
+const html = fs.readFileSync(path.join(__dirname,'../../kernelsu-module/webroot/index.html'),'utf8');
+test('reference layout preserves unique DOM targets for every real runtime binding', () => {
+  const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+  assert.equal(new Set(ids).size,ids.length,'Duplicate IDs would make actual diagnostic updates ambiguous');
+  const literalBindings=[...source.matchAll(/(?:getElementById|state)\('([^']+)'/g)].map(match=>match[1]);
+  const groupedBindings=['apk','uinput','uhid','selinux','processes','runtimeStatus','devices','moduleConfig','bootStatus',
+    'cpuCapabilities','devfreqCapabilities','thermalCapabilities','memoryCapabilities','batteryCapabilities','presetCapabilities',
+    'cpuPolicy','cpuGovernor','cpuMinimum','cpuMaximum','devfreqDevice','devfreqGovernor',
+    'applyCpuGovernor','applyCpuFrequencies','applyDevfreqGovernor','applySwappiness'];
+  for(const id of new Set([...literalBindings,...groupedBindings])) assert.ok(ids.includes(id),`Missing real WebUI binding ${id}`);
+  assert.doesNotMatch(html,/SHA-256 VERIFIED/,'Verification must not be claimed before an actual download');
+});
+
+test('all real tuning and update writes remain disabled until observed capabilities permit them', () => {
+  const disabledIds=['installUpdate','cpuPolicy','cpuGovernor','cpuMinimum','cpuMaximum','devfreqDevice','devfreqGovernor',
+    'swappiness','applyCpuGovernor','applyCpuFrequencies','applyDevfreqGovernor','applySwappiness'];
+  for(const id of disabledIds) {
+    const tag=[...html.matchAll(/<(?:button|input|select)\b[^>]*>/g)].map(match=>match[0]).find(value=>value.includes(`id="${id}"`));
+    assert.ok(tag,`Missing supported control ${id}`);
+    assert.match(tag,/\bdisabled\b/,`Control ${id} must not appear enabled before a real read`);
+  }
+});
+
+test('overview action tiles route through the existing presentation-only navigation', () => {
+  const calls=[];const {context}=sandbox({exec(...args){calls.push(args)}});
+  const pages=[...html.matchAll(/<div class="view-page" data-page="([^"]+)"([^>]*)>/g)]
+    .map(match=>({dataset:{page:match[1]},hidden:/\bhidden\b/.test(match[2])}));
+  const buttons=[...html.matchAll(/<button\b[^>]*data-route="([^"]+)"[^>]*>/g)]
+    .map(match=>({dataset:{route:match[1]},attributes:{},
+      setAttribute(key,value){this.attributes[key]=value},removeAttribute(key){delete this.attributes[key]}}));
+  assert.deepEqual(pages.filter(page=>!page.hidden).map(page=>page.dataset.page),['overview']);
+  const routes=new Set(pages.map(page=>page.dataset.page));
+  for(const button of buttons) assert.ok(routes.has(button.dataset.route),`Unimplemented route ${button.dataset.route}`);
+  context.document.querySelectorAll=selector=>selector==='[data-page]'?pages:buttons;
+  context.window.scrollTo=()=>{};
+  for(const route of routes) {
+    context.showPage(route);
+    assert.deepEqual(pages.filter(page=>!page.hidden).map(page=>page.dataset.page),[route]);
+  }
+  assert.equal(calls.length,0);
+});

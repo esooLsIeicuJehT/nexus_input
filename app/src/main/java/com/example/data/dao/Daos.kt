@@ -79,6 +79,8 @@ interface ProfileMigrationDao {
 interface MapperStateDao {
     @Query("SELECT * FROM mapper_state WHERE id = 1")
     suspend fun get(): com.example.data.entity.MapperStateEntity?
+    @Query("SELECT * FROM mapper_state WHERE id = 1")
+    fun observe(): Flow<com.example.data.entity.MapperStateEntity?>
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(state: com.example.data.entity.MapperStateEntity)
 }
