@@ -3,11 +3,11 @@ package com.example
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import com.example.data.BuiltInProfiles
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.RoborazziTaskType
@@ -52,7 +52,7 @@ class NexusUiRenderEvidenceTest : NexusUiEvidenceHost() {
         openRoute("profiles")
         awaitObservedState { viewModel.profiles.value.any { it.id == BuiltInProfiles.DELTA_FORCE_PROFILE_ID } }
         compose.onNodeWithText("Games").performClick()
-        settleUiFrame()
+        awaitObservedState { compose.onAllNodesWithTag("profiles_empty_state").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("profiles_empty_state").assertIsDisplayed()
         capture("profiles-empty-games-filter-portrait")
     }
@@ -96,7 +96,7 @@ class NexusUiRenderEvidenceTest : NexusUiEvidenceHost() {
         openShell()
         compose.onNodeWithTag("appbar_panic_button").performClick()
         openRoute("system")
-        compose.onNodeWithTag("system_panic_status").performScrollTo().assertIsDisplayed()
+        scrollIntoView("system_panic_status").assertIsDisplayed()
         capture("system-panic-unconfirmed-portrait")
     }
 }
