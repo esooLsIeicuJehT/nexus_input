@@ -17,6 +17,14 @@ import com.example.R
 import com.example.data.ControlystDatabase
 import com.example.data.ControlystRepository
 import com.example.model.CrosshairConfig
+import com.example.model.MappingConfig
+import android.view.Choreographer
+import android.widget.Toast
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
+import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -71,6 +79,70 @@ class MappingForegroundService : Service() {
     private var inGameOverlay: InGameMapperOverlay? = null
     private var frameOverlay: FrameTimeOverlay? = null
     private var crosshairOverlayManager: CrosshairOverlayManager? = null
+    private var captureJob: Job? = null
+
+    /** The service owns capture so removing the originating floating window cannot cancel it. */
+    internal fun captureForMapper(config: MappingConfig): Result<Unit> = runCatching {
+        check(_isServiceActive.value && MappingRuntimeBridge.state.value.armed &&
+            MappingRuntimeBridge.state.value.targetForeground && MappingRuntimeBridge.config.value?.id==config.id &&
+            _activeGamePackage.value==config.gamePackage && MappingRuntimeBridge.state.value.gamePackage==config.gamePackage) {
+            "Screenshot capture requires this service's foreground game profile"
+        }
+        check(captureJob?.isActive != true) { "A screenshot capture is already running" }
+        val captureService=ControlystAccessibilityService.getInstance()
+            ?: error("Screenshot capture service is unavailable")
+        captureJob=serviceScope.launch {
+            try {
+                withTimeout(8_000) {
+                    MapperCaptureCoordinator(
+                        releaseContacts = {
+                            val released=suspendCancellableCoroutine<Boolean> { continuation ->
+                                captureService.emergencyRelease { acknowledged ->
+                                    if(continuation.isActive) continuation.resume(acknowledged)
+                                }
+                            }
+                            check(released) { "Contact release was not acknowledged: ${MappingRuntimeBridge.state.value.error ?: "backend supplied no detail"}" }
+                        },
+                        removeOwnedWindows = {
+                            loadJob?.cancel();loadJob=null
+                            val failures=listOfNotNull(
+                                inGameOverlay?.hide()?.exceptionOrNull(),
+                                crosshairOverlayManager?.hideOverlay()?.exceptionOrNull(),
+                                frameOverlay?.hide()?.exceptionOrNull()
+                            )
+                            check(failures.isEmpty()) { "Owned windows could not be removed: ${failures.joinToString("; ") { it.message ?: it.javaClass.simpleName }}" }
+                            inGameOverlay=null;crosshairOverlayManager=null;frameOverlay=null
+                            _isOverlayVisible.value=false
+                        },
+                        awaitFrame = {
+                            suspendCancellableCoroutine<Unit> { continuation ->
+                                val choreographer=Choreographer.getInstance()
+                                val callback=Choreographer.FrameCallback { if(continuation.isActive) continuation.resume(Unit) }
+                                choreographer.postFrameCallback(callback)
+                                continuation.invokeOnCancellation { choreographer.removeFrameCallback(callback) }
+                            }
+                        },
+                        captureBitmap = { awaitMapperBitmap(captureService::captureScreenshot) },
+                        stopMapping = { stopMapping(cancelCapture=false);stopSelf() },
+                        openMapper = { bitmap ->
+                            check(!_isServiceActive.value && !MappingRuntimeBridge.state.value.armed) {
+                                "Mapping service did not stop before screenshot handoff"
+                            }
+                            com.example.ui.mapper.MapperScreenshotHandoff.open(this@MappingForegroundService,bitmap,config).getOrThrow()
+                        }
+                    ).capture()
+                }
+            } catch(error:Exception) {
+                if(error is CancellationException && error !is TimeoutCancellationException) throw error
+                val message=if(error is TimeoutCancellationException) "Screenshot capture timed out" else "Screenshot mapper failed: ${error.message}"
+                Log.e(TAG,message,error)
+                MappingRuntimeBridge.reportError(message)
+                stopMapping(cancelCapture=false);stopSelf()
+                Toast.makeText(this@MappingForegroundService,message,Toast.LENGTH_LONG).show()
+            }
+        }
+        Unit
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -195,18 +267,18 @@ class MappingForegroundService : Service() {
         stopSelf()
     }
 
-    private fun stopMapping(clearNotification: Boolean = true) {
+    private fun stopMapping(clearNotification: Boolean = true, cancelCapture: Boolean = true) {
+        if(cancelCapture) { captureJob?.cancel();captureJob=null }
         _isServiceActive.value = false
         _activeGamePackage.value = null
         loadJob?.cancel()
         loadJob = null
-        frameOverlay?.hide();frameOverlay=null
-        inGameOverlay?.hide()
-        inGameOverlay = null
+        frameOverlay?.hide()?.onSuccess { frameOverlay=null }
+        inGameOverlay?.hide()?.onSuccess { inGameOverlay=null }
         MappingRuntimeBridge.disarm(MappingRuntimeBridge.state.value.error)
-        crosshairOverlayManager?.hideOverlay()
-        crosshairOverlayManager = null
+        crosshairOverlayManager?.hideOverlay()?.onSuccess { crosshairOverlayManager=null }
         if (clearNotification) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
             getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         }
     }
