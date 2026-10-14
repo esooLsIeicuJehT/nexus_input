@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.time.Duration.Companion.seconds
 
 /** Operation-boundary fixtures establish ordering/resource ownership, not device screenshot success. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -99,9 +100,14 @@ class MapperCaptureCoordinatorTest {
         assertFalse(received);assertTrue(bitmap.isRecycled)
     }
 
-    @Test fun actualCaptureFailureIsPreservedByTheCallbackAdapter() = runTest {
+    @Test fun actualCaptureFailureIsPreservedByTheCallbackAdapter() = runTest(timeout = 10.seconds) {
         val failure=IllegalStateException("Explicit test fixture: screenshot API error")
         val result=runCatching { awaitMapperBitmap { it(Result.failure(failure)) } }
-        assertSame(failure,result.exceptionOrNull())
+        val observed = requireNotNull(result.exceptionOrNull())
+        assertEquals(failure.javaClass, observed.javaClass)
+        assertEquals(failure.message, observed.message)
+        // Coroutine 1.10.2 stack-trace recovery can copy a throwable and retain the
+        // original as its cause. Both execution modes must preserve the real failure.
+        assertSame(failure, if (observed === failure) observed else observed.cause)
     }
 }

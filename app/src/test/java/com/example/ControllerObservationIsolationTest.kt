@@ -54,7 +54,8 @@ class ControllerObservationIsolationTest {
         assertEquals(72, second.deviceId)
         assertTrue(second.axes.isEmpty())
         assertTrue(second.normalizedAxes.isEmpty())
-        assertEquals(setOf("BUTTON_A"), second.pressedButtons)
+        assertEquals(KeyEvent.KEYCODE_BUTTON_A, second.lastKeyCode)
+        assertEquals(setOf(KeyEvent.keyCodeToString(KeyEvent.KEYCODE_BUTTON_A).removePrefix("KEYCODE_")), second.pressedButtons)
         assertTrue(second.eventLog.any { "dev=71" in it })
         assertTrue(second.eventLog.last().contains("dev=72"))
     }
