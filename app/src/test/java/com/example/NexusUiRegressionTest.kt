@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import com.example.service.ControlystAccessibilityService
 import com.example.data.BuiltInProfiles
 import com.example.service.MappingRuntimeBridge
@@ -46,9 +45,12 @@ class NexusUiRegressionTest : NexusUiEvidenceHost() {
     @Test fun emptyGamesFilterAndDisconnectedDevicesStayObservable() {
         openShell()
         compose.onNodeWithTag("tab_profiles").performClick()
+        // Install the real Profiles composition and its WhileSubscribed Room collector
+        // before waiting for database observations; a click alone does not advance frames.
+        settleUiFrame()
         awaitObservedState { viewModel.profiles.value.any { it.id == BuiltInProfiles.DELTA_FORCE_PROFILE_ID } }
         compose.onNodeWithText("Games").performClick()
-        settleUiFrame()
+        awaitObservedState { compose.onAllNodesWithTag("profiles_empty_state").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("profiles_empty_state").assertIsDisplayed()
         compose.onNodeWithTag("tab_devices").performClick()
         settleUiFrame()
@@ -69,10 +71,11 @@ class NexusUiRegressionTest : NexusUiEvidenceHost() {
 
         compose.onNodeWithTag("tab_system").performClick()
         settleUiFrame()
-        compose.onNodeWithTag("system_panic_status").performScrollTo().assertIsDisplayed()
+        scrollIntoView("system_panic_status").assertIsDisplayed()
             .assertTextContains("Panic release NOT confirmed")
-        compose.onNodeWithTag("system_panic_error").performScrollTo().assertIsDisplayed()
+        scrollIntoView("system_panic_error").assertIsDisplayed()
             .assertTextContains(panic.error!!)
+        assertFalse("Evidence remains on a manually controlled frame after scrolling", compose.mainClock.autoAdvance)
     }
 
     @Test fun screenshotAndGameDependentActionsCannotInventMappingInput() {
