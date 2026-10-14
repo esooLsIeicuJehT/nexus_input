@@ -78,13 +78,12 @@ class CrosshairOverlayManager(private val context: Context) {
             } }
         } catch(error:Exception) { view.disposeComposition();lifecycleOwner.destroy();fail("Crosshair window failed: ${error.message}",error) }
     }
-    fun hideOverlay() {
+    fun hideOverlay(): Result<Unit> {
         scope?.cancel();scope=null
-        overlayView?.let { view ->
-            try { windowManager.removeView(view) } catch(error:Exception) { fail("Crosshair removal failed: ${error.message}",error) }
-            view.disposeComposition()
-        }
-        owner?.destroy();owner=null;overlayView=null
+        return runCatching {
+            overlayView?.let { view -> windowManager.removeView(view);view.disposeComposition() }
+            owner?.destroy();owner=null;overlayView=null
+        }.onFailure { fail("Crosshair removal failed: ${it.message}",it) }
     }
     fun isShowing() = overlayView != null
     private fun fail(message: String, error: Throwable? = null) {

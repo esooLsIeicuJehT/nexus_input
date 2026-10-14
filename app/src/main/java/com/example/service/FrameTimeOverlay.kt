@@ -87,10 +87,13 @@ class FrameTimeOverlay(private val context:Context) {
         current.setTextColor(if(state.stats!=null) 0xFF20D5A4.toInt() else Color.YELLOW)
         current.visibility=View.VISIBLE
     }
-    fun hide() {
+    fun hide(): Result<Unit> {
         scope.cancel()
-        view?.let { try { wm.removeView(it) } catch(error:Exception) {
-            FrameMonitor.update(FrameMonitor.state.value.copy(stats=null,error="Frame window removal failed: ${error.message}"))
-        } };view=null
+        val current=view ?: return Result.success(Unit)
+        return runCatching { wm.removeView(current);view=null }.onFailure { error ->
+            val message="Frame window removal failed: ${error.message}"
+            FrameMonitor.update(FrameMonitor.state.value.copy(stats=null,error=message))
+            android.util.Log.e("NexusFrames",message,error)
+        }
     }
 }

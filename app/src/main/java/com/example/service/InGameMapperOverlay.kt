@@ -81,7 +81,9 @@ class InGameMapperOverlay(private val context: Context) {
         if (original == null) MappingRuntimeBridge.reportError(message)
         Toast.makeText(context,displayed,Toast.LENGTH_LONG).show()
     }
-    private fun remove(view: View?) { if (view != null) try { wm.removeView(view) } catch(error:Exception) { fail("Overlay removal failed: ${error.message}",error) } }
+    private fun remove(view: View?): Result<Unit> = if(view==null) Result.success(Unit) else runCatching {
+        wm.removeView(view)
+    }.onFailure { fail("Overlay removal failed: ${it.message}",it) }
     private fun closePanel() { remove(panel);panel=null;panelStatus=null }
     // Translucent static gradients keep the overlay lightweight over a live game.
     private fun glass(oval: Boolean = false) = GradientDrawable(
@@ -179,30 +181,11 @@ class InGameMapperOverlay(private val context: Context) {
 
     private fun captureForMapper() {
         val config=MappingRuntimeBridge.config.value ?: run { fail("Launch a mapped game before capturing",preserveRuntimeError=true);return }
-        val service=ControlystAccessibilityService.getInstance() ?: run { fail("Screenshot capture service is unavailable",preserveRuntimeError=true);return }
         if(!MappingRuntimeBridge.state.value.targetForeground) { fail("Game focus must be confirmed before screenshot capture");return }
-        service.emergencyRelease { released -> handler.post {
-            if(closed) return@post
-            if(!released) { fail("Screenshot aborted: contact release was not acknowledged",preserveRuntimeError=true);return@post }
-            closePanel();bubbleObserver?.cancel();bubbleObserver=null;remove(bubble);bubble=null
-            var pending=true
-            val timeout=Runnable { if(pending && !closed) { pending=false;fail("Screenshot capture timed out");show() } }
-            handler.postDelayed(timeout,8_000)
-            Choreographer.getInstance().postFrameCallback {
-                Choreographer.getInstance().postFrameCallback captureFrame@{
-                    if(closed || !pending) return@captureFrame
-                    service.captureScreenshot { result -> handler.post captureResult@{
-                        if(!pending || closed) { result.getOrNull()?.recycle();return@captureResult }
-                        pending=false;handler.removeCallbacks(timeout)
-                        result.onSuccess { bitmap ->
-                            val opened=com.example.ui.mapper.MapperScreenshotHandoff.open(context,bitmap,config)
-                            bitmap.recycle()
-                            opened.onFailure { fail("Screenshot mapper could not open: ${it.message}",it);show() }
-                        }.onFailure { fail("Screenshot capture failed: ${it.message}",it);show() }
-                    } }
-                }
-            }
-        } }
+        val owner=context as? MappingForegroundService ?: run {
+            fail("Screenshot capture has no active mapping-service owner",preserveRuntimeError=true);return
+        }
+        owner.captureForMapper(config).onFailure { fail("Screenshot mapper could not start: ${it.message}",it,preserveRuntimeError=true) }
     }
 
     private fun chooseProfile() {
@@ -461,9 +444,17 @@ class InGameMapperOverlay(private val context: Context) {
         }
         else { bubbleObserver?.cancel();bubbleObserver=null;closePanel();remove(bubble);bubble=null;show() }
     }
-    fun hide() {
-        closed=true;bubbleObserver?.cancel();bubbleObserver=null;saveJob?.cancel();saveJob=null;handler.removeCallbacksAndMessages(null);dialog?.dismiss();dialog=null
-        remove(editor);editor=null;closePanel();remove(bubble);bubble=null;session=null;scope.cancel()
+    fun hide(): Result<Unit> {
+        closed=true;bubbleObserver?.cancel();bubbleObserver=null;saveJob?.cancel();saveJob=null;handler.removeCallbacksAndMessages(null)
+        val dismissed=runCatching { dialog?.dismiss();Unit }.onFailure { fail("Mapper dialog removal failed: ${it.message}",it) }
+        if(dismissed.isSuccess) dialog=null
+        val editorRemoval=remove(editor).onSuccess { editor=null;inspector=null }
+        val panelRemoval=remove(panel).onSuccess { panel=null;panelStatus=null }
+        val bubbleRemoval=remove(bubble).onSuccess { bubble=null }
+        val failures=listOf(dismissed,editorRemoval,panelRemoval,bubbleRemoval).mapNotNull { it.exceptionOrNull() }
+        session=null;scope.cancel()
+        return if(failures.isEmpty()) Result.success(Unit) else Result.failure(IllegalStateException(
+            failures.joinToString("; ") { it.message ?: it.javaClass.simpleName },failures.first()))
     }
     private inner class EditorCanvas : View(context) {
         private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
