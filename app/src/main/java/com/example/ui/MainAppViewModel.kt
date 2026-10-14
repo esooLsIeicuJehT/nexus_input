@@ -55,7 +55,8 @@ import kotlinx.coroutines.launch
 
 class MainAppViewModel @JvmOverloads constructor(
     application: Application,
-    private val db: ControlystDatabase = ControlystDatabase.getDatabase(application)
+    private val db: ControlystDatabase = ControlystDatabase.getDatabase(application),
+    val privilegeDetector: PrivilegeDetector = PrivilegeDetector(application)
 ) : AndroidViewModel(application) {
     private val profilePersistence = com.example.data.ProfilePersistence(db)
     private val saveMutex = kotlinx.coroutines.sync.Mutex()
@@ -68,7 +69,6 @@ class MainAppViewModel @JvmOverloads constructor(
     private var observedSelectionId: String? = null
     private var lastSelectionObservationError: String? = null
     val repository = ControlystRepository(db.gameDao(), db.configProfileDao(), db.macroDao(), application)
-    val privilegeDetector = PrivilegeDetector(application)
     val calibrationManager = CalibrationManager(application)
     // AI & HUD Recognition States
     private val _aiHudCandidates = MutableStateFlow<List<AiHudCandidate>>(emptyList())
@@ -245,7 +245,9 @@ class MainAppViewModel @JvmOverloads constructor(
 
     fun refreshPrivileges() {
         viewModelScope.launch {
-            val probes = privilegeDetector.probeAll()
+            // Root commands wait for process completion. Keep their bounded blocking
+            // waits off the UI thread; publish only the completed probe observations.
+            val probes = withContext(Dispatchers.IO) { privilegeDetector.probeAll() }
             _privilegeResults.value = probes
             val best = com.example.injector.PrivilegeBackendSelector.choose(probes)?.method
             _activePrivilegeMethod.value = best

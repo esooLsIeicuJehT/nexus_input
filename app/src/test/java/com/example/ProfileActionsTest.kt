@@ -25,7 +25,9 @@ import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.Timeout
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -37,6 +39,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [34])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ProfileActionsTest {
+    @get:Rule val boundedTest = Timeout.seconds(45)
     private val original = MappingConfig(
         id = "profile-actions-source", profileName = "Source", gamePackage = "com.test.game",
         gameTitle = "Test game", controllerType = ControllerType.PLAYSTATION,
@@ -82,13 +85,14 @@ class ProfileActionsTest {
     }
 
     private fun await(scheduler: TestCoroutineScheduler, predicate: () -> Boolean) {
-        val deadline = System.nanoTime() + 10_000_000_000L
-        while (System.nanoTime() < deadline) {
+        // A finite attempt bound does not depend on any intercepted Android clock.
+        // The JUnit rule also bounds a blocked scheduler callback itself.
+        repeat(1_000) {
             scheduler.runCurrent()
             if (predicate()) return
             Thread.sleep(10)
         }
-        fail("Profile action did not reach its observable state")
+        fail("Profile action did not reach its observable state after 1000 scheduler attempts")
     }
 
     private fun entity(db: ControlystDatabase, id: String = original.id): ConfigProfileEntity = runBlocking {
